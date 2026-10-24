@@ -8,6 +8,8 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
@@ -23,10 +25,17 @@ public final class AnimatedSplashView extends View {
     private ValueAnimator introAnimator;
     private float phase;
     private float intro;
+    private final boolean dismissAutomatically;
 
     public AnimatedSplashView(Context context) {
+        this(context, true);
+    }
+
+    /** The embedded variant uses the exact splash animation without dismissing itself. */
+    public AnimatedSplashView(Context context, boolean dismissAutomatically) {
         super(context);
-        setBackgroundColor(Color.rgb(17, 22, 28));
+        this.dismissAutomatically = dismissAutomatically;
+        setBackgroundColor(dismissAutomatically ? Color.rgb(17, 22, 28) : Color.TRANSPARENT);
         cube = BitmapFactory.decodeResource(getResources(), R.drawable.logo_cube);
         paint.setFilterBitmap(true);
         paint.setDither(true);
@@ -34,6 +43,8 @@ public final class AnimatedSplashView extends View {
     }
 
     public void start() {
+        stop();
+        setAlpha(1f);
         animator = ValueAnimator.ofFloat(0f, 1f);
         animator.setDuration(1650);
         animator.setRepeatCount(ValueAnimator.INFINITE);
@@ -45,25 +56,44 @@ public final class AnimatedSplashView extends View {
         introAnimator.setInterpolator(new DecelerateInterpolator(1.8f));
         introAnimator.addUpdateListener(value -> { intro = (float) value.getAnimatedValue(); invalidate(); });
         introAnimator.start();
-        postDelayed(() -> animate().alpha(0f).setDuration(360).withEndAction(() -> {
-            if (animator != null) animator.cancel();
-            if (introAnimator != null) introAnimator.cancel();
-            ViewGroup parent = (ViewGroup) getParent();
-            if (parent != null) parent.removeView(this);
-        }).start(), 2100);
+        if (dismissAutomatically) {
+            postDelayed(() -> animate().alpha(0f).setDuration(360).withEndAction(() -> {
+                stop();
+                ViewGroup parent = (ViewGroup) getParent();
+                if (parent != null) parent.removeView(this);
+            }).start(), 2100);
+        }
+    }
+
+    public void stop() {
+        animate().cancel();
+        if (animator != null) animator.cancel();
+        if (introAnimator != null) introAnimator.cancel();
+        animator = null;
+        introAnimator = null;
     }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (cube == null) return;
         float cycle = (float) Math.sin(phase * Math.PI * 2);
-        float size = Math.min(dp(250), Math.min(getWidth(), getHeight()) * .42f);
+        float size = Math.min(dp(250), Math.min(getWidth(), getHeight()) * (dismissAutomatically ? .42f : .88f));
         float maxSide = Math.max(cube.getWidth(), cube.getHeight());
         float drawWidth = size * cube.getWidth() / maxSide;
         float drawHeight = size * cube.getHeight() / maxSide;
         float left = (getWidth() - drawWidth) / 2f;
         float top = (getHeight() - drawHeight) / 2f - dp(5) * Math.abs(cycle);
         android.graphics.RectF target = new android.graphics.RectF(left, top, left + drawWidth, top + drawHeight);
+        float auraPulse = 1f + .08f * cycle;
+        float auraRadius = Math.max(drawWidth, drawHeight) * .55f * auraPulse;
+        float centerX = target.centerX();
+        float centerY = target.centerY();
+        paint.setShader(new RadialGradient(centerX, centerY, auraRadius,
+                new int[]{Color.argb(Math.round(82f * intro), 44, 220, 255),
+                        Color.argb(Math.round(25f * intro), 25, 155, 230), Color.TRANSPARENT},
+                new float[]{0f, .48f, 1f}, Shader.TileMode.CLAMP));
+        canvas.drawCircle(centerX, centerY, auraRadius, paint);
+        paint.setShader(null);
         paint.setAlpha(Math.round(255f * intro));
         canvas.drawBitmap(cube, null, target, paint);
         drawWave(canvas, left, top, drawWidth, drawHeight);

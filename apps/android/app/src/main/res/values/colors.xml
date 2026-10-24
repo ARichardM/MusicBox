@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="splash_background">#000000</color>
     <color name="bg_primary">#FFFFFF</color>
     <color name="bg_card">#F2F2F7</color>
     <color name="bg_elevated">#E5E5EA</color>

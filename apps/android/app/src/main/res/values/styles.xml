@@ -22,6 +22,10 @@
         <item name="panelMenuListTheme">@style/ThemeOverlay.MusicBox.PopupMenu</item>
     </style>
 
+    <style name="Theme.MusicBox.Starting" parent="Theme.MusicBox">
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+
     <style name="ThemeOverlay.MusicBox.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
         <item name="colorPrimary">@color/accent</item>
         <item name="colorSecondary">@color/accent</item>

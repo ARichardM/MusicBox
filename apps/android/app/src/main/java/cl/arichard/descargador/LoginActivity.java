@@ -1,14 +1,12 @@
 package cl.arichard.descargador;
 
-import android.animation.AnimatorSet;
-import android.animation.ObjectAnimator;
-import android.animation.ValueAnimator;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.CancellationSignal;
-import android.util.Property;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -30,10 +28,7 @@ public class LoginActivity extends AppCompatActivity {
     private Button login;
     private View progress;
     private TextView error;
-    private View logo;
-    private View auraInner;
-    private View auraOuter;
-    private AnimatorSet logoAnimation;
+    private cl.arichard.descargador.util.AnimatedSplashView animatedLogo;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -42,59 +37,21 @@ public class LoginActivity extends AppCompatActivity {
         login = findViewById(R.id.btnGoogleLogin);
         progress = findViewById(R.id.loginProgress);
         error = findViewById(R.id.txtLoginError);
-        logo = findViewById(R.id.loginLogo);
-        auraInner = findViewById(R.id.loginLogoAuraInner);
-        auraOuter = findViewById(R.id.loginLogoAuraOuter);
+        FrameLayout stage = findViewById(R.id.loginLogoStage);
+        animatedLogo = new cl.arichard.descargador.util.AnimatedSplashView(this, false);
+        stage.addView(animatedLogo, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         login.setOnClickListener(v -> beginGoogleLogin(false));
     }
 
     @Override protected void onStart() {
         super.onStart();
-        startLogoAnimation();
+        if (animatedLogo != null) animatedLogo.start();
     }
 
     @Override protected void onStop() {
-        stopLogoAnimation();
+        if (animatedLogo != null) animatedLogo.stop();
         super.onStop();
-    }
-
-    private ObjectAnimator pulse(View view, Property<View, Float> property,
-                                 float from, float to, long duration) {
-        ObjectAnimator animator = ObjectAnimator.ofFloat(view, property, from, to);
-        animator.setDuration(duration);
-        animator.setRepeatCount(ValueAnimator.INFINITE);
-        animator.setRepeatMode(ValueAnimator.REVERSE);
-        return animator;
-    }
-
-    private void startLogoAnimation() {
-        if (logo == null || logoAnimation != null) return;
-        ObjectAnimator floatUp = pulse(logo, View.TRANSLATION_Y, dp(4), dp(-4), 1900);
-        ObjectAnimator logoScaleX = pulse(logo, View.SCALE_X, 0.98f, 1.035f, 1900);
-        ObjectAnimator logoScaleY = pulse(logo, View.SCALE_Y, 0.98f, 1.035f, 1900);
-        ObjectAnimator innerAlpha = pulse(auraInner, View.ALPHA, 0.22f, 0.58f, 1500);
-        ObjectAnimator innerScaleX = pulse(auraInner, View.SCALE_X, 0.90f, 1.10f, 1500);
-        ObjectAnimator innerScaleY = pulse(auraInner, View.SCALE_Y, 0.90f, 1.10f, 1500);
-        ObjectAnimator outerAlpha = pulse(auraOuter, View.ALPHA, 0.10f, 0.34f, 2200);
-        ObjectAnimator outerScaleX = pulse(auraOuter, View.SCALE_X, 0.86f, 1.08f, 2200);
-        ObjectAnimator outerScaleY = pulse(auraOuter, View.SCALE_Y, 0.86f, 1.08f, 2200);
-        outerAlpha.setStartDelay(350);
-        outerScaleX.setStartDelay(350);
-        outerScaleY.setStartDelay(350);
-        logoAnimation = new AnimatorSet();
-        logoAnimation.playTogether(floatUp, logoScaleX, logoScaleY, innerAlpha,
-                innerScaleX, innerScaleY, outerAlpha, outerScaleX, outerScaleY);
-        logoAnimation.start();
-    }
-
-    private void stopLogoAnimation() {
-        if (logoAnimation == null) return;
-        logoAnimation.cancel();
-        logoAnimation = null;
-    }
-
-    private float dp(float value) {
-        return value * getResources().getDisplayMetrics().density;
     }
 
     private void beginGoogleLogin(boolean authorizedOnly) {

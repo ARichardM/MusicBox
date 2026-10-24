@@ -6,20 +6,7 @@
         android:layout_gravity="center" android:gravity="center" android:orientation="vertical">
         <FrameLayout android:id="@+id/loginLogoStage"
             android:layout_width="180dp" android:layout_height="180dp"
-            android:clipChildren="false" android:clipToPadding="false">
-            <View android:id="@+id/loginLogoAuraOuter"
-                android:layout_width="180dp" android:layout_height="180dp"
-                android:layout_gravity="center" android:alpha="0.18"
-                android:background="@drawable/bg_login_logo_aura"/>
-            <View android:id="@+id/loginLogoAuraInner"
-                android:layout_width="154dp" android:layout_height="154dp"
-                android:layout_gravity="center" android:alpha="0.34"
-                android:background="@drawable/bg_login_logo_aura"/>
-            <ImageView android:id="@+id/loginLogo"
-                android:layout_width="132dp" android:layout_height="132dp"
-                android:layout_gravity="center" android:src="@drawable/logo_app"
-                android:contentDescription="MusicBox"/>
-        </FrameLayout>
+            android:clipChildren="false" android:clipToPadding="false"/>
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:layout_marginTop="22dp" android:text="Tu música, en todos lados"
             android:textColor="@color/text_primary" android:textSize="25sp" android:textStyle="bold"/>
