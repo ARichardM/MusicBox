@@ -15,9 +15,10 @@ import time
 from urllib.parse import urlsplit
 
 
-CODE_DIR = Path(__file__).resolve().parent
-APP_DIR = CODE_DIR.parent.parent
-APP_VERSION = "1.0.0"
+from app_paths import CODE_DIR, DATA_ROOT, RESOURCE_ROOT, worker_command
+
+APP_DIR = DATA_ROOT
+APP_VERSION = "2.2.1"
 AUDIO_QUALITY = ("192 kbps", "128 kbps", "256 kbps", "320 kbps")
 VIDEO_QUALITY = ("1080p", "720p", "480p", "360p", "Mejor disponible")
 
@@ -50,8 +51,9 @@ def validate_items(items: str) -> str:
 
 
 def find_ffmpeg() -> str | None:
-    local = APP_DIR / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
-    return str(local) if local.is_file() else shutil.which("ffmpeg")
+    filename = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    candidates = [Path(sys.executable).resolve().parent / filename, RESOURCE_ROOT / filename, APP_DIR / filename]
+    return next((str(path) for path in candidates if path.is_file()), None) or shutil.which("ffmpeg")
 
 
 def build_output_template(config: dict, queue_position: int = 1) -> str:
@@ -274,25 +276,30 @@ def launch_gui(*, history_path=None):
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Descargador.Desktop")
     return DownloaderApp(history_path=history_path)
 
-if __name__ == "__main__":
+def run_cli() -> int:
     if "--audio-worker" in sys.argv:
         from reproductor_audio import run_audio
 
-        sys.exit(run_audio(json.loads(sys.stdin.readline())))
+        return run_audio(json.loads(sys.stdin.readline()))
     elif "--player-worker" in sys.argv:
         from reproductor_video import run_player
 
-        sys.exit(run_player(json.loads(sys.stdin.readline())))
+        return run_player(json.loads(sys.stdin.readline()))
     elif "--songs-worker" in sys.argv:
         from canciones import run_import_worker
 
-        sys.exit(run_import_worker(json.loads(sys.stdin.readline())))
+        return run_import_worker(json.loads(sys.stdin.readline()))
     elif "--worker" in sys.argv:
         try:
             worker_config = json.loads(sys.stdin.readline())
-            sys.exit(run_worker(worker_config))
+            return run_worker(worker_config)
         except (ValueError, KeyError) as exc:
             print(json.dumps(dict(event="log", level="error", text=f"Configuración inválida: {exc}")), flush=True)
-            sys.exit(1)
+            return 1
     else:
         launch_gui().mainloop()
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_cli())

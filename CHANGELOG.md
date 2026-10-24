@@ -9,6 +9,9 @@
 - Backups internos deshabilitados, servicio multimedia protegido y archivos compartidos mediante `FileProvider`.
 - WebView limitado a HTTPS y dominios oficiales de YouTube, sin acceso a archivos locales ni contenido mixto.
 - Pillow actualizado a 13 y vigilancia automática mediante Dependabot y CodeQL.
+- Instalador profesional para Windows 10/11 con ejecutable autocontenido, FFmpeg, metadatos de versión y desinstalador.
+- Publicación automática del instalador y su suma SHA-256 en GitHub Releases.
+- Datos del escritorio separados de los recursos instalados y almacenados en el perfil local del usuario.
 
 ### MusicBox Android 2.2.0
 

@@ -718,11 +718,8 @@ class DownloaderApp(tk.Tk):
     def download_thread(self, config):
         process = None
         try:
-            interpreter = Path(sys.executable)
-            if interpreter.name.lower() == "pythonw.exe":
-                interpreter = interpreter.with_name("python.exe")
             flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
-            process = subprocess.Popen([str(interpreter), "-u", str(backend.CODE_DIR / "descargador_gui.py"), "--worker"],
+            process = subprocess.Popen(backend.worker_command("--worker"),
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        encoding="utf-8", errors="replace",
                                        env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **flags)

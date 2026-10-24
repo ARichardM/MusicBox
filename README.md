@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="https://github.com/ARichardM/MusicBox/releases/latest/download/MusicBox-Android.apk"><strong>Descargar APK</strong></a>
+  · <a href="https://github.com/ARichardM/MusicBox/releases/latest/download/MusicBox-Windows-Setup.exe"><strong>Descargar para Windows</strong></a>
   · <a href="https://github.com/ARichardM/MusicBox/releases">Ver versiones</a>
   · <a href="docs/GUIA_USO.md">Guía de uso</a>
 </p>
@@ -51,6 +52,8 @@ Descarga la versión preparada desde [Releases](https://github.com/ARichardM/Mus
 
 La interfaz actual de escritorio está construida con **Python + PySide6/QML**. También se conservan herramientas históricas de importación, OCR y revisión de listas desarrolladas con Tkinter.
 
+Para Windows 10/11 de 64 bits descarga `MusicBox-Windows-Setup.exe` desde [Releases](https://github.com/ARichardM/MusicBox/releases/latest). El instalador incluye MusicBox y FFmpeg; no exige tener Python instalado. Junto al instalador se publica su suma SHA-256 para comprobar su integridad.
+
 ```powershell
 git clone https://github.com/ARichardM/MusicBox.git
 cd MusicBox
@@ -80,7 +83,7 @@ Consulta la [documentación específica de Android](apps/android/README.md) para
 
 ## Publicar una versión
 
-El workflow `release-android.yml` compila, firma y adjunta `MusicBox-Android.apk` automáticamente al publicar una etiqueta `v*`.
+Los workflows de publicación compilan y adjuntan automáticamente `MusicBox-Android.apk` y `MusicBox-Windows-Setup.exe` al publicar una etiqueta `v*`.
 
 Configura estos secretos en **Settings → Secrets and variables → Actions**:
 
@@ -91,8 +94,9 @@ Configura estos secretos en **Settings → Secrets and variables → Actions**:
 | `KEYSTORE_PASSWORD` | Contraseña del keystore. |
 | `KEY_ALIAS` | Alias de la clave. |
 | `KEY_PASSWORD` | Contraseña de la clave. |
+| `DESKTOP_OAUTH_CLIENT_JSON_BASE64` | Cliente OAuth de escritorio codificado en Base64. |
 
-Después crea una etiqueta como `v2.2.0`. GitHub generará una Release con el APK descargable desde el botón superior.
+Después crea una etiqueta como `v2.2.1`. GitHub generará una Release con ambos instaladores descargables desde los botones superiores.
 
 ## Arquitectura
 

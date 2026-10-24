@@ -26,12 +26,12 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 
 import descargador_gui as download_backend
+from app_paths import CODE_DIR, DATA_ROOT, DEFAULT_DOWNLOAD_DIR, worker_command
 from historial import DownloadHistory
 from musicbox_cloud import FirebaseDesktopClient
 
 
-CODE_DIR = Path(__file__).resolve().parent
-ROOT = CODE_DIR.parent.parent
+ROOT = DATA_ROOT
 MEDIA_EXTENSIONS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".mp4", ".mkv", ".webm"}
 COVER_DIR = ROOT / "datos" / "portadas"
 
@@ -939,7 +939,7 @@ class MusicBoxBridge(QObject):
         try:
             urls = download_backend.parse_urls(raw_urls, playlist)
             selected_items = download_backend.validate_items(items) if playlist else ""
-            target = Path(destination.strip() or ROOT / "Descargas").expanduser().resolve()
+            target = Path(destination.strip() or DEFAULT_DOWNLOAD_DIR).expanduser().resolve()
             target.mkdir(parents=True, exist_ok=True)
             ffmpeg = download_backend.find_ffmpeg()
             if not ffmpeg:
@@ -969,10 +969,8 @@ class MusicBoxBridge(QObject):
     def _download_worker(self, config):
         process = None
         try:
-            interpreter = Path(sys.executable)
-            if interpreter.name.lower() == "pythonw.exe": interpreter = interpreter.with_name("python.exe")
             flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
-            process = subprocess.Popen([str(interpreter), "-u", str(CODE_DIR / "descargador_gui.py"), "--worker"],
+            process = subprocess.Popen(worker_command("--worker"),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **flags)
             self._download_process = process
@@ -1272,10 +1270,15 @@ class MusicBoxBridge(QObject):
     @Slot()
     def openClassicTools(self):
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        subprocess.Popen([sys.executable, str(CODE_DIR / "descargador_gui.py")], cwd=ROOT, creationflags=flags)
+        subprocess.Popen(worker_command("--classic"), cwd=ROOT, creationflags=flags)
 
 
 def main():
+    if "--version" in sys.argv:
+        print("MusicBox 2.2.1")
+        return 0
+    if any(flag in sys.argv for flag in ("--worker", "--audio-worker", "--player-worker", "--songs-worker", "--classic")):
+        return download_backend.run_cli()
     if os.name == "nt":
         # Evita que Windows agrupe la ventana bajo python.exe y use su icono.
         import ctypes

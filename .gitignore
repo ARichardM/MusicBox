@@ -24,6 +24,9 @@ novela_mushoku/
 # Binarios externos: instalar FFmpeg/WebView2 por separado.
 *.exe
 *.dll
+dist/
+build/
+*.spec.bak
 
 # Credenciales y configuración privada.
 *cookies*.txt

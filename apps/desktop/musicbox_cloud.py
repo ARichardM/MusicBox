@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
-CODE_DIR = Path(__file__).resolve().parent
-ROOT = CODE_DIR.parent.parent
-OAUTH_FILE = ROOT / "desktop_oauth_client.json"
-GOOGLE_SERVICES_FILE = ROOT / "apps" / "android" / "app" / "google-services.json"
+from app_paths import RESOURCE_ROOT
+
+OAUTH_FILE = RESOURCE_ROOT / "desktop_oauth_client.json"
+GOOGLE_SERVICES_FILE = RESOURCE_ROOT / "apps" / "android" / "app" / "google-services.json"
 GOOGLE_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",

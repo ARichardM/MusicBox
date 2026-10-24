@@ -264,11 +264,8 @@ class PlayerJob:
         try:
             if self.cancelled.is_set():
                 return
-            interpreter = Path(sys.executable)
-            if interpreter.name.lower() == "pythonw.exe":
-                interpreter = interpreter.with_name("python.exe")
             flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {"start_new_session": True}
-            process = subprocess.Popen([str(interpreter), "-u", str(backend.CODE_DIR / "descargador_gui.py"), "--player-worker"],
+            process = subprocess.Popen(backend.worker_command("--player-worker"),
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 encoding="utf-8", errors="replace", env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **flags)
             self.process = process
