@@ -1008,8 +1008,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 runOnUiThread(() -> {
                     txtStatus.setText("Error al descargar");
                     txtEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : "Fallo en yt-dlp");
-                    Toast.makeText(this, "No se pudo descargar. Toca nuevamente o revisa YouTube.",
-                            Toast.LENGTH_LONG).show();
+                    cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.bottomBarArea),
+                            "No pudimos guardar esta canción. Comprueba la conexión e inténtalo nuevamente.");
                     if (videoId != null && !videoId.isEmpty()) {
                         activeDownloadingVideoIds.remove(videoId);
                         if (searchResultAdapter != null) searchResultAdapter.removeDownloadingId(videoId);
@@ -1721,6 +1721,13 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 btnMiniPlayPause.setImageResource(isPlaying ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
             }
         });
+    }
+
+    @Override
+    public void onPlaybackError(String message) {
+        runOnUiThread(() -> cl.arichard.descargador.util.AppNotice.error(
+                findViewById(R.id.bottomBarArea), message, "REINTENTAR",
+                () -> PlayerManager.getInstance().play()));
     }
 
     @Override

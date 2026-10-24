@@ -8,6 +8,7 @@
 - El extractor de YouTube se actualiza periódicamente cuando hay conexión, conservando la versión incluida si la actualización falla.
 - Las descargas automáticas muestran su spinner tanto en los resultados como dentro de la playlist, incluidos los elementos en cola.
 - Al completar una descarga aparece el indicador guardado con una animación elástica; los errores ahora muestran un aviso visible.
+- Los errores de reproducción y descarga usan avisos propios de MusicBox, con texto completo, posición segura y acción de reintento.
 
 ## 2.2.2 — 24 de octubre de 2026
 

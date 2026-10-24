@@ -455,6 +455,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     public void onPlaybackError(String message) {
         txtCurrentTime.setText("Error");
         txtTotalTime.setText("Reintentar ▶");
+        cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.seekBar), message,
+                "REINTENTAR", () -> PlayerManager.getInstance().play());
     }
 
     @Override

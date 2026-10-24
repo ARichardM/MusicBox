@@ -14,7 +14,6 @@ import android.view.SurfaceView;
 import android.view.ViewGroup;
 import android.view.Gravity;
 import android.widget.FrameLayout;
-import android.widget.Toast;
 import cl.arichard.descargador.DescargadorApp;
 import cl.arichard.descargador.data.SearchHistoryManager;
 import cl.arichard.descargador.model.Song;
@@ -446,9 +445,8 @@ public class PlayerManager {
         if (!online) message = "No se pudo abrir el archivo de música.";
         else if (context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork())
             message = "Sin conexión a internet. Revisa Wi-Fi o datos móviles.";
-        else message = "YouTube no entregó un audio reproducible. Intenta nuevamente en unos segundos.";
+        else message = "No pudimos reproducir esta canción. YouTube rechazó temporalmente el audio.";
         for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackError(message);
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show();
         notifyState();
     }
     // ── AudioFocus ─────────────────────────────────────────────────────────
