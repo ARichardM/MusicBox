@@ -3,6 +3,7 @@ package cl.arichard.descargador.player;
 import android.content.Context;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
+import android.media.MediaDataSource;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
@@ -37,6 +38,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.io.IOException;
+import java.io.InputStream;
 
 /** Single native player shared by the full screen and mini player. */
 public class PlayerManager {
@@ -72,6 +75,83 @@ public class PlayerManager {
             this.createdAt = System.currentTimeMillis();
         }
         boolean isFresh() { return System.currentTimeMillis() - createdAt < STREAM_CACHE_MS; }
+    }
+
+    /** Supplies MediaPlayer with ranged HTTP reads while preserving yt-dlp's headers. */
+    private static final class HeaderHttpDataSource extends MediaDataSource {
+        private final String source;
+        private final Map<String, String> headers;
+        private final long contentLength;
+        private HttpURLConnection connection;
+        private InputStream input;
+        private long currentPosition = -1;
+        private long rangeEnd = -1;
+        private static final long READ_BLOCK_BYTES = 512L * 1024L;
+
+        HeaderHttpDataSource(String source, Map<String, String> headers) {
+            this.source = source;
+            this.headers = new HashMap<>(headers);
+            long parsedLength = -1;
+            try {
+                String value = Uri.parse(source).getQueryParameter("clen");
+                if (value != null) parsedLength = Long.parseLong(value);
+            } catch (Exception ignored) {}
+            contentLength = parsedLength;
+        }
+
+        @Override public synchronized int readAt(long position, byte[] buffer, int offset, int size)
+                throws IOException {
+            if (position < 0 || size <= 0 || (contentLength >= 0 && position >= contentLength)) return -1;
+            if (input == null || currentPosition != position || position > rangeEnd) openAt(position);
+            int total = 0;
+            while (total < size) {
+                int read = input.read(buffer, offset + total, size - total);
+                if (read < 0) break;
+                total += read;
+                currentPosition += read;
+            }
+            return total == 0 ? -1 : total;
+        }
+
+        private void openAt(long position) throws IOException {
+            closeConnection();
+            connection = (HttpURLConnection) new URL(source).openConnection();
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(15000);
+            connection.setInstanceFollowRedirects(true);
+            for (Map.Entry<String, String> header : headers.entrySet())
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            long requestedEnd = position + READ_BLOCK_BYTES - 1;
+            if (contentLength >= 0) requestedEnd = Math.min(requestedEnd, contentLength - 1);
+            connection.setRequestProperty("Range", "bytes=" + position + "-" + requestedEnd);
+            int status = connection.getResponseCode();
+            if (status != HttpURLConnection.HTTP_OK && status != HttpURLConnection.HTTP_PARTIAL)
+                throw new IOException("YouTube respondió HTTP " + status);
+            input = connection.getInputStream();
+            if (status == HttpURLConnection.HTTP_OK && position > 0) {
+                long remaining = position;
+                while (remaining > 0) {
+                    long skipped = input.skip(remaining);
+                    if (skipped <= 0) throw new IOException("No se pudo posicionar el audio");
+                    remaining -= skipped;
+                }
+            }
+            currentPosition = position;
+            rangeEnd = requestedEnd;
+        }
+
+        @Override public long getSize() { return contentLength; }
+
+        @Override public synchronized void close() { closeConnection(); }
+
+        private void closeConnection() {
+            if (input != null) try { input.close(); } catch (IOException ignored) {}
+            if (connection != null) connection.disconnect();
+            input = null;
+            connection = null;
+            currentPosition = -1;
+            rangeEnd = -1;
+        }
     }
 
     public interface PlaybackListener {
@@ -351,7 +431,8 @@ public class PlayerManager {
             else playNext();
         });
         if (videoView != null && videoView.getHolder().getSurface().isValid()) player.setDisplay(videoView.getHolder());
-        if (source.startsWith("http")) player.setDataSource(context, Uri.parse(source), headers);
+        // Samsung's MediaPlayer drops request headers from the Context/Uri overload and gets HTTP 403.
+        if (source.startsWith("http")) player.setDataSource(new HeaderHttpDataSource(source, headers));
         else player.setDataSource(source);
         loading(true);
         player.prepareAsync();
