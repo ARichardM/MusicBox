@@ -3,6 +3,10 @@
 ## Sin publicar
 
 - El cubo de la pantalla de inicio de sesión Android ahora flota suavemente y proyecta un aura de doble pulso.
+- La búsqueda y la reproducción online reintentan con clientes alternativos de YouTube y validan el audio antes de reproducirlo.
+- El extractor de YouTube se actualiza periódicamente cuando hay conexión, conservando la versión incluida si la actualización falla.
+- Las descargas automáticas muestran su spinner tanto en los resultados como dentro de la playlist, incluidos los elementos en cola.
+- Al completar una descarga aparece el indicador guardado con una animación elástica; los errores ahora muestran un aviso visible.
 
 ## 2.2.2 — 24 de octubre de 2026
 

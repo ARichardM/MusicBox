@@ -33,6 +33,8 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     private final List<Song> displayedList = new ArrayList<>();
     private final OnSongClickListener listener;
     private final java.util.Set<String> selectedPaths = new java.util.LinkedHashSet<>();
+    private final java.util.Set<String> downloadingVideoIds = new java.util.HashSet<>();
+    private final java.util.Set<String> justCompletedVideoIds = new java.util.HashSet<>();
     private boolean selectionMode = false;
 
     private String currentQuery = "";
@@ -129,6 +131,19 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     public List<Song> getDisplayedList() { return displayedList; }
 
+    public void setDownloadStarted(String videoId) {
+        if (videoId == null || videoId.isEmpty()) return;
+        downloadingVideoIds.add(videoId);
+        notifyDataSetChanged();
+    }
+
+    public void setDownloadFinished(String videoId, boolean success) {
+        if (videoId == null || videoId.isEmpty()) return;
+        downloadingVideoIds.remove(videoId);
+        if (success) justCompletedVideoIds.add(videoId);
+        notifyDataSetChanged();
+    }
+
     @NonNull @Override
     public SongViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View v = LayoutInflater.from(context).inflate(R.layout.item_song, parent, false);
@@ -143,9 +158,34 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
         CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), holder.imgCover);
 
+        String videoId = song.getVideoId();
+        boolean downloading = videoId != null && downloadingVideoIds.contains(videoId);
+        boolean savedOnline = videoId != null && context.getSharedPreferences("downloaded_videos", Context.MODE_PRIVATE)
+                .getBoolean(videoId, false);
         boolean isLocalFile = song.getPath() != null && new File(song.getPath()).exists();
+        holder.progressDownload.animate().cancel();
+        holder.imgDownloadedBadge.animate().cancel();
+        holder.progressDownload.setVisibility(downloading && !selectionMode ? View.VISIBLE : View.GONE);
+        if (downloading && !selectionMode) {
+            holder.progressDownload.setAlpha(0f);
+            holder.progressDownload.animate().alpha(1f).setDuration(180).start();
+        }
         if (holder.imgDownloadedBadge != null) {
-            holder.imgDownloadedBadge.setVisibility(isLocalFile && !selectionMode ? View.VISIBLE : View.GONE);
+            holder.imgDownloadedBadge.setVisibility((isLocalFile || savedOnline) && !downloading && !selectionMode
+                    ? View.VISIBLE : View.GONE);
+            holder.imgDownloadedBadge.setScaleX(1f);
+            holder.imgDownloadedBadge.setScaleY(1f);
+            holder.imgDownloadedBadge.setRotation(0f);
+            holder.imgDownloadedBadge.setAlpha(1f);
+            if (savedOnline && justCompletedVideoIds.remove(videoId)) {
+                holder.imgDownloadedBadge.setScaleX(0f);
+                holder.imgDownloadedBadge.setScaleY(0f);
+                holder.imgDownloadedBadge.setRotation(-35f);
+                holder.imgDownloadedBadge.setAlpha(0f);
+                holder.imgDownloadedBadge.animate().scaleX(1f).scaleY(1f).rotation(0f).alpha(1f)
+                        .setDuration(520)
+                        .setInterpolator(new android.view.animation.OvershootInterpolator(2.4f)).start();
+            }
         }
 
         boolean isSelected = selectedPaths.contains(song.getPath());
@@ -219,6 +259,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     static class SongViewHolder extends RecyclerView.ViewHolder {
         TextView txtTitle, txtSubtitle;
         ImageView imgCover, imgIndicator, btnFavorite, btnMenu, imgDownloadedBadge;
+        android.widget.ProgressBar progressDownload;
         View viewPlayingOverlay;
 
         public SongViewHolder(@NonNull View itemView) {
@@ -231,6 +272,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             btnFavorite = itemView.findViewById(R.id.btnFavorite);
             btnMenu = itemView.findViewById(R.id.btnSongMenu);
             imgDownloadedBadge = itemView.findViewById(R.id.imgDownloadedBadge);
+            progressDownload = itemView.findViewById(R.id.progressSongDownload);
         }
     }
 }

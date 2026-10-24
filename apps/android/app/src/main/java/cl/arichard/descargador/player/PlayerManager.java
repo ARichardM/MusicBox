@@ -35,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /** Single native player shared by the full screen and mini player. */
 public class PlayerManager {
@@ -235,18 +237,10 @@ public class PlayerManager {
         final long startedAt = System.currentTimeMillis();
         PLAYBACK_IO.execute(() -> {
             try {
-                YoutubeDLRequest request = new YoutubeDLRequest(target);
-                request.addOption("--no-playlist");
-                request.addOption("--no-update");
-                request.addOption("--no-warnings");
-                request.addOption("--dump-single-json");
-                request.addOption("--skip-download");
-                request.addOption("--socket-timeout", "7");
-                request.addOption("--retries", "1");
-                request.addOption("--extractor-retries", "1");
-                request.addOption("--extractor-args", "youtube:player_client=android_vr,android");
-                request.addOption("-f", "best[ext=mp4][protocol^=http]/best[protocol^=http]/bestaudio/best");
-                JSONObject info = new JSONObject(YoutubeDL.getInstance().execute(request).getOut());
+                DescargadorApp app = (DescargadorApp) context;
+                if (!app.awaitReady(20)) throw new IllegalStateException(
+                        app.getInitError() == null ? "El reproductor todavía se está preparando" : app.getInitError());
+                JSONObject info = resolveOnlineInfo(target);
                 String stream = info.getString("url");
                 Map<String, String> headers = new HashMap<>();
                 JSONObject http = info.optJSONObject("http_headers");
@@ -264,6 +258,58 @@ public class PlayerManager {
                 handler.post(() -> { if (generation == requestGeneration) fail(e); });
             }
         });
+    }
+
+    private JSONObject resolveOnlineInfo(String target) throws Exception {
+        String[] clients = {"android_vr,android", "web,android", "ios,web"};
+        Exception lastError = null;
+        for (String client : clients) {
+            try {
+                YoutubeDLRequest request = new YoutubeDLRequest(target);
+                request.addOption("--no-playlist");
+                request.addOption("--no-update");
+                request.addOption("--no-warnings");
+                request.addOption("--dump-single-json");
+                request.addOption("--skip-download");
+                request.addOption("--socket-timeout", "12");
+                request.addOption("--retries", "2");
+                request.addOption("--extractor-retries", "2");
+                request.addOption("--extractor-args", "youtube:player_client=" + client);
+                request.addOption("-f", "bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/best[ext=mp4][protocol^=http]/best[protocol^=http]");
+                String output = YoutubeDL.getInstance().execute(request).getOut();
+                JSONObject info = new JSONObject(output);
+                String stream = info.optString("url", "");
+                if (!stream.isEmpty() && streamIsReachable(stream, info.optJSONObject("http_headers"))) return info;
+            } catch (Exception error) {
+                lastError = error;
+                Log.w("MusicBoxPlayer", "Resolver failed with client " + client, error);
+            }
+        }
+        throw lastError == null ? new IllegalStateException("YouTube no devolvió un enlace reproducible") : lastError;
+    }
+
+    private boolean streamIsReachable(String stream, JSONObject jsonHeaders) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(stream).openConnection();
+            connection.setConnectTimeout(7000);
+            connection.setReadTimeout(7000);
+            connection.setRequestProperty("Range", "bytes=0-1");
+            if (jsonHeaders != null) {
+                Iterator<String> keys = jsonHeaders.keys();
+                while (keys.hasNext()) {
+                    String key = keys.next();
+                    connection.setRequestProperty(key, jsonHeaders.optString(key, ""));
+                }
+            }
+            int status = connection.getResponseCode();
+            return status == HttpURLConnection.HTTP_OK || status == HttpURLConnection.HTTP_PARTIAL;
+        } catch (Exception error) {
+            Log.w("MusicBoxPlayer", "Resolved stream was not reachable", error);
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
     }
 
     private void prepareSource(String source, Map<String, String> headers) throws Exception {
@@ -315,7 +361,11 @@ public class PlayerManager {
         Log.e("MusicBoxPlayer", "Playback failed", error);
         releasePlayer();
         loading(false);
-        String message = online ? "No se pudo reproducir. Revisa la conexión o prueba otro resultado." : "No se pudo abrir el archivo de música.";
+        String message;
+        if (!online) message = "No se pudo abrir el archivo de música.";
+        else if (context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork())
+            message = "Sin conexión a internet. Revisa Wi-Fi o datos móviles.";
+        else message = "YouTube no entregó un audio reproducible. Intenta nuevamente en unos segundos.";
         for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackError(message);
         Toast.makeText(context, message, Toast.LENGTH_LONG).show();
         notifyState();

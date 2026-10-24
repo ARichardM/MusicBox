@@ -113,9 +113,14 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         boolean isDownloading = downloadingIds.contains(item.getId());
         boolean isDownloaded = downloadedIds.contains(item.getId()) || downloadedTitles.contains(normalize(item.getTitle()));
 
+        holder.imgDownloaded.animate().cancel();
+        holder.progressDownload.animate().cancel();
+        holder.imgDownloaded.setRotation(0f);
         if (isDownloading) {
             holder.progressDownload.setVisibility(View.VISIBLE);
             holder.imgDownloaded.setVisibility(View.GONE);
+            holder.progressDownload.setAlpha(0f);
+            holder.progressDownload.animate().alpha(1f).setDuration(180).start();
         } else {
             holder.progressDownload.setVisibility(View.GONE);
             if (isDownloaded) {
@@ -124,10 +129,11 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
                     holder.imgDownloaded.setScaleX(0f);
                     holder.imgDownloaded.setScaleY(0f);
                     holder.imgDownloaded.setAlpha(0f);
+                    holder.imgDownloaded.setRotation(-35f);
                     holder.imgDownloaded.animate()
-                            .scaleX(1f).scaleY(1f).alpha(1f)
-                            .setDuration(280)
-                            .setInterpolator(new android.view.animation.OvershootInterpolator(2.0f))
+                            .scaleX(1f).scaleY(1f).alpha(1f).rotation(0f)
+                            .setDuration(520)
+                            .setInterpolator(new android.view.animation.OvershootInterpolator(2.4f))
                             .start();
                 } else {
                     holder.imgDownloaded.setScaleX(1f);

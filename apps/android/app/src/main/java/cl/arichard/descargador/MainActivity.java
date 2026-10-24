@@ -845,9 +845,17 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         DescargadorApp.IO.execute(() -> {
             List<SearchResult> results = new ArrayList<>();
             try {
-                YoutubeDLRequest request = new YoutubeDLRequest("ytsearch8:" + query);
-                request.addOption("--flat-playlist"); request.addOption("--dump-json"); request.addOption("--socket-timeout", "8");
-                String out = YoutubeDL.getInstance().execute(request).getOut();
+                DescargadorApp app = (DescargadorApp) getApplication();
+                if (!app.awaitReady(20)) throw new IllegalStateException(
+                        app.getInitError() == null ? "El buscador todavía se está preparando" : app.getInitError());
+                String out;
+                try {
+                    out = executeSearch(query, null);
+                } catch (Exception firstAttempt) {
+                    android.util.Log.w("MusicBoxSearch", "Búsqueda estándar falló; reintentando con clientes alternativos", firstAttempt);
+                    out = executeSearch(query, "web,android");
+                }
+                if (out == null || out.trim().isEmpty()) out = executeSearch(query, "web,android");
                 if (out != null) for (String line : out.split("\\r?\\n")) {
                     line = line.trim();
                     if (!line.startsWith("{")) continue;
@@ -867,10 +875,25 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             } catch (Exception error) {
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                     if (state.searchGeneration != generation) return;
-                    state.searchLoading = false; state.searchStatus = "Error en la b\u00fasqueda"; state.changed();
+                    state.searchLoading = false;
+                    state.searchStatus = ((DescargadorApp) getApplication()).hasNetwork()
+                            ? "YouTube no respondió. Toca buscar para reintentar"
+                            : "Sin conexión a internet";
+                    state.changed();
                 });
             }
         });
+    }
+
+    private String executeSearch(String query, String clients) throws Exception {
+        YoutubeDLRequest request = new YoutubeDLRequest("ytsearch8:" + query);
+        request.addOption("--flat-playlist");
+        request.addOption("--dump-json");
+        request.addOption("--socket-timeout", "12");
+        request.addOption("--retries", "2");
+        request.addOption("--extractor-retries", "2");
+        if (clients != null) request.addOption("--extractor-args", "youtube:player_client=" + clients);
+        return YoutubeDL.getInstance().execute(request).getOut();
     }
 
     private void rememberScreenState() {
@@ -910,6 +933,11 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private synchronized void startDownload(String targetUrl, String defaultTitle, String videoId) {
+        if (videoId != null && !videoId.isEmpty()) {
+            activeDownloadingVideoIds.add(videoId);
+            if (searchResultAdapter != null) searchResultAdapter.addDownloadingId(videoId);
+            if (songAdapter != null) songAdapter.setDownloadStarted(videoId);
+        }
         if (uiState.downloading) {
             downloadQueue.offer(new DownloadJob(targetUrl, defaultTitle, videoId));
             Toast.makeText(this, "Añadida a la cola de descargas", Toast.LENGTH_SHORT).show();
@@ -937,16 +965,13 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             request.addOption("--merge-output-format", "mp4");
         }
 
-        if (videoId != null && !videoId.isEmpty()) {
-            activeDownloadingVideoIds.add(videoId);
-            if (searchResultAdapter != null) searchResultAdapter.addDownloadingId(videoId);
-        }
-
         uiState.downloading = true;
         cardProgress.setVisibility(View.VISIBLE);
         progressBar.setProgress(0);
         txtStatus.setText(defaultTitle != null ? ("Descargando: " + defaultTitle) : "Iniciando descarga...");
         txtEta.setText("Conectando..."); publishDownloadState();
+        Toast.makeText(this, defaultTitle == null ? "Descarga iniciada" : "Descargando “" + defaultTitle + "”",
+                Toast.LENGTH_SHORT).show();
 
         DescargadorApp.IO.execute(() -> {
             try {
@@ -970,6 +995,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                         getSharedPreferences("downloaded_videos", MODE_PRIVATE).edit().putBoolean(videoId, true).apply();
                         activeDownloadingVideoIds.remove(videoId);
                         if (searchResultAdapter != null) searchResultAdapter.markDownloadCompleted(videoId);
+                        if (songAdapter != null) songAdapter.setDownloadFinished(videoId, true);
                     }
                     uiState.downloading = false; uiState.completedDownloads++; publishDownloadState();
                     startNextQueuedDownload();
@@ -982,9 +1008,12 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 runOnUiThread(() -> {
                     txtStatus.setText("Error al descargar");
                     txtEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : "Fallo en yt-dlp");
+                    Toast.makeText(this, "No se pudo descargar. Toca nuevamente o revisa YouTube.",
+                            Toast.LENGTH_LONG).show();
                     if (videoId != null && !videoId.isEmpty()) {
                         activeDownloadingVideoIds.remove(videoId);
                         if (searchResultAdapter != null) searchResultAdapter.removeDownloadingId(videoId);
+                        if (songAdapter != null) songAdapter.setDownloadFinished(videoId, false);
                     }
                     uiState.downloading = false; publishDownloadState();
                     startNextQueuedDownload();
