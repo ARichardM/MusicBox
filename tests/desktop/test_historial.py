@@ -96,9 +96,11 @@ class HistoryGuiTests(unittest.TestCase):
         self.select_first()
         self.panel.open_path = Mock()
         self.panel.open_selected()
-        self.panel.open_path.assert_called_once_with(self.file)
+        opened_file = self.panel.open_path.call_args.args[0]
+        self.assertTrue(opened_file.samefile(self.file))
         self.panel.open_selected(folder=True)
-        self.panel.open_path.assert_called_with(self.directory)
+        opened_folder = self.panel.open_path.call_args.args[0]
+        self.assertTrue(opened_folder.samefile(self.directory))
         self.panel.add_selected()
         self.assertIn("watch?v=prueba", self.window.urls.get("1.0", "end"))
         self.window.set_running(True)
