@@ -2,6 +2,8 @@
 
 ## Sin publicar
 
+- El cubo de la pantalla de inicio de sesión Android ahora flota suavemente y proyecta un aura de doble pulso.
+
 ## 2.2.2 — 24 de octubre de 2026
 
 - Inicio de sesión de Windows corregido con una configuración Firebase dedicada a escritorio.
