@@ -4,11 +4,11 @@ VSVersionInfo(
   kids=[StringFileInfo([StringTable('040904B0', [
     StringStruct('CompanyName', 'MusicBox'),
     StringStruct('FileDescription', 'MusicBox para Windows'),
-    StringStruct('FileVersion', '2.2.1'),
+    StringStruct('FileVersion', '2.2.2'),
     StringStruct('InternalName', 'MusicBox'),
     StringStruct('LegalCopyright', 'Copyright (c) 2026 Agustin Richard'),
     StringStruct('OriginalFilename', 'MusicBox.exe'),
     StringStruct('ProductName', 'MusicBox'),
-    StringStruct('ProductVersion', '2.2.1')
+    StringStruct('ProductVersion', '2.2.2')
   ])]), VarFileInfo([VarStruct('Translation', [1033, 1200])])]
 )

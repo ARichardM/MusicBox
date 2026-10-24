@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from app_paths import RESOURCE_ROOT
 
 OAUTH_FILE = RESOURCE_ROOT / "desktop_oauth_client.json"
-GOOGLE_SERVICES_FILE = RESOURCE_ROOT / "apps" / "android" / "app" / "google-services.json"
+FIREBASE_CONFIG_FILE = RESOURCE_ROOT / "desktop_firebase_config.json"
 GOOGLE_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -33,12 +33,13 @@ def _post_json(url, payload, headers=None, method="POST"):
 
 
 def _api_config():
-    config = json.loads(GOOGLE_SERVICES_FILE.read_text(encoding="utf-8"))
-    # La primera API key (índice 0) está restringida a Android y bloquea
-    # peticiones desde escritorio.  La segunda (índice 1) es la clave web.
-    keys = config["client"][0]["api_key"]
-    api_key = keys[1]["current_key"] if len(keys) > 1 else keys[0]["current_key"]
-    return config["project_info"]["project_id"], api_key
+    config = json.loads(FIREBASE_CONFIG_FILE.read_text(encoding="utf-8"))
+    project_id = str(config.get("project_id", "")).strip()
+    api_key = str(config.get("api_key", "")).strip()
+    if not project_id or not api_key:
+        raise RuntimeError(
+            "La configuración de Firebase para escritorio está incompleta.")
+    return project_id, api_key
 
 
 class FirebaseDesktopClient:
@@ -50,7 +51,7 @@ class FirebaseDesktopClient:
 
     @property
     def configured(self):
-        return OAUTH_FILE.is_file() and GOOGLE_SERVICES_FILE.is_file()
+        return OAUTH_FILE.is_file() and FIREBASE_CONFIG_FILE.is_file()
 
     def sign_in(self):
         from google_auth_oauthlib.flow import InstalledAppFlow

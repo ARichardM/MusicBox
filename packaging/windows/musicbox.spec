@@ -9,7 +9,7 @@ datas = [
     (str(desktop / "ui"), "apps/desktop/ui"),
     (str(desktop / "assets"), "apps/desktop/assets"),
     (str(repo / "desktop_oauth_client.json"), "."),
-    (str(repo / "apps" / "android" / "app" / "google-services.json"), "apps/android/app"),
+    (str(repo / "desktop_firebase_config.json"), "."),
     (str(repo / "ffmpeg.exe"), "."),
 ]
 binaries = []

@@ -62,7 +62,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe apps\desktop\musicbox_desktop.py
 ```
 
-Para usar inicio de sesión en una compilación propia debes proporcionar tus archivos locales de Firebase/OAuth. No se incluyen credenciales privadas en Git.
+Para usar inicio de sesión en una compilación propia debes proporcionar
+`desktop_oauth_client.json` y `desktop_firebase_config.json`. El segundo contiene
+`project_id` y una `api_key` dedicada a escritorio; no uses la clave Android de
+`google-services.json`. Estos archivos locales no se incluyen en Git.
 
 ## Compilar Android
 
@@ -95,8 +98,9 @@ Configura estos secretos en **Settings → Secrets and variables → Actions**:
 | `KEY_ALIAS` | Alias de la clave. |
 | `KEY_PASSWORD` | Contraseña de la clave. |
 | `DESKTOP_OAUTH_CLIENT_JSON_BASE64` | Cliente OAuth de escritorio codificado en Base64. |
+| `DESKTOP_FIREBASE_CONFIG_BASE64` | JSON de Firebase para escritorio (`project_id` y `api_key`) codificado en Base64. |
 
-Después crea una etiqueta como `v2.2.1`. GitHub generará una Release con ambos instaladores descargables desde los botones superiores.
+Después crea una etiqueta como `v2.2.2`. GitHub generará una Release con ambos instaladores descargables desde los botones superiores.
 
 ## Arquitectura
 

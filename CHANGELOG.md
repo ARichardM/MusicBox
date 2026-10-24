@@ -2,6 +2,11 @@
 
 ## Sin publicar
 
+## 2.2.2 — 24 de octubre de 2026
+
+- Inicio de sesión de Windows corregido con una configuración Firebase dedicada a escritorio.
+- Compilación protegida contra credenciales OAuth o Firebase incompletas y contra el uso accidental de la clave Android.
+
 ## 2.2.1 — 24 de octubre de 2026
 
 - Reorganización profesional del monorepo en `apps/`, `tests/`, `scripts/` y `legacy/`.

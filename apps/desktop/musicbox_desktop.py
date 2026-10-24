@@ -1275,7 +1275,7 @@ class MusicBoxBridge(QObject):
 
 def main():
     if "--version" in sys.argv:
-        print("MusicBox 2.2.1")
+        print("MusicBox 2.2.2")
         return 0
     if any(flag in sys.argv for flag in ("--worker", "--audio-worker", "--player-worker", "--songs-worker", "--classic")):
         return download_backend.run_cli()

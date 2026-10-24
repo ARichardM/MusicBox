@@ -21,18 +21,22 @@ jobs:
         shell: pwsh
         env:
           OAUTH_CONFIG: ${{ secrets.DESKTOP_OAUTH_CLIENT_JSON_BASE64 }}
-          GOOGLE_CONFIG: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          FIREBASE_CONFIG: ${{ secrets.DESKTOP_FIREBASE_CONFIG_BASE64 }}
         run: |
           if (-not $env:OAUTH_CONFIG) { throw "Falta DESKTOP_OAUTH_CLIENT_JSON_BASE64" }
-          if (-not $env:GOOGLE_CONFIG) { throw "Falta GOOGLE_SERVICES_JSON_BASE64" }
+          if (-not $env:FIREBASE_CONFIG) { throw "Falta DESKTOP_FIREBASE_CONFIG_BASE64" }
       - name: Preparar configuración pública
         shell: pwsh
         env:
           OAUTH_CONFIG: ${{ secrets.DESKTOP_OAUTH_CLIENT_JSON_BASE64 }}
-          GOOGLE_CONFIG: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          FIREBASE_CONFIG: ${{ secrets.DESKTOP_FIREBASE_CONFIG_BASE64 }}
         run: |
           [IO.File]::WriteAllBytes("desktop_oauth_client.json", [Convert]::FromBase64String($env:OAUTH_CONFIG))
-          [IO.File]::WriteAllBytes("apps/android/app/google-services.json", [Convert]::FromBase64String($env:GOOGLE_CONFIG))
+          [IO.File]::WriteAllBytes("desktop_firebase_config.json", [Convert]::FromBase64String($env:FIREBASE_CONFIG))
+          $oauth = Get-Content "desktop_oauth_client.json" -Raw | ConvertFrom-Json
+          if (-not $oauth.installed.client_id) { throw "El cliente OAuth no es de tipo escritorio" }
+          $firebase = Get-Content "desktop_firebase_config.json" -Raw | ConvertFrom-Json
+          if (-not $firebase.project_id -or -not $firebase.api_key) { throw "La configuración Firebase de escritorio está incompleta" }
       - name: Instalar herramientas verificadas
         shell: pwsh
         run: |
