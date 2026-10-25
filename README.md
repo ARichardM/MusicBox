@@ -28,12 +28,15 @@
 
 | Experiencia | Funciones |
 | --- | --- |
-| **Reproductor** | Audio y video, cola editable, repetición, reproducción aleatoria y cambio de canción mediante gestos. |
+| **Reproductor** | Audio y video, cola editable que se reordena arrastrando, indicador de origen, repetición, reproducción aleatoria y controles en la notificación. |
 | **Biblioteca** | Canciones locales, carpetas y playlists con portadas, búsqueda y estado de reproducción. |
 | **Playlists** | Nombre, descripción, menú de configuración y descarga automática de nuevas canciones. |
-| **Favoritos** | Una playlist especial y sincronizada; el corazón agrega o elimina canciones de ella. |
-| **Descargas** | MP3 o MP4, progreso, historial y archivos que permanecen en cada dispositivo. |
-| **Cuenta** | Inicio con Google, preferencias sincronizadas y listado de dispositivos asociados. |
+| **Favoritos** | Una playlist especial y sincronizada; las canciones se identifican por su ID de YouTube, así que no se duplican entre dispositivos. |
+| **Clics** | Contador de reproducciones por canción, carpeta y playlist, y estadísticas de tu cuenta. |
+| **Descargas** | MP3 o MP4, progreso real, historial, descarga automática de playlists y archivos que permanecen en cada dispositivo. |
+| **Cuenta** | Inicio con Google, preferencias sincronizadas, listado de dispositivos y desconexión remota. |
+| **Idiomas** | Español e inglés, según el idioma del sistema o el que elijas en Configuración. |
+| **Actualizaciones** | Aviso de versión nueva con sus novedades; en Windows se instala sola y verificada. |
 | **Diseño** | Tema claro/oscuro, dialogs adaptados, skeleton shimmer y diseño responsive. |
 
 ## Aplicaciones
@@ -100,7 +103,7 @@ Configura estos secretos en **Settings → Secrets and variables → Actions**:
 | `DESKTOP_OAUTH_CLIENT_JSON_BASE64` | Cliente OAuth de escritorio codificado en Base64. |
 | `DESKTOP_FIREBASE_CONFIG_BASE64` | JSON de Firebase para escritorio (`project_id` y `api_key`) codificado en Base64. |
 
-Después crea una etiqueta como `v2.2.2`. GitHub generará una Release con ambos instaladores descargables desde los botones superiores.
+Actualiza la versión (`version.py`, `build.gradle.kts`, `MusicBox.iss`) y la sección de [CHANGELOG.md](CHANGELOG.md); luego crea una etiqueta como `v2.3.0`. GitHub generará una Release con ambos instaladores y las novedades del changelog como notas.
 
 ## Arquitectura
 

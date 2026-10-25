@@ -1,41 +1,33 @@
 # Historial de versiones
 
-## Sin publicar
+## 2.3.0 — 25 de octubre de 2026
 
-- La cola de Windows se puede reordenar arrastrando el asa, quitar canciones, limpiar, guardar como playlist y muestra la canción actual y la siguiente; el menú de cada canción suma "Reproducir a continuación" y "Agregar a la cola".
-- Windows y Android identifican cada canción por su ID de YouTube: el archivo descargado y la entrada online se unen, ya no se duplican en las playlists y cada dispositivo reproduce desde su archivo cuando lo tiene.
-- Las playlists de Android se ven completas en Windows (título, portada y canal en lugar de "Canción online") y los favoritos quitados en un dispositivo ya no reaparecen.
-- La descarga automática de Windows revisa las playlists al abrir, al sincronizar y al activarla, y descarga lo que falta.
-- Las canciones de una carpeta de música muestran una carpeta en lugar de la marca de descarga; el contador de clics es una píldora discreta con audífonos.
-- El corazón y el menú de las canciones son más compactos y reaccionan con una animación; en Favoritos el corazón desmarcado deja la fila hasta salir de la lista.
-- La barra de desplazamiento de Android tiene un tamaño cómodo, la lista se mueve con más fluidez y se quitó el aviso inferior de descarga (queda el spinner de progreso).
-- Se quitó el botón de descarga del reproductor de Android y la cola ya no aparece expandida al subir el reproductor.
-- El panel Descargas de Windows reúne todo lo del sistema clásico: enlaces, formato y calidad, cola, progreso real, archivos, historial, registro, informe, búsqueda con portadas e importador por imágenes, texto o tabla.
-- El reproductor de Android indica desde dónde suena la canción (carpeta, playlist, canciones o búsqueda) y la cola se despliega deslizando hacia arriba, como en YouTube Music.
-- La notificación de reproducción de Android suma aleatorio, repetir y favorito.
-- La descarga automática de Android ahora revisa lo pendiente al activarla y al sincronizar, y el spinner de descarga muestra el progreso real.
-- Nuevos "clics" (reproducciones) junto a canciones, carpetas y playlists, y un apartado de Estadísticas en Configuración en Windows y Android.
-- Configuración permite elegir las carpetas de música de cada dispositivo (no se sincronizan): en Windows cualquier carpeta; en Android las carpetas de la memoria o tarjeta SD, o toda la música si no se elige ninguna.
-- El botón de inicio de sesión se adapta a pantallas grandes y a tipografías ampliadas, y los cortes de reproducción de YouTube se corrigieron con un buffer que descarga por adelantado ambas zonas del archivo.
-- Configuración renovada en Windows y Android: tarjetas redondeadas, avatar, apariencia (tema e idioma) y dispositivos, con animaciones y respuesta inmediata.
-- El cambio de tema se movió a Configuración; ya no hay un botón de tema en la pantalla principal ni en la barra lateral.
-- Desde Configuración se puede desconectar otro dispositivo: su sesión guardada se cierra en cuanto vuelve a conectarse (Android al instante, Windows en menos de un minuto).
-- MusicBox funciona en español e inglés en Windows y Android: sigue el idioma del sistema y se puede cambiar desde Configuración, sin reiniciar en escritorio.
-- El retorno del inicio de sesión de Google en Windows se muestra como una página de MusicBox en lugar de código HTML.
-- La reproducción y la búsqueda de YouTube en escritorio prueban clientes alternativos, validan el enlace de audio y, si el reproductor lo rechaza, reproducen una copia en caché.
-- Windows y Android avisan cuando hay una versión nueva con una hoja "Nueva versión disponible" que muestra las novedades de la publicación.
-- En Windows la actualización se descarga dentro de la app, se verifica con SHA-256, se instala en silencio y MusicBox se reabre sola.
-- En Android la hoja de novedades lleva a la descarga del APK publicado; las compilaciones de pruebas no la muestran.
-- Windows adopta los avisos propios de MusicBox para errores de búsqueda, reproducción y descarga, con texto completo y acción de reintento.
-- Las descargas automáticas de escritorio ya no se pierden cuando hay otra en curso: quedan en cola y siguen una tras otra.
-- La caja animada del inicio de sesión de escritorio se mueve siempre, con aura, y el indicador de descarga completada aparece con rebote elástico.
-- El inicio de sesión reutiliza exactamente la caja animada de la pantalla de carga, con su onda, rebote y aura sincronizados.
-- El arranque de Android tiene fondo e icono propios y enlaza visualmente con la animación fluida de MusicBox.
-- La búsqueda y la reproducción online reintentan con clientes alternativos de YouTube y validan el audio antes de reproducirlo.
-- El extractor de YouTube se actualiza periódicamente cuando hay conexión, conservando la versión incluida si la actualización falla.
-- Las descargas automáticas muestran su spinner tanto en los resultados como dentro de la playlist, incluidos los elementos en cola.
-- Al completar una descarga aparece el indicador guardado con una animación elástica; los errores ahora muestran un aviso visible.
-- Los errores de reproducción y descarga usan avisos propios de MusicBox, con texto completo, posición segura y acción de reintento.
+### Novedades en Windows y Android
+
+- **Canciones con identidad propia.** Cada canción se identifica por su ID de YouTube: el archivo descargado y la entrada online se unen, ya no se duplican en las playlists y cada dispositivo reproduce desde su archivo cuando lo tiene.
+- **Clics.** Contador discreto de reproducciones en canciones, carpetas y playlists, compartido entre dispositivos, y un apartado de Estadísticas en Configuración.
+- **Español e inglés.** Siguen el idioma del sistema y se pueden cambiar desde Configuración, sin reiniciar en escritorio.
+- **Configuración renovada.** Tarjetas redondeadas, tema e idioma, carpetas de música por dispositivo y desconexión remota de otros dispositivos.
+- **Actualizaciones automáticas.** Una hoja "Nueva versión disponible" muestra las novedades; en Windows la descarga se verifica con SHA-256, se instala en silencio y MusicBox se reabre sola.
+- **Marca de origen.** Las canciones de una carpeta muestran una carpeta; las descargadas por MusicBox, la marca de descarga.
+- **YouTube más robusto.** Clientes alternativos, validación del enlace de audio y extractor que se actualiza solo.
+
+### Windows
+
+- Panel **Descargas** completo: enlaces, formato y calidad, cola, progreso real, archivos, historial, registro, informe, búsqueda con portadas e importador por imágenes, texto o tabla.
+- La **cola** se reordena arrastrando, permite quitar canciones, limpiar y guardar como playlist; el menú de cada canción suma "Reproducir a continuación" y "Agregar a la cola".
+- Las playlists de Android se ven completas (título, portada y canal) y los favoritos quitados en otro dispositivo ya no reaparecen.
+- La descarga automática revisa las playlists al abrir, al sincronizar y al activarla.
+- Avisos de error integrados con el diseño de MusicBox, con reintento.
+
+### Android
+
+- El reproductor indica **desde dónde suena** la canción y la cola se despliega deslizando hacia arriba, como en YouTube Music.
+- La notificación suma aleatorio, repetir y favorito.
+- Descarga automática que revisa lo pendiente, spinner de progreso real y sin la tarjeta inferior que tapaba la lista.
+- Reproducción sin cortes con un buffer por adelantado y spinner de carga compacto.
+- Lista más fluida, barra de desplazamiento de tamaño cómodo, corazón y menú compactos con animación; en Favoritos el corazón desmarcado deja la fila hasta salir de la lista.
+- Botón de inicio de sesión adaptable a tablets y se quitó el botón de descarga del reproductor.
 
 ## 2.2.2 — 24 de octubre de 2026
 

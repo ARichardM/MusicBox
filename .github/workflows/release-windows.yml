@@ -65,11 +65,18 @@ jobs:
           $file = "dist/installer/MusicBox-Windows-Setup.exe"
           $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  MusicBox-Windows-Setup.exe" | Set-Content "dist/installer/MusicBox-Windows-Setup.exe.sha256" -Encoding ascii
+      - name: Preparar notas de la versión
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{p = index($0, "## " v " ") == 1; next} p' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "Falta la sección $version en CHANGELOG.md"; exit 1; }
       - name: Adjuntar a GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/installer/MusicBox-Windows-Setup.exe
             dist/installer/MusicBox-Windows-Setup.exe.sha256
-          generate_release_notes: true
+          body_path: release-notes.md
           fail_on_unmatched_files: true

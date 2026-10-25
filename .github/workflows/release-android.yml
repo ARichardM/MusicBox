@@ -47,9 +47,16 @@ jobs:
       - name: Preparar descarga
         shell: bash
         run: cp app/build/outputs/apk/release/app-release.apk ../../MusicBox-Android.apk
+      - name: Preparar notas de la versión
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{p = index($0, "## " v " ") == 1; next} p' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "Falta la sección $version en CHANGELOG.md"; exit 1; }
       - name: Crear GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: MusicBox-Android.apk
-          generate_release_notes: true
+          body_path: release-notes.md
           fail_on_unmatched_files: true
