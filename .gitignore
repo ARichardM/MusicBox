@@ -53,3 +53,7 @@ datos/
 
 # Transcripción local de la sesión; los cambios públicos están en CHANGELOG.md.
 /cambios_musica_22_10_2026.txt
+
+# Archivos locales del editor y capturas de trabajo
+.idea/
+attachments/
