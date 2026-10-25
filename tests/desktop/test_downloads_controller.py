@@ -147,7 +147,7 @@ class DownloadsControllerTests(unittest.TestCase):
             self.controller.historySearchFor("cerati")
             self.assertTrue(spin(lambda: [r["title"] for r in self.controller.historyRows] == ["Crimen · Cerati"]))
             self.controller.historyOpen(self.controller.historyRows[0]["id"], True)
-            self.assertEqual(opened, [str(Path(folder))])
+            self.assertEqual([Path(item).resolve() for item in opened], [Path(folder).resolve()])
             self.controller.historyQueue(self.controller.historyRows[0]["id"])
             self.assertIn("https://youtu.be/a", self.controller.links)
 
