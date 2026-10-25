@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 28, application = Application.class)
+@Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class LibraryNavigationTest {
     private Context context;
     @Before public void setup() throws Exception {

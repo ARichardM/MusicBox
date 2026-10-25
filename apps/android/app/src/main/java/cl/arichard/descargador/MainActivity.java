@@ -90,7 +90,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private View tabSearch, tabLibrary;
 
     // Search Tab Views
-    private ImageView btnThemeToggle, btnAccount, btnPaste, btnClearSearch;
+    private ImageView btnAccount, btnPaste, btnClearSearch;
     private EditText inputSearch;
     private TextView txtSearchStatus, txtSearchHint;
     // Discovery Views
@@ -136,7 +136,11 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private TextView txtSelectionCount, btnSelectAll, btnAddToPlaylistBulk;
     private final List<Song> allSongs = new ArrayList<>();
     private final Set<String> activeDownloadingVideoIds = new HashSet<>();
+    /** Videos already attempted by auto-download in this session, so a failure is not retried in a loop. */
+    private final Set<String> autoAttempted = new HashSet<>();
     private int currentLibraryMode = 0; // 0=Songs, 1=Favorites, 2=Folders, 3=Playlists
+    /** Songs un-hearted while Favoritos is open stay listed (to undo a stray tap) until the user leaves the list. */
+    private final java.util.Map<String, Object[]> heldFavorites = new java.util.LinkedHashMap<>();
     private boolean isViewingSubList = false;
     private String currentSubListName = "";
     private boolean libraryReady, changingLibrary;
@@ -205,6 +209,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private boolean miniMotionRunning;
     private TextView txtMiniTitle, txtMiniArtist;
     private ImageView btnMiniPlayPause, btnMiniNext;
+    private cl.arichard.descargador.util.LoadingRingView miniLoadingRing;
     private ProgressBar miniProgress;
 
     @Override
@@ -220,6 +225,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             finish(); return;
         }
         uiState = new androidx.lifecycle.ViewModelProvider(this).get(MainUiState.class);
+        if (!testRuntime) cl.arichard.descargador.util.UpdateChecker.check(this);
         downloadQueue = uiState.downloads; searchCache = uiState.cache; isMp3 = uiState.isMp3;
         allSongs.addAll(uiState.library);
         setContentView(R.layout.activity_main);
@@ -286,7 +292,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         tabLibrary = findViewById(R.id.tabLibrary);
 
         // Search Tab
-        btnThemeToggle = findViewById(R.id.btnThemeToggle);
         btnAccount = findViewById(R.id.btnAccount);
         inputSearch = findViewById(R.id.inputSearch);
         btnClearSearch = findViewById(R.id.btnClearSearch);
@@ -295,6 +300,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             @Override public void onTextChanged(CharSequence text, int start, int before, int count) {
                 uiState.searchQuery = text.toString();
                 btnClearSearch.setVisibility(text.length() == 0 ? View.GONE : View.VISIBLE);
+                scheduleLiveSearch(text.toString().trim());
             }
             @Override public void afterTextChanged(Editable text) {}
         });
@@ -348,16 +354,16 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 if (!checked) {
                     switchLibraryAutoDownload.setChecked(true);
                     new MaterialAlertDialogBuilder(this)
-                            .setTitle("¿Desactivar descarga automática?")
-                            .setMessage("Si desactivas la auto-descarga, las canciones nuevas no se descargarán automáticamente al agregarse.\nLas ya descargadas se mantendrán.")
-                            .setPositiveButton("Desactivar", (dialog, which) -> {
+                            .setTitle(cl.arichard.descargador.util.Tr.t("¿Desactivar descarga automática?"))
+                            .setMessage(cl.arichard.descargador.util.Tr.t("Si desactivas la auto-descarga, las canciones nuevas no se descargarán automáticamente al agregarse.\nLas ya descargadas se mantendrán."))
+                            .setPositiveButton(cl.arichard.descargador.util.Tr.t("Desactivar"), (dialog, which) -> {
                                 switchLibraryAutoDownload.setChecked(false);
                                 PlaylistManager.getInstance(this).setAutoDownloadEnabled(targetKey, false);
                             })
-                            .setNegativeButton("Cancelar", null)
+                            .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
                             .show();
                 } else {
-                    PlaylistManager.getInstance(this).setAutoDownloadEnabled(targetKey, true);
+                    enableAutoDownload(targetKey, null);
                 }
             });
         }
@@ -413,9 +419,38 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         txtMiniTitle = findViewById(R.id.txtMiniTitle);
         txtMiniArtist = findViewById(R.id.txtMiniArtist);
         btnMiniPlayPause = findViewById(R.id.btnMiniPlayPause);
+        miniLoadingRing = findViewById(R.id.miniLoadingRing);
         btnMiniNext = findViewById(R.id.btnMiniNext);
         miniProgress = findViewById(R.id.miniProgress);
         imgMiniCover = findViewById(R.id.imgMiniCover);
+    }
+
+    private final android.os.Handler liveSearchHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable pendingLiveSearch;
+
+    /** Searches while typing: waits for a short pause so each letter doesn't launch a yt-dlp process. */
+    private void scheduleLiveSearch(String query) {
+        if (pendingLiveSearch != null) liveSearchHandler.removeCallbacks(pendingLiveSearch);
+        pendingLiveSearch = null;
+        // Only react to the user typing; programmatic setText (state restore, clear) has no focus
+        if (!inputSearch.hasFocus()) return;
+        if (query.isEmpty()) {
+            ++uiState.searchGeneration;
+            uiState.results = new ArrayList<>();
+            uiState.resultsVisible = false;
+            uiState.searchLoading = false;
+            uiState.searchStatus = "";
+            uiState.changed();
+            return;
+        }
+        if (query.length() < 2 || YOUTUBE.matcher(query).find()
+                || query.startsWith("http://") || query.startsWith("https://")) return;
+        pendingLiveSearch = () -> {
+            if (!query.equals(inputSearch.getText().toString().trim())) return;
+            if (containerSearchDiscovery != null) containerSearchDiscovery.setVisibility(View.GONE);
+            performYoutubeSearch(query);
+        };
+        liveSearchHandler.postDelayed(pendingLiveSearch, 450);
     }
 
     private void clearSearch() {
@@ -452,26 +487,16 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     @Override public void onCancel() { settleTabs(); }
                 });
 
-        // Theme Toggle
-        btnThemeToggle.setOnClickListener(v -> {
-            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-            boolean currentlyDark = prefs.getBoolean(KEY_DARK_MODE, true);
-            boolean newDark = !currentlyDark;
-            rememberScreenState(); saveLibraryNavigation();
-            prefs.edit().putBoolean(KEY_DARK_MODE, newDark).apply();
-            if (cloudSync != null) cloudSync.scheduleUpload();
-            AppCompatDelegate.setDefaultNightMode(newDark ? AppCompatDelegate.MODE_NIGHT_YES : AppCompatDelegate.MODE_NIGHT_NO);
-        });
         btnAccount.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
     }
 
     private void showAccountDialog() {
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-        String name = user != null && user.getDisplayName() != null ? user.getDisplayName() : "Cuenta de Google";
+        String name = user != null && user.getDisplayName() != null ? user.getDisplayName() : cl.arichard.descargador.util.Tr.t("Cuenta de Google");
         String email = user != null && user.getEmail() != null ? user.getEmail() : "";
         new MaterialAlertDialogBuilder(this).setTitle(name).setMessage(email)
-                .setNegativeButton("Cancelar", null)
-                .setPositiveButton("Cerrar sesión", (dialog, which) -> {
+                .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
+                .setPositiveButton(cl.arichard.descargador.util.Tr.t("Cerrar sesión"), (dialog, which) -> {
                     FirebaseAuth.getInstance().signOut();
                     startActivity(new Intent(this, LoginActivity.class)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
@@ -541,16 +566,16 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             @Override
             public void onAddClick(SearchResult result, View anchor) {
                 PopupMenu menu = new PopupMenu(MainActivity.this, anchor);
-                menu.getMenu().add("Agregar a playlist").setOnMenuItemClickListener(item -> {
+                menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setOnMenuItemClickListener(item -> {
                     showAddOnlineToPlaylistDialog(result); return true;
                 });
                 Song song = new Song(0, result.getTitle(), result.getChannel(), "YouTube", result.getDurationSeconds() * 1000L,
                         "youtube:" + result.getId(), "YouTube", 0);
-                menu.getMenu().add("Reproducir después").setOnMenuItemClickListener(item -> {
-                    PlayerManager.getInstance().enqueue(song, true); Toast.makeText(MainActivity.this, "Agregada a continuación", Toast.LENGTH_SHORT).show(); return true;
+                menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir después")).setOnMenuItemClickListener(item -> {
+                    PlayerManager.getInstance().enqueue(song, true); Toast.makeText(MainActivity.this, cl.arichard.descargador.util.Tr.t("Agregada a continuación"), Toast.LENGTH_SHORT).show(); return true;
                 });
-                menu.getMenu().add("Agregar a la cola").setOnMenuItemClickListener(item -> {
-                    PlayerManager.getInstance().enqueue(song, false); Toast.makeText(MainActivity.this, "Agregada a la cola", Toast.LENGTH_SHORT).show(); return true;
+                menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
+                    PlayerManager.getInstance().enqueue(song, false); Toast.makeText(MainActivity.this, cl.arichard.descargador.util.Tr.t("Agregada a la cola"), Toast.LENGTH_SHORT).show(); return true;
                 });
                 menu.show();
             }
@@ -579,6 +604,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             boolean isEnter = (event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER && event.getAction() == android.view.KeyEvent.ACTION_DOWN);
             if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE || isEnter) {
                 hideKeyboard();
+                if (pendingLiveSearch != null) liveSearchHandler.removeCallbacks(pendingLiveSearch);
                 String query = inputSearch.getText().toString().trim();
                 if (!query.isEmpty()) triggerSearchOrDownload(query);
                 return true;
@@ -587,7 +613,16 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
     }
 
+    /** Remembers which list the song being played belongs to, for the "Reproduciendo desde" label. */
+    private void rememberPlaybackSource() {
+        PlayerManager player = PlayerManager.getInstance();
+        if (isViewingSubList && currentLibraryMode == 3) player.setPlaybackSource("playlist", currentSubListName);
+        else if (isViewingSubList && currentLibraryMode == 2) player.setPlaybackSource("folder", currentSubListName);
+        else player.setPlaybackSource("songs", "");
+    }
+
     private void playOnlineResult(SearchResult result, boolean openPlayer) {
+        PlayerManager.getInstance().setPlaybackSource("search", "");
                 PlayerManager.getInstance().playOnline(
                     result.getId(),
                     result.getTitle(),
@@ -668,15 +703,13 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         SearchHistoryManager history = SearchHistoryManager.getInstance(this);
         List<CollectionRank> ranked = new ArrayList<>();
         for (Map.Entry<String, List<Song>> entry : MusicScanner.groupByFolder(allSongs).entrySet()) {
-            int plays = 0;
-            for (Song song : entry.getValue()) plays += history.getPlayCount(song.getPath());
+            int plays = cl.arichard.descargador.data.ClickStats.getInstance(this).count(entry.getValue());
             if (plays > 0) ranked.add(new CollectionRank(entry.getKey(), false, entry.getValue(), plays));
         }
         PlaylistManager playlists = PlaylistManager.getInstance(this);
         for (String name : playlists.getPlaylistNames()) {
             List<Song> songs = playlists.resolveSongs(name, allSongs);
-            int plays = 0;
-            for (Song song : songs) plays += history.getPlayCount(song.getPath());
+            int plays = cl.arichard.descargador.data.ClickStats.getInstance(this).count(songs);
             if (plays > 0) ranked.add(new CollectionRank(name, true, songs, plays));
         }
         ranked.sort((a, b) -> {
@@ -700,8 +733,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             ((cl.arichard.descargador.util.CoverCollageView) card.findViewById(R.id.folderCollage)).setSongs(item.songs);
             ((TextView) card.findViewById(R.id.txtFolderName)).setText(item.name);
             ((TextView) card.findViewById(R.id.txtFolderSongCount)).setText(
-                    (item.playlist ? "Playlist" : "Carpeta") + " • " + item.plays
-                            + (item.plays == 1 ? " reproducción" : " reproducciones"));
+                    (item.playlist ? cl.arichard.descargador.util.Tr.t("Playlist") : cl.arichard.descargador.util.Tr.t("Carpeta")) + " • " + item.plays
+                            + (item.plays == 1 ? cl.arichard.descargador.util.Tr.t(" reproducción") : cl.arichard.descargador.util.Tr.t(" reproducciones")));
             card.setOnClickListener(v -> {
                 switchTab(false);
                 setLibraryMode(item.playlist ? 2 : 1);
@@ -769,6 +802,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             card.addView(txtA);
 
             card.setOnClickListener(v -> {
+                PlayerManager.getInstance().setPlaybackSource("songs", "");
                 PlayerManager.getInstance().playSong(s, Collections.singletonList(s));
                 startActivity(new Intent(MainActivity.this, NowPlayingActivity.class));
             });
@@ -808,6 +842,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             itemView.findViewById(R.id.songActionZone).setVisibility(View.GONE);
 
             itemView.setOnClickListener(v -> {
+                PlayerManager.getInstance().setPlaybackSource("songs", "");
                 PlayerManager.getInstance().playSong(s, allSongs);
                 startActivity(new Intent(MainActivity.this, NowPlayingActivity.class));
             });
@@ -838,16 +873,19 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         uiState.results = cached == null ? new ArrayList<>() : new ArrayList<>(cached);
         uiState.resultsVisible = cached != null && !cached.isEmpty();
         uiState.searchLoading = cached == null;
-        uiState.searchStatus = cached != null ? cached.size() + " resultados" : "Buscando en YouTube...";
+        uiState.searchStatus = cached != null ? cached.size() + cl.arichard.descargador.util.Tr.t(" resultados") : cl.arichard.descargador.util.Tr.t("Buscando en YouTube...");
         uiState.changed();
         if (cached != null) return;
         MainUiState state = uiState;
         DescargadorApp.IO.execute(() -> {
             List<SearchResult> results = new ArrayList<>();
             try {
+                try { results.addAll(searchInnerTube(query)); }
+                catch (Exception fast) { android.util.Log.w("MusicBoxSearch", "InnerTube falló; usando yt-dlp", fast); }
+                if (results.isEmpty()) {
                 DescargadorApp app = (DescargadorApp) getApplication();
                 if (!app.awaitReady(20)) throw new IllegalStateException(
-                        app.getInitError() == null ? "El buscador todavía se está preparando" : app.getInitError());
+                        app.getInitError() == null ? cl.arichard.descargador.util.Tr.t("El buscador todavía se está preparando") : app.getInitError());
                 String out;
                 try {
                     out = executeSearch(query, null);
@@ -861,15 +899,16 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     if (!line.startsWith("{")) continue;
                     try {
                         JSONObject json = new JSONObject(line); String id = json.optString("id", "");
-                        if (!id.isEmpty()) results.add(new SearchResult(id, json.optString("title", "Sin t\u00edtulo"),
+                        if (!id.isEmpty()) results.add(new SearchResult(id, json.optString("title", cl.arichard.descargador.util.Tr.t("Sin t\u00edtulo")),
                                 json.optString("uploader", json.optString("channel", "YouTube")), json.optLong("duration", 0),
                                 "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg", "https://www.youtube.com/watch?v=" + id));
                     } catch (Exception ignored) {}
                 }
+                }
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                     if (state.searchGeneration != generation) return;
                     state.searchLoading = false; state.results = new ArrayList<>(results); state.resultsVisible = !results.isEmpty();
-                    state.searchStatus = results.isEmpty() ? "No se encontraron resultados" : results.size() + " resultados";
+                    state.searchStatus = results.isEmpty() ? cl.arichard.descargador.util.Tr.t("No se encontraron resultados") : results.size() + cl.arichard.descargador.util.Tr.t(" resultados");
                     state.cache.put(query.toLowerCase(java.util.Locale.ROOT), new ArrayList<>(results)); state.changed();
                 });
             } catch (Exception error) {
@@ -877,12 +916,66 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     if (state.searchGeneration != generation) return;
                     state.searchLoading = false;
                     state.searchStatus = ((DescargadorApp) getApplication()).hasNetwork()
-                            ? "YouTube no respondió. Toca buscar para reintentar"
-                            : "Sin conexión a internet";
+                            ? cl.arichard.descargador.util.Tr.t("YouTube no respondió. Toca buscar para reintentar")
+                            : cl.arichard.descargador.util.Tr.t("Sin conexión a internet");
                     state.changed();
                 });
             }
         });
+    }
+
+    /** Fast search through YouTube's internal web endpoint (~0.5 s vs several seconds for yt-dlp). */
+    private List<SearchResult> searchInnerTube(String query) throws Exception {
+        JSONObject client = new JSONObject().put("clientName", "WEB").put("clientVersion", "2.20250101.00.00")
+                .put("hl", "es").put("gl", "CL");
+        JSONObject body = new JSONObject().put("context", new JSONObject().put("client", client))
+                .put("query", query).put("params", "EgIQAQ%3D%3D");
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+                new java.net.URL("https://www.youtube.com/youtubei/v1/search?prettyPrint=false").openConnection();
+        try {
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(8000);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
+            conn.getOutputStream().write(body.toString().getBytes("UTF-8"));
+            if (conn.getResponseCode() != 200) throw new java.io.IOException("HTTP " + conn.getResponseCode());
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream in = conn.getInputStream()) {
+                byte[] chunk = new byte[8192]; int n;
+                while ((n = in.read(chunk)) > 0) buf.write(chunk, 0, n);
+            }
+            org.json.JSONArray sections = new JSONObject(buf.toString("UTF-8")).getJSONObject("contents")
+                    .getJSONObject("twoColumnSearchResultsRenderer").getJSONObject("primaryContents")
+                    .getJSONObject("sectionListRenderer").getJSONArray("contents");
+            List<SearchResult> found = new ArrayList<>();
+            for (int i = 0; i < sections.length(); i++) {
+                org.json.JSONObject section = sections.getJSONObject(i).optJSONObject("itemSectionRenderer");
+                if (section == null) continue;
+                org.json.JSONArray items = section.optJSONArray("contents");
+                if (items == null) continue;
+                for (int j = 0; j < items.length() && found.size() < 8; j++) {
+                    JSONObject v = items.getJSONObject(j).optJSONObject("videoRenderer");
+                    if (v == null) continue;
+                    String id = v.optString("videoId", "");
+                    if (id.isEmpty()) continue;
+                    String title = v.getJSONObject("title").getJSONArray("runs").getJSONObject(0).optString("text", "");
+                    JSONObject owner = v.optJSONObject("ownerText");
+                    String channel = owner == null ? "YouTube" : owner.getJSONArray("runs").getJSONObject(0).optString("text", "YouTube");
+                    long seconds = 0;
+                    JSONObject length = v.optJSONObject("lengthText");
+                    if (length != null) for (String part : length.optString("simpleText", "0").split(":"))
+                        seconds = seconds * 60 + Long.parseLong(part.trim());
+                    found.add(new SearchResult(id, title.isEmpty() ? cl.arichard.descargador.util.Tr.t("Sin título") : title,
+                            channel, seconds, "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg",
+                            "https://www.youtube.com/watch?v=" + id));
+                }
+            }
+            return found;
+        } finally {
+            conn.disconnect();
+        }
     }
 
     private String executeSearch(String query, String clients) throws Exception {
@@ -940,7 +1033,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
         if (uiState.downloading) {
             downloadQueue.offer(new DownloadJob(targetUrl, defaultTitle, videoId));
-            Toast.makeText(this, "Añadida a la cola de descargas", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -966,30 +1058,33 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
 
         uiState.downloading = true;
-        cardProgress.setVisibility(View.VISIBLE);
+        // Progress is shown by the spinner on each song; the old bottom card covered the list.
         progressBar.setProgress(0);
-        txtStatus.setText(defaultTitle != null ? ("Descargando: " + defaultTitle) : "Iniciando descarga...");
-        txtEta.setText("Conectando..."); publishDownloadState();
-        Toast.makeText(this, defaultTitle == null ? "Descarga iniciada" : "Descargando “" + defaultTitle + "”",
-                Toast.LENGTH_SHORT).show();
+        txtStatus.setText(defaultTitle != null ? (cl.arichard.descargador.util.Tr.t("Descargando: ") + defaultTitle) : cl.arichard.descargador.util.Tr.t("Iniciando descarga..."));
+        txtEta.setText(cl.arichard.descargador.util.Tr.t("Conectando...")); publishDownloadState();
 
         DescargadorApp.IO.execute(() -> {
             try {
                 YoutubeDL.getInstance().execute(request, "mobile-dl", (percent, eta, line) -> {
                     runOnUiThread(() -> {
                         int p = Math.round(percent);
+                        if (videoId != null && !videoId.isEmpty()) {
+                            float fraction = p > 0 ? p / 100f : -1f;
+                            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, fraction);
+                            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, fraction);
+                        }
                         progressBar.setProgress(p);
-                        txtStatus.setText("Descargando " + p + "%");
-                        txtEta.setText("Faltan aprox. " + eta + " s"); publishDownloadState();
+                        txtStatus.setText(cl.arichard.descargador.util.Tr.t("Descargando ") + p + "%");
+                        txtEta.setText(cl.arichard.descargador.util.Tr.f("Faltan aprox. %d s", (long) eta)); publishDownloadState();
                     });
                     return kotlin.Unit.INSTANCE;
                 });
 
                 runOnUiThread(() -> {
                     progressBar.setProgress(100);
-                    txtStatus.setText("¡Descarga completada con éxito!");
-                    txtEta.setText("Guardado en Descargas/Descargador");
-                    Toast.makeText(this, "Guardado en tu biblioteca", Toast.LENGTH_SHORT).show();
+                    txtStatus.setText(cl.arichard.descargador.util.Tr.t("¡Descarga completada con éxito!"));
+                    txtEta.setText(cl.arichard.descargador.util.Tr.t("Guardado en Descargas/Descargador"));
+                    Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Guardado en tu biblioteca"), Toast.LENGTH_SHORT).show();
                     StorageUtil.scanFile(this, dir);
                     if (videoId != null && !videoId.isEmpty()) {
                         getSharedPreferences("downloaded_videos", MODE_PRIVATE).edit().putBoolean(videoId, true).apply();
@@ -1006,10 +1101,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    txtStatus.setText("Error al descargar");
-                    txtEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : "Fallo en yt-dlp");
+                    txtStatus.setText(cl.arichard.descargador.util.Tr.t("Error al descargar"));
+                    txtEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : cl.arichard.descargador.util.Tr.t("Fallo en yt-dlp"));
                     cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.bottomBarArea),
-                            "No pudimos guardar esta canción. Comprueba la conexión e inténtalo nuevamente.");
+                            cl.arichard.descargador.util.Tr.t("No pudimos guardar esta canción. Comprueba la conexión e inténtalo nuevamente."));
                     if (videoId != null && !videoId.isEmpty()) {
                         activeDownloadingVideoIds.remove(videoId);
                         if (searchResultAdapter != null) searchResultAdapter.removeDownloadingId(videoId);
@@ -1039,42 +1134,42 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         for (String key : getSharedPreferences("downloaded_videos", MODE_PRIVATE).getAll().keySet()) ids.add(key);
         searchResultAdapter.setDownloadedIds(ids);
         Set<String> titles = new HashSet<>();
-        for (Song song : allSongs) {
-            titles.add(java.text.Normalizer.normalize(song.getTitle(), java.text.Normalizer.Form.NFD)
-                    .replaceAll("\\p{M}", "").replaceAll("[^a-zA-Z0-9]", "").toLowerCase());
-        }
+        for (Song song : allSongs) titles.add(titleKey(song.getTitle()));
         searchResultAdapter.setDownloadedTitles(titles);
     }
 
     private void showAddOnlineToPlaylistDialog(SearchResult result) {
         List<String> names = PlaylistManager.getInstance(this).getPlaylistNames();
         String[] arr = names.toArray(new String[0]);
-        new MaterialAlertDialogBuilder(this).setTitle("Agregar a playlist").setItems(arr, (d, which) -> {
+        String[] shown = new String[arr.length];
+        for (int i = 0; i < arr.length; i++) shown[i] = cl.arichard.descargador.util.Tr.name(arr[i]);
+        new MaterialAlertDialogBuilder(this).setTitle(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setItems(shown, (d, which) -> {
             String selected = arr[which];
             PlaylistManager manager = PlaylistManager.getInstance(this);
             boolean added = manager.addOnlineTrack(selected, result);
-            Toast.makeText(this, added ? "Agregada a " + selected : "Ya estaba en " + selected, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, added ? cl.arichard.descargador.util.Tr.t("Agregada a ") + selected : cl.arichard.descargador.util.Tr.t("Ya estaba en ") + selected, Toast.LENGTH_SHORT).show();
             searchResultAdapter.notifyDataSetChanged();
-        }).setNegativeButton("Cancelar", null).show();
+        }).setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null).show();
     }
 
     private void showPlaylistSettingsMenu(String name, View anchor) {
         PlaylistManager manager = PlaylistManager.getInstance(this);
         PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add("Editar nombre y descripción").setOnMenuItemClickListener(item -> {
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Editar nombre y descripción")).setOnMenuItemClickListener(item -> {
             showEditPlaylistDialog(name); return true;
         });
         boolean auto = manager.isAutoDownloadEnabled(name);
-        menu.getMenu().add(auto ? "Desactivar descarga automática" : "Activar descarga automática")
+        menu.getMenu().add(auto ? cl.arichard.descargador.util.Tr.t("Desactivar descarga automática") : cl.arichard.descargador.util.Tr.t("Activar descarga automática"))
                 .setOnMenuItemClickListener(item -> {
-                    manager.setAutoDownloadEnabled(name, !auto);
-                    refreshPlaylistsView(); return true;
+                    if (auto) { manager.setAutoDownloadEnabled(name, false); refreshPlaylistsView(); }
+                    else enableAutoDownload(name, this::refreshPlaylistsView);
+                    return true;
                 });
-        if (!"Favoritos".equals(name)) menu.getMenu().add("Eliminar playlist").setOnMenuItemClickListener(item -> {
-            new MaterialAlertDialogBuilder(this).setTitle("Eliminar playlist")
-                    .setMessage("¿Eliminar \"" + name + "\"? Las canciones descargadas se conservarán.")
-                    .setNegativeButton("Cancelar", null)
-                    .setPositiveButton("Eliminar", (dialog, which) -> {
+        if (!"Favoritos".equals(name)) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar playlist")).setOnMenuItemClickListener(item -> {
+            new MaterialAlertDialogBuilder(this).setTitle(cl.arichard.descargador.util.Tr.t("Eliminar playlist"))
+                    .setMessage(cl.arichard.descargador.util.Tr.t("¿Eliminar \"") + name + cl.arichard.descargador.util.Tr.t("\"? Las canciones descargadas se conservarán."))
+                    .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
+                    .setPositiveButton(cl.arichard.descargador.util.Tr.t("Eliminar"), (dialog, which) -> {
                         manager.deletePlaylist(name); refreshPlaylistsView();
                     }).show();
             return true;
@@ -1089,18 +1184,18 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         int pad = Math.round(20 * getResources().getDisplayMetrics().density);
         fields.setPadding(pad, 0, pad, 0);
         EditText name = new EditText(this);
-        name.setHint("Nombre"); name.setSingleLine(true); name.setText(oldName);
+        name.setHint(cl.arichard.descargador.util.Tr.t("Nombre")); name.setSingleLine(true); name.setText(oldName);
         name.setEnabled(!"Favoritos".equals(oldName));
         EditText description = new EditText(this);
-        description.setHint("Descripción opcional"); description.setMaxLines(3);
+        description.setHint(cl.arichard.descargador.util.Tr.t("Descripción opcional")); description.setMaxLines(3);
         description.setText(manager.getDescription(oldName));
         fields.addView(name); fields.addView(description);
-        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle("Configurar playlist")
-                .setView(fields).setNegativeButton("Cancelar", null).setPositiveButton("Guardar", null).create();
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(cl.arichard.descargador.util.Tr.t("Configurar playlist"))
+                .setView(fields).setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null).setPositiveButton(cl.arichard.descargador.util.Tr.t("Guardar"), null).create();
         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
             String updated = name.getText().toString().trim();
             if (!manager.updatePlaylistDetails(oldName, updated, description.getText().toString())) {
-                name.setError("Elige un nombre nuevo y válido"); return;
+                name.setError(cl.arichard.descargador.util.Tr.t("Elige un nombre nuevo y válido")); return;
             }
             refreshPlaylistsView(); dialog.dismiss();
         }));
@@ -1109,18 +1204,30 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void setupLibraryTab() {
         recyclerLibrary.setLayoutManager(new LinearLayoutManager(this));
+        recyclerLibrary.setHasFixedSize(true);
+        recyclerLibrary.setItemViewCacheSize(24);
+        ((cl.arichard.descargador.util.FastScrollView) findViewById(R.id.libraryFastScroll)).attach(recyclerLibrary);
 
         songAdapter = new SongAdapter(this, allSongs, new SongAdapter.OnSongClickListener() {
             @Override
             public void onSongClick(Song song, List<Song> queue, int position) {
                 saveLibraryNavigation();
-                PlayerManager.getInstance().playSong(song, queue);
+                rememberPlaybackSource();
+                List<Song> local = preferLocalCopies(queue);
+                int index = queue.indexOf(song);
+                PlayerManager.getInstance().playSong(index >= 0 ? local.get(index) : song, local);
                 Intent intent = new Intent(MainActivity.this, NowPlayingActivity.class);
                 startActivity(intent);
             }
 
             @Override
             public void onFavoriteClick(Song song, int position) {
+                // In Favoritos the row stays (with an empty heart, so it can be undone) until the list is rebuilt.
+                if (isViewingSubList && currentLibraryMode == 3 && "Favoritos".equals(currentSubListName)) {
+                    if (PlaylistManager.getInstance(MainActivity.this).isFavoriteSong(song)) heldFavorites.remove(song.getPath());
+                    else heldFavorites.put(song.getPath(), new Object[]{song, position});
+                    return;
+                }
                 saveLibraryPosition();
                 rebuildLibraryContent(); restoreLibraryPosition();
             }
@@ -1148,32 +1255,19 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             public void onDeleteClick(String playlistName, View anchor) {
                 if (anchor != null) { showPlaylistSettingsMenu(playlistName, anchor); return; }
                 new MaterialAlertDialogBuilder(MainActivity.this)
-                        .setTitle("Eliminar Playlist")
-                        .setMessage("¿Deseas eliminar '" + playlistName + "'?")
-                        .setPositiveButton("Eliminar", (d, w) -> {
+                        .setTitle(cl.arichard.descargador.util.Tr.t("Eliminar Playlist"))
+                        .setMessage(cl.arichard.descargador.util.Tr.t("¿Deseas eliminar '") + playlistName + "'?")
+                        .setPositiveButton(cl.arichard.descargador.util.Tr.t("Eliminar"), (d, w) -> {
                             PlaylistManager.getInstance(MainActivity.this).deletePlaylist(playlistName);
                             refreshPlaylistsView();
                         })
-                        .setNegativeButton("Cancelar", null)
+                        .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
                         .show();
             }
 
             @Override
             public void onAutoDownloadChanged(String playlistName, boolean enabled) {
-                if (!enabled) return;
-                PlaylistManager manager = PlaylistManager.getInstance(MainActivity.this);
-                int queued = 0;
-                for (String entry : manager.getSongPaths(playlistName)) {
-                    SearchResult result = manager.getOnlineTrack(entry);
-                    if (result != null && !getSharedPreferences("downloaded_videos", MODE_PRIVATE)
-                            .getBoolean(result.getId(), false)) {
-                        startDownload(result.getUrl(), result.getTitle(), result.getId());
-                        queued++;
-                    }
-                }
-                Toast.makeText(MainActivity.this,
-                        queued == 0 ? "La playlist ya está disponible" : queued + " descarga(s) en cola",
-                        Toast.LENGTH_SHORT).show();
+                if (enabled) enableAutoDownload(playlistName, null);
             }
         });
 
@@ -1196,9 +1290,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (!collection.isEmpty()) {
                 List<Song> shuffled = new ArrayList<>(collection);
                 Collections.shuffle(shuffled);
+                rememberPlaybackSource();
                 PlayerManager.getInstance().playSong(shuffled.get(0), shuffled);
             } else {
-                Toast.makeText(this, "No hay canciones para reproducir", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, cl.arichard.descargador.util.Tr.t("No hay canciones para reproducir"), Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -1229,13 +1324,13 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (folderAdapter != null) {
                 folderAdapter.filter(query);
                 int count = folderAdapter.getDisplayedCount();
-                txtSongCount.setText(count + (count == 1 ? " carpeta" : " carpetas"));
+                txtSongCount.setText(count + (count == 1 ? cl.arichard.descargador.util.Tr.t(" carpeta") : cl.arichard.descargador.util.Tr.t(" carpetas")));
             }
         } else if (currentLibraryMode == 3) {
             if (playlistAdapter != null) {
                 playlistAdapter.filter(query);
                 int count = playlistAdapter.getDisplayedCount();
-                txtSongCount.setText(count + (count == 1 ? " playlist" : " playlists"));
+                txtSongCount.setText(count + (count == 1 ? cl.arichard.descargador.util.Tr.t(" playlist") : " playlists"));
             }
         }
     }
@@ -1243,23 +1338,23 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private void updateLibraryCounter() {
         if (songAdapter != null && txtSongCount != null) {
             int count = songAdapter.getItemCount();
-            txtSongCount.setText(count + (count == 1 ? " canción" : " canciones"));
+            txtSongCount.setText(count + (count == 1 ? cl.arichard.descargador.util.Tr.t(" canción") : cl.arichard.descargador.util.Tr.t(" canciones")));
         }
     }
 
     private void setLibraryMode(int mode) {
         saveLibraryPosition(); changingLibrary = true;
         currentLibraryMode = mode == 1 ? 3 : Math.max(0, Math.min(3, mode));
-        currentSubListName = ""; isViewingSubList = false;
+        currentSubListName = ""; isViewingSubList = false; heldFavorites.clear();
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
     }
 
     private void updateLibraryHeader() {
         btnBackLibrary.setVisibility(isViewingSubList ? View.VISIBLE : View.GONE);
-        String headerTitle = "Mi Música";
+        String headerTitle = cl.arichard.descargador.util.Tr.t("Mi Música");
         if (isViewingSubList) {
-            headerTitle = currentSubListName;
+            headerTitle = cl.arichard.descargador.util.Tr.name(currentSubListName);
         }
         txtLibraryTitle.setText(headerTitle);
         btnNewPlaylist.setVisibility(currentLibraryMode == 3 && !isViewingSubList ? View.VISIBLE : View.GONE);
@@ -1288,8 +1383,18 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         playlistAdapter.setLibrary(allSongs);
         if (currentLibraryMode == 0 || isViewingSubList) {
             List<Song> songs = allSongs;
-            if (isViewingSubList && currentLibraryMode == 3)
+            if (isViewingSubList && currentLibraryMode == 3) {
                 songs = PlaylistManager.getInstance(this).resolveSongs(currentSubListName, allSongs);
+                if (!heldFavorites.isEmpty() && "Favoritos".equals(currentSubListName)) {
+                    songs = new ArrayList<>(songs);
+                    for (Object[] held : heldFavorites.values()) {
+                        Song heldSong = (Song) held[0];
+                        boolean present = false;
+                        for (Song candidate : songs) if (candidate.getPath().equals(heldSong.getPath())) { present = true; break; }
+                        if (!present) songs.add(Math.min((Integer) held[1], songs.size()), heldSong);
+                    }
+                }
+            }
             else if (isViewingSubList) {
                 songs = MusicScanner.groupByFolder(allSongs).get(currentSubListName);
                 if (songs == null) songs = Collections.emptyList();
@@ -1312,21 +1417,21 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void showPlaylistSongs(String playlistName) {
         saveLibraryPosition(); changingLibrary = true;
-        currentSubListName = playlistName; isViewingSubList = true;
+        currentSubListName = playlistName; isViewingSubList = true; heldFavorites.clear();
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
     }
 
     private void showFolderSongs(String name, List<Song> songs) {
         saveLibraryPosition(); changingLibrary = true;
-        currentSubListName = name; isViewingSubList = true;
+        currentSubListName = name; isViewingSubList = true; heldFavorites.clear();
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
     }
 
     private void showCreatePlaylistDialog() {
         EditText input = new EditText(this);
-        input.setHint("Nombre de la playlist");
+        input.setHint(cl.arichard.descargador.util.Tr.t("Nombre de la playlist"));
         input.setSingleLine(true);
         int pad = (int) (16 * getResources().getDisplayMetrics().density);
         FrameLayout container = new FrameLayout(this);
@@ -1334,44 +1439,44 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         container.addView(input);
 
         new MaterialAlertDialogBuilder(this)
-                .setTitle("Nueva Playlist")
+                .setTitle(cl.arichard.descargador.util.Tr.t("Nueva Playlist"))
                 .setView(container)
-                .setPositiveButton("Crear", (d, w) -> {
+                .setPositiveButton(cl.arichard.descargador.util.Tr.t("Crear"), (d, w) -> {
                     String name = input.getText().toString().trim();
                     if (!name.isEmpty()) {
                         PlaylistManager.getInstance(this).createPlaylist(name);
                         refreshPlaylistsView();
                     }
                 })
-                .setNegativeButton("Cancelar", null)
+                .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
                 .show();
     }
 
     private void showSongMenu(Song song, View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
-        popup.getMenu().add("Reproducir después").setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir después")).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, true); return true;
         });
-        popup.getMenu().add("Agregar a la cola").setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, false); return true;
         });
-        popup.getMenu().add("Agregar a playlist").setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToPlaylist(this, song, this::refreshPlaylistsView); return true;
         });
-        popup.getMenu().add("Agregar a carpeta").setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a carpeta")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToFolder(this, song, allSongs, this::refreshMusicLibrary); return true;
         });
-        if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add("Quitar de esta playlist").setOnMenuItemClickListener(item -> {
+        if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Quitar de esta playlist")).setOnMenuItemClickListener(item -> {
             PlaylistManager.getInstance(this).removeSongFromPlaylist(currentSubListName, song.getPath());
             refreshPlaylistsView(); return true;
         });
-        if (!song.isOnline()) popup.getMenu().add("Compartir archivo").setOnMenuItemClickListener(item -> {
+        if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Compartir archivo")).setOnMenuItemClickListener(item -> {
             shareSong(song); return true;
         });
-        popup.getMenu().add(song.isOnline() ? "Eliminar de mi biblioteca" : "Eliminar del dispositivo").setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(song.isOnline() ? cl.arichard.descargador.util.Tr.t("Eliminar de mi biblioteca") : cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.delete(this, song, this::refreshMusicLibrary); return true;
         });
-        popup.getMenu().add("Seleccionar canciones").setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Seleccionar canciones")).setOnMenuItemClickListener(item -> {
             if (songAdapter != null) songAdapter.activateSelectionMode(song);
             return true;
         });
@@ -1383,11 +1488,11 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (count > 0) {
             selectionBar.setVisibility(View.VISIBLE);
             if (txtSelectionCount != null) {
-                txtSelectionCount.setText(count + " seleccionada" + (count > 1 ? "s" : ""));
+                txtSelectionCount.setText(cl.arichard.descargador.util.Tr.f(count > 1 ? "%d seleccionadas" : "%d seleccionada", count));
             }
             if (btnSelectAll != null && songAdapter != null) {
                 boolean all = count == songAdapter.getDisplayedList().size() && count > 0;
-                btnSelectAll.setText(all ? "Deseleccionar" : "Todas");
+                btnSelectAll.setText(all ? cl.arichard.descargador.util.Tr.t("Deseleccionar") : cl.arichard.descargador.util.Tr.t("Todas"));
             }
         } else {
             selectionBar.setVisibility(View.GONE);
@@ -1402,15 +1507,15 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             Uri contentUri = FileProvider.getUriForFile(this, getPackageName() + ".files", f);
             intent.putExtra(Intent.EXTRA_STREAM, contentUri);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(intent, "Compartir música"));
+            startActivity(Intent.createChooser(intent, cl.arichard.descargador.util.Tr.t("Compartir música")));
         } catch (Exception e) {
-            Toast.makeText(this, "No se pudo compartir", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, cl.arichard.descargador.util.Tr.t("No se pudo compartir"), Toast.LENGTH_SHORT).show();
         }
     }
 
     private void locatePlayingSong() {
         Song current = PlayerManager.getInstance().getCurrentSong();
-        if (current == null) { Toast.makeText(this, "Elige una canción primero", Toast.LENGTH_SHORT).show(); return; }
+        if (current == null) { Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Elige una canción primero"), Toast.LENGTH_SHORT).show(); return; }
         int index = -1;
         if (currentLibraryMode == 0 || isViewingSubList) {
             List<Song> visible = songAdapter.getDisplayedList();
@@ -1421,7 +1526,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (current.isOnline()) {
                 String containing = null;
                 for (String name : PlaylistManager.getInstance(this).getPlaylistNames())
-                    if (PlaylistManager.getInstance(this).getSongPaths(name).contains(current.getPath())) { containing = name; break; }
+                    if (PlaylistManager.getInstance(this).isInPlaylist(name, current)) { containing = name; break; }
                 if (containing == null) {
                     cl.arichard.descargador.player.QueueSheet.show(this); return;
                 }
@@ -1433,7 +1538,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (index >= 0) {
             final int target = index;
             recyclerLibrary.post(() -> recyclerLibrary.smoothScrollToPosition(target));
-        } else Toast.makeText(this, "La canción no está en tu biblioteca", Toast.LENGTH_SHORT).show();
+        } else Toast.makeText(this, cl.arichard.descargador.util.Tr.t("La canción no está en tu biblioteca"), Toast.LENGTH_SHORT).show();
     }
 
     private void setupMiniPlayer() {
@@ -1481,6 +1586,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             playerPreviewScrim.setAlpha(0); scene.addView(playerPreviewScrim, new android.widget.RelativeLayout.LayoutParams(-1, -1));
             playerPreview = getLayoutInflater().inflate(R.layout.activity_now_playing, scene, false);
             scene.addView(playerPreview, new android.widget.RelativeLayout.LayoutParams(-1, -1));
+            // The queue sheet only makes sense in the real screen, where it has its drag behavior.
+            playerPreview.findViewById(R.id.queueSheet).setVisibility(View.GONE);
+            ((TextView) playerPreview.findViewById(R.id.txtPlayingFromName)).setText(PlayerManager.getInstance().playingFromLabel());
             Song song = PlayerManager.getInstance().getCurrentSong();
             ((TextView) playerPreview.findViewById(R.id.txtNowPlayingTitle)).setText(song.getTitle());
             ((TextView) playerPreview.findViewById(R.id.txtNowPlayingArtist)).setText(song.getArtist());
@@ -1500,15 +1608,13 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             boolean shuffle = PlayerManager.getInstance().isShuffle();
             shuffleIcon.setAlpha(shuffle ? 1f : .45f);
             shuffleIcon.setColorFilter(ContextCompat.getColor(this, shuffle ? R.color.accent : R.color.text_primary));
-            ImageView actionIcon = playerPreview.findViewById(R.id.btnNowPlayingAction);
-            actionIcon.setVisibility(song.isOnline() ? View.VISIBLE : View.GONE);
             ImageView favoriteIcon = playerPreview.findViewById(R.id.btnNowPlayingFavorite);
             boolean favorite = song.isOnline()
                     ? PlaylistManager.getInstance(this).isOnlineTrackInPlaylist("Favoritos", song.getVideoId())
                     : PlaylistManager.getInstance(this).isFavorite(song.getPath());
             favoriteIcon.setImageResource(favorite ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
             favoriteIcon.clearColorFilter();
-            ((TextView) playerPreview.findViewById(R.id.txtRepeatMode)).setText(repeat == PlayerManager.REPEAT_ONE ? "Repetir canci\u00f3n" : repeat == PlayerManager.REPEAT_ALL ? "Repetir lista" : "Bucle desactivado");
+            ((TextView) playerPreview.findViewById(R.id.txtRepeatMode)).setText(repeat == PlayerManager.REPEAT_ONE ? cl.arichard.descargador.util.Tr.t("Repetir canci\u00f3n") : repeat == PlayerManager.REPEAT_ALL ? cl.arichard.descargador.util.Tr.t("Repetir lista") : cl.arichard.descargador.util.Tr.t("Bucle desactivado"));
         }
         playerPreview.animate().cancel();
         float height = Math.max(1, scene.getHeight());
@@ -1631,8 +1737,97 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 } else { rebuildLibraryContent(); restoreLibraryPosition(); }
                 uiState.library.clear(); uiState.library.addAll(allSongs); uiState.libraryLoaded = true;
                 refreshDownloadedBadges(); refreshDiscoveryContent();
+                PlaylistManager.getInstance(this).linkLocalSongs(allSongs);
+                cl.arichard.descargador.data.ClickStats.getInstance(this).migrateLegacy(SearchHistoryManager.getInstance(this), allSongs);
+                reconcileAutoDownloads();
             });
         });
+    }
+
+    /** YouTube entries that are already saved on this device play from the file: instant, and no streaming needed. */
+    private List<Song> preferLocalCopies(List<Song> queue) {
+        java.util.Map<String, Song> byTitle = new java.util.HashMap<>();
+        PlaylistManager playlistManager = PlaylistManager.getInstance(this);
+        for (Song candidate : allSongs)
+            if (!candidate.isOnline() && candidate.getPath() != null && new File(candidate.getPath()).exists()) {
+                byTitle.putIfAbsent(titleKey(candidate.getTitle()), candidate);
+                String id = playlistManager.videoIdFor(candidate.getPath());
+                if (id != null) byTitle.putIfAbsent("id:" + id, candidate);
+            }
+        List<Song> result = new ArrayList<>(queue.size());
+        for (Song entry : queue) {
+            Song local = entry.isOnline() ? byTitle.getOrDefault("id:" + entry.getVideoId(), byTitle.get(titleKey(entry.getTitle()))) : null;
+            result.add(local != null ? local : entry);
+        }
+        return result;
+    }
+
+    private static String titleKey(String title) {
+        return java.text.Normalizer.normalize(title == null ? "" : title, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "").replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+    }
+
+    /** Tracks that are neither saved on this device nor being fetched right now. */
+    private List<SearchResult> missingDownloads(Iterable<SearchResult> candidates) {
+        SharedPreferences saved = getSharedPreferences("downloaded_videos", MODE_PRIVATE);
+        Set<String> localTitles = new HashSet<>();
+        for (Song song : allSongs) localTitles.add(titleKey(song.getTitle()));
+        List<SearchResult> missing = new ArrayList<>();
+        for (SearchResult track : candidates) {
+            if (saved.getBoolean(track.getId(), false) || PlaylistManager.getInstance(this).hasLocalCopy(track.getId())) continue;
+            if (localTitles.contains(titleKey(track.getTitle()))) {
+                // The file is already here (for example from an older version): remember it instead of downloading it again.
+                saved.edit().putBoolean(track.getId(), true).apply();
+                continue;
+            }
+            if (!activeDownloadingVideoIds.contains(track.getId())) missing.add(track);
+        }
+        return missing;
+    }
+
+    /**
+     * Auto-download is level-triggered: whatever is missing from an auto-download playlist gets fetched, whether it
+     * was added here, synced from another device, or was already in the playlist when auto-download was switched on.
+     */
+    private void reconcileAutoDownloads() {
+        if (!libraryReady) return;
+        Set<String> skipped = getSharedPreferences("auto_download", MODE_PRIVATE).getStringSet("skipped", java.util.Collections.emptySet());
+        int queued = 0;
+        for (SearchResult track : missingDownloads(PlaylistManager.getInstance(this).autoDownloadTracks())) {
+            if (skipped.contains(track.getId()) || !autoAttempted.add(track.getId())) continue;
+            startDownload(track.getUrl(), track.getTitle(), track.getId());
+            queued++;
+        }
+    }
+
+    /** Turns auto-download on and offers to fetch what the playlist already holds. */
+    private void enableAutoDownload(String playlist, Runnable done) {
+        PlaylistManager manager = PlaylistManager.getInstance(this);
+        manager.setAutoDownloadEnabled(playlist, true);
+        List<SearchResult> tracks = new ArrayList<>();
+        for (String entry : manager.getSongPaths(playlist)) {
+            SearchResult track = manager.getOnlineTrack(entry);
+            if (track != null) tracks.add(track);
+        }
+        List<SearchResult> pending = missingDownloads(tracks);
+        if (pending.isEmpty()) { if (done != null) done.run(); return; }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(cl.arichard.descargador.util.Tr.t("Descargar las canciones pendientes"))
+                .setMessage(cl.arichard.descargador.util.Tr.f("Esta playlist tiene %d canciones sin descargar. ¿Descargarlas ahora?", pending.size()))
+                .setPositiveButton(cl.arichard.descargador.util.Tr.t("Descargar"), (dialog, which) -> {
+                    for (SearchResult track : pending) {
+                        autoAttempted.add(track.getId());
+                        startDownload(track.getUrl(), track.getTitle(), track.getId());
+                    }
+                })
+                .setNegativeButton(cl.arichard.descargador.util.Tr.t("Solo las nuevas"), (dialog, which) -> {
+                    SharedPreferences prefs = getSharedPreferences("auto_download", MODE_PRIVATE);
+                    Set<String> skipped = new HashSet<>(prefs.getStringSet("skipped", java.util.Collections.emptySet()));
+                    for (SearchResult track : pending) skipped.add(track.getId());
+                    prefs.edit().putStringSet("skipped", skipped).apply();
+                })
+                .setOnDismissListener(dialog -> { if (done != null) done.run(); })
+                .show();
     }
 
     private void handleIntent(Intent intent) {
@@ -1682,6 +1877,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (btnMiniPlayPause != null) {
                 btnMiniPlayPause.setImageResource(PlayerManager.getInstance().isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
             }
+            showMiniLoading(PlayerManager.getInstance().isLoading());
             int pos = PlayerManager.getInstance().getCurrentPosition();
             int dur = PlayerManager.getInstance().getDuration();
             if (miniProgress != null) {
@@ -1709,6 +1905,18 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             updateMiniPlayer();
             if (songAdapter != null) songAdapter.notifyDataSetChanged();
         });
+    }
+
+    @Override
+    public void onPlaybackLoading(boolean loading) {
+        runOnUiThread(() -> showMiniLoading(loading));
+    }
+
+    /** Swaps the mini player's play icon for the loading ring while a song is being prepared. */
+    private void showMiniLoading(boolean loading) {
+        if (miniLoadingRing == null || btnMiniPlayPause == null) return;
+        miniLoadingRing.setActive(loading);
+        btnMiniPlayPause.animate().alpha(loading ? 0f : 1f).setDuration(160).start();
     }
 
     @Override

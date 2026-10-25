@@ -12,7 +12,7 @@ public class SearchResult implements Serializable {
 
     public SearchResult(String id, String title, String channel, long durationSeconds, String thumbnailUrl, String url) {
         this.id = id != null ? id : "";
-        this.title = title != null && !title.trim().isEmpty() ? title.trim() : "Sin título";
+        this.title = title != null && !title.trim().isEmpty() ? title.trim() : cl.arichard.descargador.util.Tr.t("Sin título");
         this.channel = channel != null && !channel.trim().isEmpty() ? channel.trim() : "YouTube";
         this.durationSeconds = durationSeconds;
         this.thumbnailUrl = thumbnailUrl != null && !thumbnailUrl.isEmpty() ? thumbnailUrl : ("https://i.ytimg.com/vi/" + this.id + "/mqdefault.jpg");

@@ -1,34 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@color/bg_primary" android:fillViewport="true">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:background="@color/bg_primary" android:fillViewport="true" android:clipToPadding="false">
+    <LinearLayout android:id="@+id/settingsRoot" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="vertical" android:padding="20dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical">
-            <ImageView android:id="@+id/btnSettingsBack" android:layout_width="40dp" android:layout_height="40dp"
-                android:padding="9dp" android:src="@drawable/ic_arrow_back" android:background="?attr/selectableItemBackgroundBorderless"/>
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="52dp" android:gravity="center_vertical">
+            <ImageView android:id="@+id/btnSettingsBack" android:layout_width="44dp" android:layout_height="44dp"
+                android:padding="11dp" android:src="@drawable/ic_arrow_back" android:contentDescription="@string/volver"
+                android:background="@drawable/bg_settings_icon_button"/>
             <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:text="Configuración" android:textColor="@color/text_primary" android:textSize="25sp" android:textStyle="bold"/>
+                android:layout_marginStart="14dp" android:text="@string/configuracion" android:textColor="@color/text_primary"
+                android:textSize="26sp" android:textStyle="bold" android:letterSpacing="-0.02"/>
         </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp"
-            android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_card">
-            <TextView android:id="@+id/txtSettingsName" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:textColor="@color/text_primary" android:textSize="17sp" android:textStyle="bold"/>
-            <TextView android:id="@+id/txtSettingsEmail" android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:textColor="@color/text_secondary" android:textSize="14sp"/>
+
+        <!-- Cuenta -->
+        <LinearLayout android:id="@+id/cardAccount" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="20dp" android:orientation="horizontal" android:gravity="center_vertical"
+            android:padding="18dp" android:background="@drawable/bg_settings_card">
+            <TextView android:id="@+id/txtSettingsAvatar" android:layout_width="54dp" android:layout_height="54dp"
+                android:gravity="center" android:background="@drawable/bg_avatar" android:textColor="#FFFFFF"
+                android:textSize="22sp" android:textStyle="bold"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginStart="16dp" android:orientation="vertical">
+                <TextView android:id="@+id/txtSettingsName" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:textColor="@color/text_primary" android:textSize="17sp" android:textStyle="bold"
+                    android:maxLines="1" android:ellipsize="end"/>
+                <TextView android:id="@+id/txtSettingsEmail" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp" android:textColor="@color/text_secondary" android:textSize="14sp"
+                    android:maxLines="1" android:ellipsize="end"/>
+            </LinearLayout>
         </LinearLayout>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="26dp"
-            android:text="DISPOSITIVOS CONECTADOS" android:textColor="@color/text_secondary" android:textSize="12sp" android:textStyle="bold"/>
+
+        <!-- Apariencia -->
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
+            android:layout_marginStart="6dp" android:text="@string/apariencia" android:textColor="@color/text_secondary"
+            android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
+        <LinearLayout android:id="@+id/cardAppearance" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:orientation="vertical" android:padding="18dp"
+            android:background="@drawable/bg_settings_card">
+            <LinearLayout android:id="@+id/rowTheme" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center_vertical" android:background="?attr/selectableItemBackground">
+                <ImageView android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp"
+                    android:src="@drawable/ic_theme_toggle" android:background="@drawable/bg_settings_icon_button"
+                    android:importantForAccessibility="no"/>
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:layout_marginStart="14dp" android:text="@string/tema_oscuro" android:textColor="@color/text_primary"
+                    android:textSize="16sp" android:textStyle="bold"/>
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchTheme"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            </LinearLayout>
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp" android:background="@color/bg_primary"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/idioma" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/languageToggle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+                app:singleSelection="true" app:selectionRequired="true">
+                <com.google.android.material.button.MaterialButton android:id="@+id/langAuto" style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/automatico" android:textAllCaps="false" android:textSize="12sp" android:letterSpacing="0" android:insetLeft="0dp" android:insetRight="0dp" android:paddingStart="4dp" android:paddingEnd="4dp" android:maxLines="1"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/langEs" style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="Español" android:textAllCaps="false" android:textSize="12sp" android:letterSpacing="0" android:paddingStart="4dp" android:paddingEnd="4dp"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/langEn" style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="English" android:textAllCaps="false" android:textSize="12sp" android:letterSpacing="0" android:paddingStart="4dp" android:paddingEnd="4dp"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+        </LinearLayout>
+
+        <!-- Carpetas de música -->
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
+            android:layout_marginStart="6dp" android:text="@string/carpetas_de_musica" android:textColor="@color/text_secondary"
+            android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
+        <LinearLayout android:id="@+id/layoutMusicFolders" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:orientation="vertical"/>
+        <com.google.android.material.button.MaterialButton android:id="@+id/btnAddFolder" style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent" android:layout_height="52dp" android:text="@string/agregar_carpeta"
+            android:textAllCaps="false" app:cornerRadius="26dp"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:layout_marginStart="6dp" android:layout_marginEnd="6dp" android:text="@string/carpetas_pista"
+            android:textColor="@color/text_secondary" android:textSize="12sp"/>
+
+        <!-- Estadísticas -->
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
+            android:layout_marginStart="6dp" android:text="@string/estadisticas" android:textColor="@color/text_secondary"
+            android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
+        <LinearLayout android:id="@+id/cardStats" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:orientation="vertical" android:padding="18dp"
+            android:background="@drawable/bg_settings_card">
+            <TextView android:id="@+id/txtStatsClicks" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:textColor="@color/text_primary" android:textSize="28sp" android:textStyle="bold"/>
+            <TextView android:id="@+id/txtStatsSummary" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="2dp" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+            <TextView android:id="@+id/txtStatsTop" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="12dp" android:lineSpacingExtra="4dp"
+                android:textColor="@color/text_primary" android:textSize="14sp"/>
+        </LinearLayout>
+
+        <!-- Dispositivos -->
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
+            android:layout_marginStart="6dp" android:text="@string/dispositivos_conectados" android:textColor="@color/text_secondary"
+            android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
         <LinearLayout android:id="@+id/layoutConnectedDevices" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="10dp" android:orientation="vertical"/>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="26dp"
-            android:text="MÁS CONFIGURACIONES" android:textColor="@color/text_secondary" android:textSize="12sp" android:textStyle="bold"/>
-        <TextView android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="10dp"
-            android:gravity="center_vertical" android:paddingStart="16dp" android:paddingEnd="16dp"
-            android:text="Aquí agregaremos nuevas opciones próximamente" android:textColor="@color/text_secondary"
-            android:textSize="13sp" android:background="@drawable/bg_card"/>
+
         <com.google.android.material.button.MaterialButton android:id="@+id/btnSettingsLogout"
-            android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="32dp"
-            android:text="Cerrar sesión" android:textAllCaps="false" android:textSize="15sp"/>
+            android:layout_width="match_parent" android:layout_height="56dp" android:layout_marginTop="28dp"
+            android:text="@string/cerrar_sesion" android:textAllCaps="false" android:textSize="15sp"
+            app:cornerRadius="28dp"/>
     </LinearLayout>
 </ScrollView>

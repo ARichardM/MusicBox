@@ -32,7 +32,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     public static final String EXTRA_THUMBNAIL = "extra_thumbnail";
 
     private View nowPlayingRoot;
-    private ImageView btnBack, btnAction, btnFavorite;
+    private ImageView btnBack, btnFavorite;
     private TextView tabSelectorMp3, tabSelectorMp4;
     private FrameLayout containerCoverArt, containerVideoPlayer, videoHostLayout;
     private ImageView imgNowPlayingCover;
@@ -47,6 +47,10 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private LinearLayout playerDownloadCard;
     private TextView txtPlayerDownloadStatus, txtPlayerDownloadEta;
     private ProgressBar playerDownloadProgress;
+
+    private View nowPlayingCoordinator;
+    private com.google.android.material.bottomsheet.BottomSheetBehavior<View> queueBehavior;
+    private cl.arichard.descargador.player.QueueSheet queuePanel;
 
     private boolean isMp3Mode = true;
     private boolean isUserSeeking = false;
@@ -65,8 +69,13 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         cl.arichard.descargador.util.SafeTap.installButtons(nowPlayingRoot);
         cl.arichard.descargador.util.SafeTap.install(btnPlayPauseCircle);
         setupPlayerGestures();
+        setupQueueSheet();
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
-            @Override public void handleOnBackPressed() { closeWithSlideDown(); }
+            @Override public void handleOnBackPressed() {
+                if (queueBehavior != null && queueBehavior.getState() == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED) {
+                    queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
+                } else closeWithSlideDown();
+            }
         });
 
         handleIncomingIntent(getIntent());
@@ -74,8 +83,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     private void initViews() {
         nowPlayingRoot = findViewById(R.id.nowPlayingRoot);
+        nowPlayingCoordinator = findViewById(R.id.nowPlayingCoordinator);
         btnBack = findViewById(R.id.btnBackNowPlaying);
-        btnAction = findViewById(R.id.btnNowPlayingAction);
         btnFavorite = findViewById(R.id.btnNowPlayingFavorite);
 
         tabSelectorMp3 = findViewById(R.id.tabSelectorMp3);
@@ -139,7 +148,6 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             Toast.makeText(this, repeatLabel(mode), Toast.LENGTH_SHORT).show();
         });
 
-        btnAction.setOnClickListener(v -> startTrackDownload());
         btnFavorite.setOnClickListener(v -> toggleCurrentFavorite());
 
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -183,80 +191,6 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         }
     }
 
-    private void startTrackDownload() {
-        if (isDownloading) {
-            Toast.makeText(this, "Descarga en curso", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String downloadUrl = onlineUrl;
-        if ((downloadUrl == null || downloadUrl.isEmpty()) && onlineVideoId != null) {
-            downloadUrl = "https://www.youtube.com/watch?v=" + onlineVideoId;
-        }
-        if (downloadUrl == null) {
-            downloadUrl = PlayerManager.getInstance().getCurrentOnlineUrl();
-        }
-        if (downloadUrl == null) {
-            Toast.makeText(this, "No se puede descargar esta pista", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        File dir = StorageUtil.getDownloadDir(this);
-        YoutubeDLRequest request = new YoutubeDLRequest(downloadUrl);
-        request.addOption("--no-playlist");
-        request.addOption("--no-update");
-        request.addOption("--extractor-args", "youtube:player_client=android,web");
-        request.addOption("--no-mtime");
-        request.addOption("--restrict-filenames");
-        request.addOption("-o", new File(dir, "%(title).160s.%(ext)s").getAbsolutePath());
-
-        if (isMp3Mode) {
-            request.addOption("-x");
-            request.addOption("--audio-format", "mp3");
-            request.addOption("--audio-quality", "192K");
-            request.addOption("--embed-thumbnail");
-            request.addOption("--add-metadata");
-        } else {
-            request.addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best");
-            request.addOption("--merge-output-format", "mp4");
-        }
-
-        isDownloading = true;
-        playerDownloadCard.setVisibility(View.VISIBLE);
-        playerDownloadProgress.setProgress(0);
-        txtPlayerDownloadStatus.setText("Iniciando descarga (" + (isMp3Mode ? "MP3" : "MP4") + ")...");
-        txtPlayerDownloadEta.setText("Conectando...");
-
-        DescargadorApp.IO.execute(() -> {
-            try {
-                YoutubeDL.getInstance().execute(request, "now-playing-dl", (percent, eta, line) -> {
-                    runOnUiThread(() -> {
-                        int p = Math.round(percent);
-                        playerDownloadProgress.setProgress(p);
-                        txtPlayerDownloadStatus.setText("Descargando " + p + "% (" + (isMp3Mode ? "MP3" : "MP4") + ")");
-                        txtPlayerDownloadEta.setText("Faltan aprox. " + eta + " s");
-                    });
-                    return kotlin.Unit.INSTANCE;
-                });
-
-                runOnUiThread(() -> {
-                    playerDownloadProgress.setProgress(100);
-                    txtPlayerDownloadStatus.setText("Descarga completada (" + (isMp3Mode ? "MP3" : "MP4") + ")");
-                    txtPlayerDownloadEta.setText("Guardado en descargas");
-                    isDownloading = false;
-                    playerDownloadCard.postDelayed(() -> playerDownloadCard.setVisibility(View.GONE), 3500);
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    txtPlayerDownloadStatus.setText("Error en la descarga");
-                    txtPlayerDownloadEta.setText(e.getMessage() != null ? e.getMessage() : "Error");
-                    isDownloading = false;
-                    playerDownloadCard.postDelayed(() -> playerDownloadCard.setVisibility(View.GONE), 4000);
-                });
-            }
-        });
-    }
-
     private void setupPlayerGestures() {
         cl.arichard.descargador.util.PlayerDismissLayout gestures =
                 (cl.arichard.descargador.util.PlayerDismissLayout) nowPlayingRoot;
@@ -266,9 +200,36 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
                 () -> PlayerManager.getInstance().skipPrevious());
     }
 
+    /** The queue peeks from the bottom edge; dragging it up reveals the full, editable list. */
+    private void setupQueueSheet() {
+        android.widget.FrameLayout sheet = findViewById(R.id.queueSheet);
+        float density = getResources().getDisplayMetrics().density;
+        queueBehavior = com.google.android.material.bottomsheet.BottomSheetBehavior.from(sheet);
+        queueBehavior.setPeekHeight(Math.round(84 * density));
+        queueBehavior.setHideable(false);
+        queueBehavior.setFitToContents(false);
+        queueBehavior.setExpandedOffset(Math.round(56 * density));
+        queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
+        queuePanel = cl.arichard.descargador.player.QueueSheet.embed(this, sheet, queueBehavior);
+        queueBehavior.addBottomSheetCallback(new com.google.android.material.bottomsheet.BottomSheetBehavior.BottomSheetCallback() {
+            @Override public void onStateChanged(View view, int newState) {
+                if (newState == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED) queuePanel.scrollToCurrent();
+            }
+            @Override public void onSlide(View view, float offset) {
+                float progress = Math.max(0f, offset);
+                nowPlayingRoot.setAlpha(1f - 0.55f * progress);
+            }
+        });
+    }
+
+    /** "Reproduciendo desde": the folder, the playlist, all songs or the YouTube search the queue came from. */
+    private void updatePlayingFrom() {
+        ((TextView) findViewById(R.id.txtPlayingFromName)).setText(PlayerManager.getInstance().playingFromLabel());
+    }
+
     private void closeWithSlideDown() {
         int screenHeight = getResources().getDisplayMetrics().heightPixels;
-        nowPlayingRoot.animate()
+        nowPlayingCoordinator.animate()
                 .translationY(screenHeight)
                 .alpha(0.0f)
                 .setDuration(220)
@@ -297,6 +258,12 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     }
 
     @Override
+    protected void onDestroy() {
+        if (queuePanel != null) queuePanel.detach();
+        super.onDestroy();
+    }
+
+    @Override
     protected void onPause() {
         PlayerManager.getInstance().savePosition();
         super.onPause();
@@ -311,8 +278,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         updateVideoAvailability();
         txtTitle.setText(song.getTitle());
         txtArtist.setText(song.getArtist());
+        updatePlayingFrom();
 
-        btnAction.setVisibility(song.isOnline() ? View.VISIBLE : View.GONE);
         updateFavoriteButton(song);
 
         if (imgNowPlayingCover != null) {
@@ -323,27 +290,15 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private void toggleCurrentFavorite() {
         Song song = PlayerManager.getInstance().getCurrentSong();
         if (song == null) return;
-        PlaylistManager playlists = PlaylistManager.getInstance(this);
-        if (song.isOnline()) {
-            String videoId = song.getVideoId();
-            boolean favorite = playlists.isOnlineTrackInPlaylist("Favoritos", videoId);
-            if (favorite) playlists.removeSongFromPlaylist("Favoritos", song.getPath());
-            else playlists.addOnlineTrack("Favoritos", new SearchResult(videoId, song.getTitle(), song.getArtist(),
-                    Math.max(0, song.getDuration() / 1000), song.getCoverPath(),
-                    "https://www.youtube.com/watch?v=" + videoId));
-        } else {
-            playlists.toggleFavorite(song.getPath());
-        }
+        PlaylistManager.getInstance(this).toggleFavoriteSong(song);
         updateFavoriteButton(song);
     }
 
     private void updateFavoriteButton(Song song) {
-        boolean favorite = song.isOnline()
-                ? PlaylistManager.getInstance(this).isOnlineTrackInPlaylist("Favoritos", song.getVideoId())
-                : PlaylistManager.getInstance(this).isFavorite(song.getPath());
+        boolean favorite = PlaylistManager.getInstance(this).isFavoriteSong(song);
         btnFavorite.setImageResource(favorite ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
         btnFavorite.clearColorFilter();
-        btnFavorite.setContentDescription(favorite ? "Quitar de favoritos" : "Agregar a favoritos");
+        btnFavorite.setContentDescription(favorite ? cl.arichard.descargador.util.Tr.t("Quitar de favoritos") : cl.arichard.descargador.util.Tr.t("Agregar a favoritos"));
     }
 
     private void showPlayerMenu(View anchor) {
@@ -351,28 +306,28 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         if (song == null) return;
         androidx.appcompat.widget.PopupMenu menu = new androidx.appcompat.widget.PopupMenu(this, anchor);
         menu.setForceShowIcon(true);
-        menu.getMenu().add("Agregar a playlist").setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToPlaylist(this, song, () -> updateSongInfo(PlayerManager.getInstance().getCurrentSong())); return true;
         });
-        menu.getMenu().add("Agregar a carpeta").setIcon(R.drawable.ic_folder).setOnMenuItemClickListener(item -> {
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a carpeta")).setIcon(R.drawable.ic_folder).setOnMenuItemClickListener(item -> {
             DescargadorApp.IO.execute(() -> {
                 java.util.List<Song> library = cl.arichard.descargador.data.MusicScanner.scanAllMusic(this);
                 runOnUiThread(() -> { if (!isFinishing()) cl.arichard.descargador.util.SongActions.addToFolder(this, song, library, () -> {}); });
             });
             return true;
         });
-        menu.getMenu().add("Eliminar canci\u00f3n").setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar canci\u00f3n")).setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.delete(this, song, this::finish); return true;
         });
-        menu.getMenu().add("Cola de reproducci\u00f3n").setIcon(R.drawable.ic_queue).setOnMenuItemClickListener(item -> {
-            cl.arichard.descargador.player.QueueSheet.show(this); return true;
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Cola de reproducci\u00f3n")).setIcon(R.drawable.ic_queue).setOnMenuItemClickListener(item -> {
+            queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED); return true;
         });
-        menu.getMenu().add("Guardar cola en playlist...").setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Guardar cola en playlist...")).setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
             java.util.List<Song> q = PlayerManager.getInstance().getQueue();
             if (q != null && !q.isEmpty()) {
                 cl.arichard.descargador.util.SongActions.addMultipleToPlaylist(this, q, () -> {});
             } else {
-                Toast.makeText(this, "La cola est\u00e1 vac\u00eda", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, cl.arichard.descargador.util.Tr.t("La cola est\u00e1 vac\u00eda"), Toast.LENGTH_SHORT).show();
             }
             return true;
         });
@@ -412,8 +367,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     }
 
     private String repeatLabel(int mode) {
-        return mode == PlayerManager.REPEAT_ONE ? "Repetir canción" :
-                mode == PlayerManager.REPEAT_ALL ? "Repetir lista" : "Bucle desactivado";
+        return mode == PlayerManager.REPEAT_ONE ? cl.arichard.descargador.util.Tr.t("Repetir canción") :
+                mode == PlayerManager.REPEAT_ALL ? cl.arichard.descargador.util.Tr.t("Repetir lista") : cl.arichard.descargador.util.Tr.t("Bucle desactivado");
     }
 
     private void updateRepeatButton(int mode) {
@@ -448,13 +403,19 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     @Override
     public void onPlaybackLoading(boolean loading) {
-        if (loading) txtCurrentTime.setText("Cargando…");
+        if (loading) txtCurrentTime.setText(cl.arichard.descargador.util.Tr.t("Cargando…"));
+        runOnUiThread(() -> {
+            cl.arichard.descargador.util.LoadingRingView ring = findViewById(R.id.playLoadingRing);
+            if (ring == null) return;
+            ring.setActive(loading);
+            btnPlayPauseIcon.animate().alpha(loading ? 0f : 1f).setDuration(160).start();
+        });
     }
 
     @Override
     public void onPlaybackError(String message) {
-        txtCurrentTime.setText("Error");
-        txtTotalTime.setText("Reintentar ▶");
+        txtCurrentTime.setText(cl.arichard.descargador.util.Tr.t("Error"));
+        txtTotalTime.setText(cl.arichard.descargador.util.Tr.t("Reintentar ▶"));
         cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.seekBar), message,
                 "REINTENTAR", () -> PlayerManager.getInstance().play());
     }

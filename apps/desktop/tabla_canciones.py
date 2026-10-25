@@ -1,60 +1,13 @@
 """Tabla editable de canciones con selección explícita y estado por fila."""
 
-from dataclasses import dataclass
 from collections import defaultdict, deque
 import tkinter as tk
 from tkinter import ttk
 
 from interfaz import GREEN, MUTED, RED
-from lectura_listas import VIDEO_TITLE, video_artist, song_query
+from lectura_listas import song_query
+from song_model import SongEntry
 from filtro_canciones import SongFilter
-
-
-@dataclass
-class SongEntry:
-    artist: str
-    title: str
-    source: str = "Texto"
-    checked: bool = True
-    state: str = "Pendiente"
-    duration: str = ""
-    album: str = ""
-    uploader: str = ""
-    review_reason: str = ""
-    raw_text: str = ""
-
-    @classmethod
-    def from_query(cls, query, source="Texto"):
-        credited_artist = video_artist(query)
-        if credited_artist:
-            entry = cls(credited_artist, query, source)
-            entry.reset_state()
-            return entry
-        artist, separator, title = query.partition(" - ")
-        if not separator or VIDEO_TITLE.search(artist):
-            artist, title = "", query
-        entry = cls(artist.strip(), title.strip(), source)
-        entry.reset_state()
-        return entry
-
-    @property
-    def query(self):
-        if not self.title:
-            return ""
-        return song_query(self.title, self.artist)
-
-    @property
-    def display_artist(self):
-        return self.artist or (f"{self.uploader} (canal)" if self.uploader else "")
-
-    def reset_state(self):
-        self.state = "Falta título" if not self.title else "Revisar artista" if not self.artist else "Pendiente"
-        if self.title and not self.artist and self.uploader:
-            self.state = "Canal disponible"
-        if self.title.endswith(("…", "...")):
-            self.state = "Revisar título"
-        if self.review_reason:
-            self.state = "Revisar bloque"
 
 
 class SongTable(ttk.Frame):

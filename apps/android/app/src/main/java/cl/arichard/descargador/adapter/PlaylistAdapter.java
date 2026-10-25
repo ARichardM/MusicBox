@@ -26,7 +26,7 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
  @Override public void onBindViewHolder(@NonNull Holder h,int position){
   String name=displayed.get(position);PlaylistManager pm=PlaylistManager.getInstance(context);
   List<cl.arichard.descargador.model.Song> songs=pm.resolveSongs(name,library);
-  h.name.setText(name);h.collage.setSongs(songs);h.count.setText(songs.size()+(songs.size()==1?" canción":" canciones"));
+  h.name.setText(cl.arichard.descargador.util.Tr.name(name));h.collage.setSongs(songs);h.count.setText(songs.size()+(songs.size()==1?cl.arichard.descargador.util.Tr.t(" canción"):cl.arichard.descargador.util.Tr.t(" canciones"))+cl.arichard.descargador.util.Clicks.suffix(cl.arichard.descargador.util.Clicks.of(context,songs)));
   String description=pm.getDescription(name);h.description.setText(description);h.description.setVisibility(description.isEmpty()?View.GONE:View.VISIBLE);
   h.itemView.setOnClickListener(v->{if(listener!=null)listener.onPlaylistClick(name);});
   h.more.setOnClickListener(v->{if(listener!=null)listener.onDeleteClick(name,v);});

@@ -140,7 +140,8 @@ public class DeviceGestureTest {
         });
         assertNotNull(device.wait(Until.findObject(By.text("Resultado de prueba")), 5000));
         for (int i = 0; i < 2; i++) {
-            view("btnThemeToggle").click(); Thread.sleep(1000);
+            final int mode = i % 2 == 0 ? androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO : androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES;
+            action(() -> androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(mode)); Thread.sleep(1000);
             assertNotNull(device.wait(Until.findObject(By.text("Resultado de prueba")), 5000));
             MainActivity themed = (MainActivity) resumed();
             MainUiState retained = main(() -> new androidx.lifecycle.ViewModelProvider(themed).get(MainUiState.class));

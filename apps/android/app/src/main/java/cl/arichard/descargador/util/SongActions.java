@@ -39,25 +39,25 @@ public final class SongActions {
         PlaylistManager manager = PlaylistManager.getInstance(activity);
         List<String> names = manager.getPlaylistNames();
         List<String> options = new ArrayList<>(names);
-        options.add("＋ Nueva playlist");
-        new MaterialAlertDialogBuilder(activity).setTitle("Agregar " + songs.size() + " canción" + (songs.size() > 1 ? "es" : "") + " a playlist")
+        options.add(Tr.t("＋ Nueva playlist"));
+        new MaterialAlertDialogBuilder(activity).setTitle(Tr.f(songs.size() > 1 ? "Agregar %d canciones a playlist" : "Agregar %d canción a playlist", songs.size()))
                 .setItems(options.toArray(new String[0]), (d, which) -> {
                     if (which == names.size()) {
                         EditText input = new EditText(activity);
-                        input.setHint("Nombre de la playlist");
+                        input.setHint(Tr.t("Nombre de la playlist"));
                         input.setSingleLine(true);
-                        AlertDialog dialog = new MaterialAlertDialogBuilder(activity).setTitle("Nueva playlist")
-                                .setView(input).setPositiveButton("Crear y agregar", null)
-                                .setNegativeButton("Cancelar", null).create();
+                        AlertDialog dialog = new MaterialAlertDialogBuilder(activity).setTitle(Tr.t("Nueva playlist"))
+                                .setView(input).setPositiveButton(Tr.t("Crear y agregar"), null)
+                                .setNegativeButton(Tr.t("Cancelar"), null).create();
                         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
                             String name = input.getText().toString().trim();
-                            if (!manager.createPlaylist(name)) { input.setError("Escribe un nombre nuevo"); return; }
+                            if (!manager.createPlaylist(name)) { input.setError(Tr.t("Escribe un nombre nuevo")); return; }
                             addBulk(activity, manager, name, songs, changed);
                             dialog.dismiss();
                         }));
                         dialog.show();
                     } else addBulk(activity, manager, names.get(which), songs, changed);
-                }).setNegativeButton("Cancelar", null).show();
+                }).setNegativeButton(Tr.t("Cancelar"), null).show();
     }
 
     private static void addBulk(Activity activity, PlaylistManager manager, String name, List<Song> songs, Runnable changed) {
@@ -68,14 +68,15 @@ public final class SongActions {
                 ok = manager.addOnlineTrack(name, new SearchResult(song.getVideoId(), song.getTitle(),
                         song.getArtist(), song.getDuration() / 1000, song.getCoverPath(),
                         "https://www.youtube.com/watch?v=" + song.getVideoId()));
-            } else ok = manager.addSongToPlaylist(name, song.getPath());
+            } else ok = manager.addSongToPlaylist(name, manager.canonicalKey(song));
             if (ok) added++;
         }
         int finalAdded = added;
         activity.runOnUiThread(() -> {
             message(activity, finalAdded == songs.size()
-                    ? finalAdded + " canción" + (finalAdded > 1 ? "es" : "") + " agregada" + (finalAdded > 1 ? "s" : "") + " a " + name
-                    : finalAdded + " agregada" + (finalAdded > 1 ? "s" : "") + " (" + (songs.size() - finalAdded) + " ya estaban en " + name + ")");
+                    ? Tr.f(finalAdded > 1 ? "%d canciones agregadas a %s" : "%d canción agregada a %s", finalAdded, name)
+                    : Tr.f(finalAdded > 1 ? "%d agregadas (%d ya estaban en %s)" : "%d agregada (%d ya estaba en %s)",
+                            finalAdded, songs.size() - finalAdded, name));
             changed.run();
         });
     }
@@ -86,8 +87,8 @@ public final class SongActions {
             added = manager.addOnlineTrack(name, new SearchResult(song.getVideoId(), song.getTitle(),
                     song.getArtist(), song.getDuration() / 1000, song.getCoverPath(),
                     "https://www.youtube.com/watch?v=" + song.getVideoId()));
-        } else added = manager.addSongToPlaylist(name, song.getPath());
-        message(activity, added ? "Agregada a " + name : "La canción ya está en " + name);
+        } else added = manager.addSongToPlaylist(name, manager.canonicalKey(song));
+        message(activity, added ? Tr.t("Agregada a ") + name : Tr.t("La canción ya está en ") + name);
         changed.run();
         if (added && song.isOnline() && manager.isAutoDownloadEnabled(name))
             copyToFolder(activity, song, StorageUtil.getDownloadDir(activity), changed);
@@ -105,33 +106,33 @@ public final class SongActions {
         List<File> targets = new ArrayList<>(folders.values());
         List<String> labels = new ArrayList<>();
         for (File file : targets) labels.add(file.getName() + "\n" + file.getAbsolutePath());
-        labels.add("＋ Nueva carpeta en " + downloads.getName());
-        new MaterialAlertDialogBuilder(activity).setTitle(song.isOnline() ? "Descargar en carpeta" : "Copiar a carpeta")
+        labels.add(Tr.t("＋ Nueva carpeta en ") + downloads.getName());
+        new MaterialAlertDialogBuilder(activity).setTitle(song.isOnline() ? Tr.t("Descargar en carpeta") : Tr.t("Copiar a carpeta"))
                 .setItems(labels.toArray(new String[0]), (d, which) -> {
                     if (which < targets.size()) { copyToFolder(activity, song, targets.get(which), changed); return; }
                     EditText input = new EditText(activity);
-                    input.setHint("Nombre de la carpeta"); input.setSingleLine(true);
-                    AlertDialog dialog = new MaterialAlertDialogBuilder(activity).setTitle("Nueva carpeta")
-                            .setView(input).setPositiveButton("Crear y agregar", null)
-                            .setNegativeButton("Cancelar", null).create();
+                    input.setHint(Tr.t("Nombre de la carpeta")); input.setSingleLine(true);
+                    AlertDialog dialog = new MaterialAlertDialogBuilder(activity).setTitle(Tr.t("Nueva carpeta"))
+                            .setView(input).setPositiveButton(Tr.t("Crear y agregar"), null)
+                            .setNegativeButton(Tr.t("Cancelar"), null).create();
                     dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
                         String name = input.getText().toString().trim();
                         if (name.isEmpty() || name.equals(".") || name.equals("..") || name.contains("/") || name.contains("\\")) {
-                            input.setError("Escribe un nombre de carpeta válido"); return;
+                            input.setError(Tr.t("Escribe un nombre de carpeta válido")); return;
                         }
                         copyToFolder(activity, song, new File(downloads, name), changed);
                         dialog.dismiss();
                     }));
                     dialog.show();
-                }).setNegativeButton("Cancelar", null).show();
+                }).setNegativeButton(Tr.t("Cancelar"), null).show();
     }
 
     private static void copyToFolder(Activity activity, Song song, File folder, Runnable changed) {
-        message(activity, song.isOnline() ? "Descarga en cola: " + song.getTitle() : "Copiando canción…");
+        message(activity, song.isOnline() ? Tr.t("Descarga en cola: ") + song.getTitle() : Tr.t("Copiando canción…"));
         DescargadorApp.IO.execute(() -> {
             File partial = null;
             try {
-                if (!folder.isDirectory() && !folder.mkdirs()) throw new Exception("No se pudo crear la carpeta");
+                if (!folder.isDirectory() && !folder.mkdirs()) throw new Exception(Tr.t("No se pudo crear la carpeta"));
                 File target;
                 if (song.isOnline()) {
                     YoutubeDLRequest request = new YoutubeDLRequest("https://www.youtube.com/watch?v=" + song.getVideoId());
@@ -142,50 +143,50 @@ public final class SongActions {
                     request.addOption("-o", new File(folder, "%(title).160s [%(id)s].%(ext)s").getAbsolutePath());
                     YoutubeDL.getInstance().execute(request);
                     File[] files = folder.listFiles((dir, name) -> name.endsWith("[" + song.getVideoId() + "].mp3"));
-                    if (files == null || files.length == 0) throw new Exception("No se encontró el archivo descargado");
+                    if (files == null || files.length == 0) throw new Exception(Tr.t("No se encontró el archivo descargado"));
                     target = files[0];
                 } else {
                     File source = new File(song.getPath());
                     target = new File(folder, source.getName());
-                    if (source.getCanonicalPath().equals(target.getCanonicalPath())) throw new Exception("La canción ya está en esa carpeta");
-                    if (target.exists()) throw new Exception("Ya existe un archivo con ese nombre en la carpeta");
+                    if (source.getCanonicalPath().equals(target.getCanonicalPath())) throw new Exception(Tr.t("La canción ya está en esa carpeta"));
+                    if (target.exists()) throw new Exception(Tr.t("Ya existe un archivo con ese nombre en la carpeta"));
                     partial = File.createTempFile("musicbox-", ".part", folder);
                     try (FileInputStream in = new FileInputStream(source); FileOutputStream out = new FileOutputStream(partial)) {
                         byte[] buffer = new byte[65536]; int length;
                         while ((length = in.read(buffer)) != -1) out.write(buffer, 0, length);
                     }
-                    if (target.exists() || !partial.renameTo(target)) throw new Exception("No se pudo guardar la copia");
+                    if (target.exists() || !partial.renameTo(target)) throw new Exception(Tr.t("No se pudo guardar la copia"));
                     partial = null;
                 }
                 StorageUtil.scanFile(activity, target);
                 activity.runOnUiThread(() -> {
                     if (song.isOnline()) activity.getSharedPreferences("downloaded_videos", 0).edit()
                             .putBoolean(song.getVideoId(), true).apply();
-                    message(activity, "Agregada a " + folder.getName()); changed.run();
+                    message(activity, Tr.t("Agregada a ") + folder.getName()); changed.run();
                 });
             } catch (Exception e) {
-                activity.runOnUiThread(() -> message(activity, e.getMessage() != null ? e.getMessage() : "No se pudo agregar a la carpeta"));
+                activity.runOnUiThread(() -> message(activity, e.getMessage() != null ? e.getMessage() : Tr.t("No se pudo agregar a la carpeta")));
             } finally { if (partial != null) partial.delete(); }
         });
     }
 
     public static void delete(Activity activity, Song song, Runnable changed) {
-        String description = song.isOnline() ? "Se quitará de tus playlists y favoritos."
-                : "Se eliminará el archivo del dispositivo y se quitará de tus playlists.";
-        new MaterialAlertDialogBuilder(activity).setTitle("Eliminar «" + song.getTitle() + "»")
-                .setMessage(description).setNegativeButton("Cancelar", null)
-                .setPositiveButton("Eliminar", (d, which) -> DescargadorApp.IO.execute(() -> {
+        String description = song.isOnline() ? Tr.t("Se quitará de tus playlists y favoritos.")
+                : Tr.t("Se eliminará el archivo del dispositivo y se quitará de tus playlists.");
+        new MaterialAlertDialogBuilder(activity).setTitle(Tr.t("Eliminar «") + song.getTitle() + "»")
+                .setMessage(description).setNegativeButton(Tr.t("Cancelar"), null)
+                .setPositiveButton(Tr.t("Eliminar"), (d, which) -> DescargadorApp.IO.execute(() -> {
                     try {
                         if (!song.isOnline()) {
                             File file = new File(song.getPath());
-                            if (!file.isFile() || !file.delete()) throw new Exception("No se pudo eliminar. Revisa el permiso de acceso a archivos.");
+                            if (!file.isFile() || !file.delete()) throw new Exception(Tr.t("No se pudo eliminar. Revisa el permiso de acceso a archivos."));
                             MediaScannerConnection.scanFile(activity, new String[]{song.getPath()}, null, null);
                         }
                         PlaylistManager.getInstance(activity).removeSongEverywhere(song.getPath());
                         cl.arichard.descargador.data.SearchHistoryManager.getInstance(activity).removeSong(song.getPath());
                         activity.runOnUiThread(() -> {
                             PlayerManager.getInstance().removeSong(song.getPath());
-                            message(activity, "Canción eliminada"); changed.run();
+                            message(activity, Tr.t("Canción eliminada")); changed.run();
                         });
                     } catch (Exception e) { activity.runOnUiThread(() -> message(activity, e.getMessage())); }
                 })).show();

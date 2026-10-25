@@ -21,7 +21,7 @@ import java.io.File;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 28, application = Application.class)
+@Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class PlayerScreenTest {
     @Test public void fullPlayerShowsActionsAndOpensEditableQueueWithoutStartingPlayback() throws Exception {
         Context context = RuntimeEnvironment.getApplication();

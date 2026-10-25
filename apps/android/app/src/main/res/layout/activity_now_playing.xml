@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<cl.arichard.descargador.util.PlayerDismissLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nowPlayingCoordinator"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_primary">
+
+<cl.arichard.descargador.util.PlayerDismissLayout
     android:id="@+id/nowPlayingRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -9,7 +15,7 @@
     android:paddingStart="20dp"
     android:paddingEnd="20dp"
     android:paddingTop="16dp"
-    android:paddingBottom="24dp">
+    android:paddingBottom="100dp">
 
     <!-- Top Bar: Back Chevron, Centered MP3/MP4 Pill, Favorite and Download -->
     <LinearLayout
@@ -79,24 +85,46 @@
             android:layout_height="40dp"
             android:padding="8dp"
             android:src="@drawable/ic_favorite"
-            android:contentDescription="Agregar a favoritos"
+            android:contentDescription="@string/agregar_a_favoritos"
             android:background="?attr/selectableItemBackgroundBorderless"/>
 
-        <!-- Download is available for online tracks. -->
-        <ImageView
-            android:id="@+id/btnNowPlayingAction"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:padding="8dp"
-            android:src="@drawable/ic_download"
-            android:contentDescription="Descargar canción"
-            app:tint="@color/text_primary"
-            android:background="?attr/selectableItemBackgroundBorderless"/>
         <ImageView android:id="@+id/btnPlayerMore" android:layout_width="40dp"
             android:layout_height="40dp" android:padding="8dp" android:src="@drawable/ic_more_vert"
-            app:tint="@color/text_primary" android:contentDescription="Más opciones de la canción"
+            app:tint="@color/text_primary" android:contentDescription="@string/mas_opciones_de_la_cancion"
             android:background="?attr/selectableItemBackgroundBorderless"/>
 
+    </LinearLayout>
+
+    <!-- Where the music comes from: a folder, a playlist, all songs or a YouTube search. -->
+    <LinearLayout
+        android:id="@+id/playingFromBlock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:layout_marginTop="6dp">
+
+        <TextView
+            android:id="@+id/txtPlayingFromLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/reproduciendo_desde"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.12"/>
+
+        <TextView
+            android:id="@+id/txtPlayingFromName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold"/>
     </LinearLayout>
 
     <!-- Artwork is the dedicated downward-dismiss gesture area. -->
@@ -199,7 +227,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Descargando..."
+                android:text="@string/descargando"
                 android:textColor="@color/text_primary"
                 android:textSize="13sp"
                 android:textStyle="bold"/>
@@ -208,7 +236,7 @@
                 android:id="@+id/txtPlayerDownloadEta"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Conectando..."
+                android:text="@string/conectando"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"/>
         </LinearLayout>
@@ -300,6 +328,12 @@
                 android:layout_gravity="center"
                 android:src="@drawable/ic_play_arrow"
                 app:tint="@color/play_circle_icon"/>
+
+            <cl.arichard.descargador.util.LoadingRingView
+                android:id="@+id/playLoadingRing"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_gravity="center"/>
         </FrameLayout>
 
         <ImageView
@@ -314,7 +348,7 @@
 
         <ImageView
             android:id="@+id/btnRepeat"
-            android:contentDescription="Cambiar modo de bucle"
+            android:contentDescription="@string/cambiar_modo_de_bucle"
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_weight="1"
@@ -324,3 +358,13 @@
             android:background="?attr/selectableItemBackgroundBorderless"/>
     </LinearLayout>
 </cl.arichard.descargador.util.PlayerDismissLayout>
+
+    <!-- Queue: peeks from the bottom edge and can be pulled up, like YouTube Music. -->
+    <FrameLayout
+        android:id="@+id/queueSheet"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_queue_sheet"
+        android:elevation="12dp"
+        app:layout_behavior="com.google.android.material.bottomsheet.BottomSheetBehavior"/>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

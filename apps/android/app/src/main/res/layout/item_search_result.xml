@@ -20,20 +20,17 @@
             android:layout_height="28dp" android:layout_gravity="center"
             android:padding="5dp" android:src="@drawable/ic_play_arrow"
             android:background="@drawable/bg_play_circle" app:tint="#000000"
-            android:contentDescription="Reproducir"/>
+            android:contentDescription="@string/reproducir"/>
         <ImageView android:id="@+id/imgDownloadedResult" android:layout_width="24dp"
             android:layout_height="24dp" android:layout_gravity="top|end"
             android:layout_margin="3dp" android:padding="4dp"
             android:background="@drawable/bg_download_status"
             android:src="@drawable/ic_downloaded_badge" android:visibility="gone"
-            android:contentDescription="Descargada"/>
-        <ProgressBar android:id="@+id/progressDownloadResult"
-            style="?android:attr/progressBarStyleSmall"
-            android:layout_width="24dp" android:layout_height="24dp"
+            android:contentDescription="@string/descargada"/>
+        <cl.arichard.descargador.util.LoadingRingView android:id="@+id/progressDownloadResult"
+            android:layout_width="26dp" android:layout_height="26dp"
             android:layout_gravity="top|end" android:layout_margin="3dp" android:padding="4dp"
-            android:background="@drawable/bg_download_status"
-            android:indeterminate="true" android:indeterminateTint="@color/accent"
-            android:visibility="gone"/>
+            android:background="@drawable/bg_download_status"/>
     </FrameLayout>
 
     <LinearLayout
@@ -66,7 +63,7 @@
 
     <ImageView android:id="@+id/btnFavoriteResult" android:layout_width="38dp"
         android:layout_height="38dp" android:padding="9dp" android:src="@drawable/ic_favorite"
-        android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="Me gusta"/>
+        android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="@string/me_gusta"/>
 
     <FrameLayout
         android:id="@+id/btnAddResult"

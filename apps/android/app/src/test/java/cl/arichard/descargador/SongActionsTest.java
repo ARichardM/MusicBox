@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 28, application = Application.class)
+@Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class SongActionsTest {
     public static class Host extends AppCompatActivity {
         @Override protected void onCreate(Bundle state) { setTheme(R.style.Theme_MusicBox); super.onCreate(state); }

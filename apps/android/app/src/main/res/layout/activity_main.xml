@@ -20,16 +20,12 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:gravity="center_vertical">
                     <TextView android:layout_width="0dp" android:layout_height="wrap_content"
-                        android:layout_weight="1" android:text="Buscar"
+                        android:layout_weight="1" android:text="@string/buscar"
                         android:textColor="@color/text_primary" android:textSize="30sp"
                         android:textStyle="bold" android:letterSpacing="-0.02"/>
-                    <ImageView android:id="@+id/btnThemeToggle"
-                        android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
-                        android:src="@drawable/ic_theme_toggle" app:tint="@color/text_secondary"
-                        android:background="?attr/selectableItemBackgroundBorderless"/>
                     <ImageView android:id="@+id/btnAccount"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
-                        android:src="@drawable/ic_account" android:contentDescription="Cuenta"
+                        android:src="@drawable/ic_account" android:contentDescription="@string/cuenta"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="52dp"
@@ -41,13 +37,13 @@
                         android:layout_width="0dp" android:layout_height="match_parent"
                         android:layout_weight="1" android:background="@null"
                         android:layout_marginStart="12dp"
-                        android:hint="Canción, artista o enlace de YouTube"
+                        android:hint="@string/cancion_artista_o_enlace_de_youtube"
                         android:textColorHint="@color/text_muted" android:textColor="@color/text_primary"
                         android:textSize="16sp" android:singleLine="true" android:imeOptions="actionSearch"/>
                     <ImageView android:id="@+id/btnClearSearch"
                         android:layout_width="32dp" android:layout_height="32dp" android:padding="7dp"
                         android:src="@drawable/ic_close" app:tint="@color/text_secondary"
-                        android:contentDescription="Limpiar búsqueda" android:visibility="gone"
+                        android:contentDescription="@string/limpiar_busqueda" android:visibility="gone"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                     <ImageView android:id="@+id/btnPaste"
                         android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp"
@@ -101,7 +97,7 @@
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
-                                    android:text="Búsquedas recientes"
+                                    android:text="@string/busquedas_recientes"
                                     android:textColor="@color/text_primary"
                                     android:textSize="17sp"
                                     android:textStyle="bold"
@@ -115,7 +111,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:padding="6dp"
-                                    android:text="Borrar"
+                                    android:text="@string/borrar"
                                     android:textColor="@color/accent"
                                     android:textSize="13sp"
                                     android:textStyle="bold"
@@ -147,7 +143,7 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="Colecciones más escuchadas"
+                                android:text="@string/colecciones_mas_escuchadas"
                                 android:textColor="@color/text_primary"
                                 android:textSize="17sp"
                                 android:textStyle="bold"
@@ -176,7 +172,7 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="Escuchadas recientemente"
+                                android:text="@string/escuchadas_recientemente"
                                 android:textColor="@color/text_primary"
                                 android:textSize="17sp"
                                 android:textStyle="bold"
@@ -207,7 +203,7 @@
                             <TextView
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:text="Más escuchadas en tu biblioteca"
+                                android:text="@string/mas_escuchadas_en_tu_biblioteca"
                                 android:textColor="@color/text_primary"
                                 android:textSize="17sp"
                                 android:textStyle="bold"
@@ -217,7 +213,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Tus canciones más reproducidas"
+                                android:text="@string/tus_canciones_mas_reproducidas"
                                 android:textColor="@color/text_secondary"
                                 android:textSize="13sp"/>
 
@@ -235,7 +231,7 @@
                 <!-- Fallback hint (hidden by default) -->
                 <TextView android:id="@+id/txtSearchHint"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_gravity="center" android:text="Busca una canción o pega un enlace"
+                    android:layout_gravity="center" android:text="@string/busca_una_cancion_o_pega_un_enlace"
                     android:textColor="@color/text_muted" android:textSize="14sp"
                     android:visibility="gone"/>
 
@@ -294,20 +290,20 @@
                         android:orientation="vertical">
                         <TextView android:id="@+id/txtLibraryTitle"
                             android:layout_width="match_parent" android:layout_height="wrap_content"
-                            android:text="Mi Música"
+                            android:text="@string/mi_musica"
                             android:textColor="@color/text_primary" android:textSize="28sp"
                             android:textStyle="bold" android:letterSpacing="-0.02"
                             android:maxLines="1" android:ellipsize="end"/>
                         <TextView android:id="@+id/txtSongCount"
                             android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="0 canciones" android:textColor="@color/text_secondary"
+                            android:text="@string/zero_songs" android:textColor="@color/text_secondary"
                             android:textSize="13sp"/>
                     </LinearLayout>
                     <ImageView android:id="@+id/btnLocatePlaying"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
                         android:src="@drawable/ic_locate_playing" app:tint="@color/accent"
-                        android:contentDescription="Ir a la canción actual" android:background="?attr/selectableItemBackgroundBorderless"/>
+                        android:contentDescription="@string/ir_a_la_cancion_actual" android:background="?attr/selectableItemBackgroundBorderless"/>
                     <ImageView android:id="@+id/btnShuffleAll"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
                         android:src="@drawable/ic_shuffle" app:tint="@color/accent"
@@ -315,7 +311,7 @@
                     <ImageView android:id="@+id/btnNewPlaylist"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
                         android:src="@drawable/ic_add" app:tint="@color/accent"
-                        android:contentDescription="Nueva playlist" android:visibility="gone"
+                        android:contentDescription="@string/nueva_playlist" android:visibility="gone"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                 </LinearLayout>
                 <LinearLayout android:layout_width="match_parent" android:layout_height="44dp"
@@ -327,7 +323,7 @@
                         android:layout_width="0dp" android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:background="@null" android:layout_marginStart="10dp"
-                        android:hint="Filtrar canciones, artistas, carpetas..." android:textColorHint="@color/text_muted"
+                        android:hint="@string/filtrar_canciones_artistas_carpetas" android:textColorHint="@color/text_muted"
                         android:textColor="@color/text_primary" android:textSize="15sp"
                         android:singleLine="true"/>
                     <ImageView android:id="@+id/btnClearLibraryFilter"
@@ -344,18 +340,18 @@
                     <TextView android:id="@+id/chipSongs"
                         android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1"
                         android:gravity="center"
-                        android:background="@drawable/bg_chip_active" android:text="Canciones"
+                        android:background="@drawable/bg_chip_active" android:text="@string/canciones"
                         android:textColor="@color/chip_active_text" android:textSize="13sp"
                         android:textStyle="bold"/>
                     <TextView android:id="@+id/chipPlaylists"
                         android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1"
                         android:gravity="center" android:layout_marginStart="8dp"
-                        android:background="@drawable/bg_chip_inactive" android:text="Playlists"
+                        android:background="@drawable/bg_chip_inactive" android:text="@string/playlists"
                         android:textColor="@color/text_secondary" android:textSize="13sp"/>
                     <TextView android:id="@+id/chipFolders"
                         android:layout_width="0dp" android:layout_height="34dp" android:layout_weight="1"
                         android:gravity="center" android:layout_marginStart="8dp"
-                        android:background="@drawable/bg_chip_inactive" android:text="Carpetas"
+                        android:background="@drawable/bg_chip_inactive" android:text="@string/carpetas"
                         android:textColor="@color/text_secondary" android:textSize="13sp"/>
                 </LinearLayout>
                 <FrameLayout android:id="@+id/layoutAutoDownloadPill"
@@ -370,28 +366,29 @@
                         <ImageView android:layout_width="13dp" android:layout_height="13dp"
                             android:src="@drawable/ic_download" app:tint="@color/accent"/>
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                            android:layout_marginStart="4dp" android:text="Auto"
+                            android:layout_marginStart="4dp" android:text="@string/auto"
                             android:textColor="@color/text_primary" android:textSize="11sp"
                             android:fontFamily="sans-serif-medium"/>
                         <androidx.appcompat.widget.SwitchCompat
                             android:id="@+id/switchLibraryAutoDownload"
                             android:layout_width="wrap_content" android:layout_height="32dp"
                             android:scaleX="0.75" android:scaleY="0.75"
-                            android:showText="false" android:contentDescription="Descarga automática"/>
+                            android:showText="false" android:contentDescription="@string/descarga_automatica"/>
                     </LinearLayout>
                 </FrameLayout>
             </LinearLayout>
 
-            <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerLibrary"
-                android:layout_width="match_parent" android:layout_height="0dp"
-                android:layout_weight="1" android:layout_marginTop="8dp"
-                android:clipToPadding="false" android:paddingStart="8dp" android:paddingEnd="8dp"
-                android:paddingBottom="130dp" android:scrollbars="none"
-                app:fastScrollEnabled="true"
-                app:fastScrollVerticalThumbDrawable="@drawable/fast_scroll_thumb"
-                app:fastScrollVerticalTrackDrawable="@drawable/fast_scroll_track"
-                app:fastScrollHorizontalThumbDrawable="@drawable/fast_scroll_thumb"
-                app:fastScrollHorizontalTrackDrawable="@drawable/fast_scroll_track"/>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="0dp"
+                android:layout_weight="1" android:layout_marginTop="8dp">
+                <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerLibrary"
+                    android:layout_width="match_parent" android:layout_height="match_parent"
+                    android:clipToPadding="false" android:paddingStart="8dp" android:paddingEnd="8dp"
+                    android:paddingBottom="130dp" android:scrollbars="none"/>
+                <cl.arichard.descargador.util.FastScrollView android:id="@+id/libraryFastScroll"
+                    android:layout_width="36dp" android:layout_height="match_parent"
+                    android:layout_gravity="end"
+                    android:layout_marginBottom="130dp"/>
+            </FrameLayout>
 
             <cl.arichard.descargador.util.SkeletonLoadingView android:id="@+id/libraryLoading"
                 android:layout_width="match_parent" android:layout_height="0dp"
@@ -422,7 +419,7 @@
                     android:src="@drawable/ic_search" app:tint="@color/text_primary"/>
                 <TextView android:id="@+id/navLabelSearch"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:text="Buscar"
+                    android:layout_marginStart="6dp" android:text="@string/buscar"
                     android:textColor="@color/text_primary" android:textSize="12sp"
                     android:textStyle="bold"/>
             </LinearLayout>
@@ -435,7 +432,7 @@
                     android:src="@drawable/ic_music_library" app:tint="@color/text_muted"/>
                 <TextView android:id="@+id/navLabelLibrary"
                     android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp" android:text="Música"
+                    android:layout_marginStart="6dp" android:text="@string/musica"
                     android:textColor="@color/text_muted" android:textSize="12sp"/>
             </LinearLayout>
         </cl.arichard.descargador.util.DragTabBarLayout>
@@ -481,14 +478,18 @@
                 </LinearLayout>
                 </LinearLayout>
                 </FrameLayout>
-                <ImageView android:id="@+id/btnMiniPlayPause"
-                    android:layout_width="42dp" android:layout_height="42dp" android:padding="9dp"
-                    android:src="@drawable/ic_play_arrow" app:tint="@color/text_primary"
-                    android:background="?attr/selectableItemBackgroundBorderless"/>
+                <FrameLayout android:layout_width="42dp" android:layout_height="42dp">
+                    <ImageView android:id="@+id/btnMiniPlayPause"
+                        android:layout_width="match_parent" android:layout_height="match_parent" android:padding="9dp"
+                        android:src="@drawable/ic_play_arrow" app:tint="@color/text_primary"
+                        android:background="?attr/selectableItemBackgroundBorderless"/>
+                    <cl.arichard.descargador.util.LoadingRingView android:id="@+id/miniLoadingRing"
+                        android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="center"/>
+                </FrameLayout>
                 <ImageView android:id="@+id/btnMiniQueue"
                     android:layout_width="38dp" android:layout_height="42dp" android:padding="8dp"
                     android:src="@drawable/ic_queue" app:tint="@color/text_primary"
-                    android:contentDescription="Abrir cola" android:background="?attr/selectableItemBackgroundBorderless"/>
+                    android:contentDescription="@string/abrir_cola" android:background="?attr/selectableItemBackgroundBorderless"/>
                 <ImageView android:id="@+id/btnMiniNext"
                     android:layout_width="38dp" android:layout_height="38dp" android:padding="8dp"
                     android:src="@drawable/ic_skip_next" app:tint="@color/text_secondary"
@@ -526,7 +527,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="0 seleccionadas"
+            android:text="@string/zero_selected"
             android:textColor="@color/text_primary"
             android:textSize="14sp"
             android:textStyle="bold" />
@@ -538,7 +539,7 @@
             android:gravity="center"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
-            android:text="Todas"
+            android:text="@string/todas"
             android:textColor="@color/accent"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -551,7 +552,7 @@
             android:gravity="center"
             android:paddingStart="10dp"
             android:paddingEnd="10dp"
-            android:text="＋ Playlist"
+            android:text="@string/playlist"
             android:textColor="@color/accent"
             android:textSize="13sp"
             android:textStyle="bold"
@@ -563,7 +564,7 @@
             android:layout_height="36dp"
             android:padding="8dp"
             android:src="@drawable/ic_close"
-            android:contentDescription="Cancelar selección"
+            android:contentDescription="@string/cancelar_seleccion"
             app:tint="@color/text_secondary"
             android:background="?attr/selectableItemBackgroundBorderless" />
     </LinearLayout>

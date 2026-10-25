@@ -21,9 +21,13 @@ public final class CloudSyncManager {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final PlaylistManager playlists;
     private final SearchHistoryManager history;
+    private final ClickStats clicks;
+    private boolean needsUpload;
     private final Runnable uiChanged;
     private DocumentReference document;
     private ListenerRegistration registration;
+    private ListenerRegistration revocationWatch;
+    private static volatile CloudSyncManager active;
     private JSONObject lastRoot = new JSONObject();
     private boolean applying;
     private boolean deviceRegistered;
@@ -34,6 +38,7 @@ public final class CloudSyncManager {
         this.uiChanged = uiChanged;
         playlists = PlaylistManager.getInstance(context);
         history = SearchHistoryManager.getInstance(context);
+        clicks = ClickStats.getInstance(context);
     }
 
     public void start() {
@@ -42,13 +47,16 @@ public final class CloudSyncManager {
         SharedPreferences owner = context.getSharedPreferences("musicbox_cloud", Context.MODE_PRIVATE);
         String previousUid = owner.getString("owner_uid", "");
         if (!previousUid.isEmpty() && !previousUid.equals(user.getUid())) {
-            playlists.resetForAccount(); history.resetForAccount();
+            playlists.resetForAccount(); history.resetForAccount(); clicks.resetForAccount();
         }
         owner.edit().putString("owner_uid", user.getUid()).apply();
         document = FirebaseFirestore.getInstance().collection("users").document(user.getUid())
                 .collection("state").document("musicbox");
+        active = this;
+        revocationWatch = DeviceSessions.watch(context);
         playlists.setChangeListener(this::scheduleUpload);
         history.setChangeListener(this::scheduleUpload);
+        clicks.setChangeListener(this::scheduleUpload);
         registration = document.addSnapshotListener((snapshot, error) -> {
             if (error != null || snapshot == null) return;
             if (!snapshot.exists()) { scheduleUpload(); return; }
@@ -61,16 +69,24 @@ public final class CloudSyncManager {
                 applying = true;
                 if (root.has("playlists")) playlists.importJson(root.optJSONObject("playlists"));
                 if (root.has("history")) history.importJson(root.optJSONObject("history"));
+                if (clicks.merge(root.optJSONObject("clicks"))) needsUpload = true;
                 JSONObject preferences = root.optJSONObject("preferences");
                 if (preferences != null && preferences.has("darkMode")) {
                     context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE).edit()
                             .putBoolean("dark_mode", preferences.optBoolean("darkMode", true)).apply();
                 }
                 applying = false;
+                if (needsUpload) { needsUpload = false; scheduleUpload(); }
                 if (uiChanged != null) uiChanged.run();
                 if (!deviceRegistered) { deviceRegistered = true; scheduleUpload(); }
             } catch (Exception ignored) { applying = false; }
         });
+    }
+
+    /** Lets other screens (settings) ask the running sync to upload preferences. */
+    public static void requestUpload() {
+        CloudSyncManager current = active;
+        if (current != null) current.scheduleUpload();
     }
 
     public void scheduleUpload() {
@@ -86,6 +102,7 @@ public final class CloudSyncManager {
             root.put("schema", 1);
             root.put("playlists", playlists.exportJson());
             root.put("history", history.exportJson());
+            root.put("clicks", clicks.exportJson());
             SharedPreferences prefs = context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE);
             JSONObject preferences = root.optJSONObject("preferences");
             if (preferences == null) preferences = new JSONObject();
@@ -109,7 +126,9 @@ public final class CloudSyncManager {
 
     public void stop() {
         handler.removeCallbacks(pendingUpload);
-        playlists.setChangeListener(null); history.setChangeListener(null);
+        playlists.setChangeListener(null); history.setChangeListener(null); clicks.setChangeListener(null);
         if (registration != null) registration.remove();
+        if (revocationWatch != null) revocationWatch.remove();
+        if (active == this) active = null;
     }
 }

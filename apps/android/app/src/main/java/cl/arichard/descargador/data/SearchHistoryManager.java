@@ -22,7 +22,10 @@ public class SearchHistoryManager {
     private final SharedPreferences prefs;
     private Runnable changeListener;
 
+    private final Context appContext;
+
     private SearchHistoryManager(Context context) {
+        this.appContext = context.getApplicationContext();
         this.prefs = context.getApplicationContext().getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
     }
 
@@ -82,8 +85,7 @@ public class SearchHistoryManager {
         for (Song s : recents) arr.put(s.toJson());
         prefs.edit().putString(KEY_RECENT_SONGS, arr.toString()).apply();
 
-        // Increment play count
-        incrementPlayCount(song.getPath() != null ? song.getPath() : song.getTitle());
+        ClickStats.getInstance(appContext).record(song);
         changed();
     }
 
@@ -156,8 +158,9 @@ public class SearchHistoryManager {
 
         // Sort by play count descending; if tie, sort by dateAdded descending
         Collections.sort(copy, (a, b) -> {
-            int countA = getPlayCount(a.getPath() != null ? a.getPath() : a.getTitle());
-            int countB = getPlayCount(b.getPath() != null ? b.getPath() : b.getTitle());
+            ClickStats stats = ClickStats.getInstance(appContext);
+            int countA = stats.count(a);
+            int countB = stats.count(b);
             if (countA != countB) {
                 return Integer.compare(countB, countA);
             }

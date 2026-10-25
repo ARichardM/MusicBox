@@ -64,6 +64,9 @@ public class PlayerManager {
     private boolean resumeOnFocusGain = false;
     private boolean noisyReceiverRegistered = false;
 
+    /** Reserved key that carries the stream length next to the headers; it is never sent over HTTP. */
+    private static final String LENGTH_KEY = "X-MusicBox-Length";
+
     private static final class CachedStream {
         final String url;
         final Map<String, String> headers;
@@ -86,21 +89,191 @@ public class PlayerManager {
         private long currentPosition = -1;
         private long rangeEnd = -1;
         private static final long READ_BLOCK_BYTES = 512L * 1024L;
+        private static final int CHUNK_BYTES = 512 * 1024;
+        private static final int AHEAD_CHUNKS = 8;
+        private static final int MAX_CHUNKS = 48;   // 24 MB of audio/video kept in memory at most
+        private final Object lock = new Object();
+        private final Map<Integer, byte[]> chunks = new HashMap<>();
+        private Thread fetcher;
+        private final List<Integer> heads = new ArrayList<>();
+        private final Map<Integer, Long> lastUse = new HashMap<>();
+        private long clock;
+        private IOException fetchError;
+        private boolean closed;
+        private long lastReadEnd = -1;
 
         HeaderHttpDataSource(String source, Map<String, String> headers) {
             this.source = source;
             this.headers = new HashMap<>(headers);
             long parsedLength = -1;
-            try {
+            String probed = this.headers.remove(LENGTH_KEY);
+            if (probed != null) {
+                try { parsedLength = Long.parseLong(probed); } catch (NumberFormatException ignored) {}
+            }
+            if (parsedLength < 0) try {
                 String value = Uri.parse(source).getQueryParameter("clen");
                 if (value != null) parsedLength = Long.parseLong(value);
             } catch (Exception ignored) {}
             contentLength = parsedLength;
         }
 
-        @Override public synchronized int readAt(long position, byte[] buffer, int offset, int size)
+        @Override public int readAt(long position, byte[] buffer, int offset, int size)
                 throws IOException {
             if (position < 0 || size <= 0 || (contentLength >= 0 && position >= contentLength)) return -1;
+            if (contentLength < 0) return readDirect(position, buffer, offset, size);
+            if (lastReadEnd >= 0 && Math.abs(position - lastReadEnd) > 1024)
+                Log.i("MusicBoxPlayer", "Player seeks: read at " + position + " after " + lastReadEnd);
+            lastReadEnd = position + size;
+            int total = 0;
+            while (total < size && position + total < contentLength) {
+                long absolute = position + total;
+                int index = (int) (absolute / CHUNK_BYTES);
+                byte[] chunk = awaitChunk(index);
+                int inChunk = (int) (absolute - (long) index * CHUNK_BYTES);
+                int count = Math.min(size - total, chunk.length - inChunk);
+                if (count <= 0) break;
+                System.arraycopy(chunk, inChunk, buffer, offset + total, count);
+                total += count;
+            }
+            return total == 0 ? -1 : total;
+        }
+
+        /**
+         * Blocks until the chunk is downloaded. MP4 files keep audio and video in far apart regions, so the
+         * player alternates between several read positions; every recent position is a "head" that the
+         * fetcher keeps filling, and nothing already downloaded is dropped until the memory budget is hit.
+         */
+        private byte[] awaitChunk(int index) throws IOException {
+            synchronized (lock) {
+                touch(index);
+                if (fetcher == null) {
+                    fetcher = new Thread(this::fetchLoop, "stream-prefetch");
+                    fetcher.setDaemon(true);
+                    fetcher.start();
+                }
+                lock.notifyAll();
+                long waitStart = System.currentTimeMillis();
+                long deadline = waitStart + 30000;
+                while (true) {
+                    if (closed) throw new IOException("Fuente cerrada");
+                    byte[] chunk = chunks.get(index);
+                    if (chunk != null) {
+                        long waited = System.currentTimeMillis() - waitStart;
+                        if (waited > 150) Log.w("MusicBoxPlayer", "Reader waited " + waited + " ms for chunk " + index + " (buffered " + chunks.size() + ")");
+                        lastUse.put(index, ++clock);
+                        return chunk;
+                    }
+                    if (fetchError != null) {
+                        IOException error = fetchError;
+                        fetchError = null;
+                        throw error;
+                    }
+                    long left = deadline - System.currentTimeMillis();
+                    if (left <= 0) throw new IOException("Tiempo agotado descargando el audio");
+                    try { lock.wait(Math.min(left, 1000)); }
+                    catch (InterruptedException e) { throw new IOException("Descarga interrumpida"); }
+                }
+            }
+        }
+
+        /** Remembers the newest read positions (at most three distinct chunks, most recent first). */
+        private void touch(int index) {
+            heads.remove(Integer.valueOf(index));
+            heads.add(0, index);
+            while (heads.size() > 3) heads.remove(heads.size() - 1);
+        }
+
+        /** Next chunk to download: the heads first, then what lies ahead of them, then the rest of the file. */
+        private int nextWanted(int totalChunks) {
+            for (int head : heads) if (head < totalChunks && !chunks.containsKey(head)) return head;
+            for (int head : heads)
+                for (int i = head + 1; i <= head + AHEAD_CHUNKS && i < totalChunks; i++)
+                    if (!chunks.containsKey(i)) return i;
+            if (totalChunks <= MAX_CHUNKS)
+                for (int i = 0; i < totalChunks; i++) if (!chunks.containsKey(i)) return i;
+            return -1;
+        }
+
+        private void evictIfNeeded() {
+            while (chunks.size() > MAX_CHUNKS) {
+                Integer oldest = null;
+                long oldestUse = Long.MAX_VALUE;
+                for (Integer key : chunks.keySet()) {
+                    if (heads.contains(key)) continue;
+                    long use = lastUse.containsKey(key) ? lastUse.get(key) : 0;
+                    if (use < oldestUse) { oldestUse = use; oldest = key; }
+                }
+                if (oldest == null) return;
+                chunks.remove(oldest);
+                lastUse.remove(oldest);
+            }
+        }
+
+        private void fetchLoop() {
+            int totalChunks = (int) ((contentLength + CHUNK_BYTES - 1) / CHUNK_BYTES);
+            while (true) {
+                int next;
+                synchronized (lock) {
+                    while (true) {
+                        if (closed) return;
+                        next = nextWanted(totalChunks);
+                        if (next >= 0) break;
+                        try { lock.wait(); } catch (InterruptedException e) { return; }
+                    }
+                }
+                try {
+                    byte[] data = downloadChunk(next);
+                    synchronized (lock) {
+                        chunks.put(next, data);
+                        lastUse.put(next, ++clock);
+                        evictIfNeeded();
+                        lock.notifyAll();
+                    }
+                } catch (IOException e) {
+                    synchronized (lock) { fetchError = e; lock.notifyAll(); }
+                    try { Thread.sleep(500); } catch (InterruptedException ie) { return; }
+                }
+            }
+        }
+
+        private byte[] downloadChunk(int index) throws IOException {
+            long start = (long) index * CHUNK_BYTES;
+            long end = Math.min(start + CHUNK_BYTES, contentLength) - 1;
+            long began = System.currentTimeMillis();
+            IOException last = null;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                HttpURLConnection conn = null;
+                try {
+                    conn = (HttpURLConnection) new URL(source).openConnection();
+                    conn.setConnectTimeout(12000);
+                    conn.setReadTimeout(15000);
+                    for (Map.Entry<String, String> header : headers.entrySet())
+                        conn.setRequestProperty(header.getKey(), header.getValue());
+                    conn.setRequestProperty("Range", "bytes=" + start + "-" + end);
+                    int status = conn.getResponseCode();
+                    if (status != HttpURLConnection.HTTP_PARTIAL && !(status == HttpURLConnection.HTTP_OK && start == 0))
+                        throw new IOException("YouTube respondió HTTP " + status);
+                    byte[] data = new byte[(int) (end - start + 1)];
+                    try (InputStream in = conn.getInputStream()) {
+                        int filled = 0;
+                        while (filled < data.length) {
+                            int read = in.read(data, filled, data.length - filled);
+                            if (read < 0) throw new IOException("Descarga incompleta");
+                            filled += read;
+                        }
+                    }
+                    Log.i("MusicBoxPlayer", "Chunk " + index + " downloaded in " + (System.currentTimeMillis() - began) + " ms");
+                    return data; // not disconnected: the keep-alive connection is reused by the next chunk
+                } catch (IOException e) {
+                    last = e;
+                    if (conn != null) conn.disconnect();
+                }
+            }
+            throw last;
+        }
+
+        private synchronized int readDirect(long position, byte[] buffer, int offset, int size)
+                throws IOException {
             if (input == null || currentPosition != position || position > rangeEnd) openAt(position);
             int total = 0;
             while (total < size) {
@@ -141,7 +314,10 @@ public class PlayerManager {
 
         @Override public long getSize() { return contentLength; }
 
-        @Override public synchronized void close() { closeConnection(); }
+        @Override public void close() {
+            synchronized (lock) { closed = true; chunks.clear(); lastUse.clear(); lock.notifyAll(); }
+            synchronized (this) { closeConnection(); }
+        }
 
         private void closeConnection() {
             if (input != null) try { input.close(); } catch (IOException ignored) {}
@@ -178,11 +354,40 @@ public class PlayerManager {
         if (instance == null) instance = new PlayerManager();
         return instance;
     }
+    private String sourceType = "songs", sourceName = "";
+
+    /** Where the current queue comes from: "songs", "folder", "playlist" or "search" (name = folder or playlist). */
+    public void setPlaybackSource(String type, String name) {
+        sourceType = type == null ? "songs" : type;
+        sourceName = name == null ? "" : name;
+        if (context != null) context.getSharedPreferences("player", 0).edit()
+                .putString("source_type", sourceType).putString("source_name", sourceName).apply();
+    }
+    /** "Carpeta · X", "Playlist · X", "Canciones" or "Búsqueda de YouTube", ready to show. */
+    public String playingFromLabel() {
+        if ("folder".equals(sourceType) && !sourceName.isEmpty()) return cl.arichard.descargador.util.Tr.t("Carpeta") + " · " + sourceName;
+        if ("playlist".equals(sourceType) && !sourceName.isEmpty()) return cl.arichard.descargador.util.Tr.t("Playlist") + " · " + cl.arichard.descargador.util.Tr.name(sourceName);
+        if ("search".equals(sourceType)) return cl.arichard.descargador.util.Tr.t("Búsqueda de YouTube");
+        return cl.arichard.descargador.util.Tr.t("Canciones");
+    }
+    public String getSourceType() { return sourceType; }
+    public String getSourceName() { return sourceName; }
+
+    private final Runnable notificationObserver = this::refreshNotification;
+
+    /** Rebuilds the media notification (shuffle, repeat and favorite state follow the app). */
+    private void refreshNotification() {
+        if (currentSong != null && context != null) MusicService.updateNotification(context, currentSong, isPlaying());
+    }
+
     public void init(Context ctx) {
         context = ctx.getApplicationContext();
+        cl.arichard.descargador.data.PlaylistManager.getInstance(context).addObserver(notificationObserver);
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         android.content.SharedPreferences prefs = context.getSharedPreferences("player", 0);
         repeatMode = prefs.getInt("repeat", REPEAT_ALL);
+        sourceType = prefs.getString("source_type", "songs");
+        sourceName = prefs.getString("source_name", "");
         try {
             org.json.JSONArray songs = new org.json.JSONArray(prefs.getString("queue", "[]"));
             queue.clear();
@@ -318,7 +523,7 @@ public class PlayerManager {
             try {
                 DescargadorApp app = (DescargadorApp) context;
                 if (!app.awaitReady(20)) throw new IllegalStateException(
-                        app.getInitError() == null ? "El reproductor todavía se está preparando" : app.getInitError());
+                        app.getInitError() == null ? cl.arichard.descargador.util.Tr.t("El reproductor todavía se está preparando") : app.getInitError());
                 JSONObject info = resolveOnlineInfo(target);
                 String stream = info.getString("url");
                 Map<String, String> headers = new HashMap<>();
@@ -327,6 +532,8 @@ public class PlayerManager {
                     Iterator<String> keys = http.keys();
                     while (keys.hasNext()) { String key = keys.next(); headers.put(key, http.getString(key)); }
                 }
+                long length = info.optLong("content_length", -1);
+                if (length > 0) headers.put(LENGTH_KEY, String.valueOf(length));
                 synchronized (STREAM_CACHE) { STREAM_CACHE.put(videoId, new CachedStream(stream, headers)); }
                 Log.i("MusicBoxPlayer", "Stream resolved in " + (System.currentTimeMillis() - startedAt) + " ms");
                 handler.post(() -> {
@@ -340,7 +547,7 @@ public class PlayerManager {
     }
 
     private JSONObject resolveOnlineInfo(String target) throws Exception {
-        String[] clients = {"android_vr,android", "web,android", "ios,web"};
+        String[] clients = {"android_vr,android;player_skip=webpage,configs", "android_vr,android", "web,android", "ios,web"};
         Exception lastError = null;
         for (String client : clients) {
             try {
@@ -358,7 +565,13 @@ public class PlayerManager {
                 String output = YoutubeDL.getInstance().execute(request).getOut();
                 JSONObject info = new JSONObject(output);
                 String stream = info.optString("url", "");
-                if (!stream.isEmpty() && streamIsReachable(stream, info.optJSONObject("http_headers"))) return info;
+                if (!stream.isEmpty()) {
+                    long length = probeStream(stream, info.optJSONObject("http_headers"));
+                    if (length >= 0) {
+                        if (length > 0) info.put("content_length", length);
+                        return info;
+                    }
+                }
             } catch (Exception error) {
                 lastError = error;
                 Log.w("MusicBoxPlayer", "Resolver failed with client " + client, error);
@@ -367,7 +580,8 @@ public class PlayerManager {
         throw lastError == null ? new IllegalStateException("YouTube no devolvió un enlace reproducible") : lastError;
     }
 
-    private boolean streamIsReachable(String stream, JSONObject jsonHeaders) {
+    /** Returns the file size (0 when the server does not say) or -1 when the stream is not reachable. */
+    private long probeStream(String stream, JSONObject jsonHeaders) {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(stream).openConnection();
@@ -382,10 +596,16 @@ public class PlayerManager {
                 }
             }
             int status = connection.getResponseCode();
-            return status == HttpURLConnection.HTTP_OK || status == HttpURLConnection.HTTP_PARTIAL;
+            if (status != HttpURLConnection.HTTP_OK && status != HttpURLConnection.HTTP_PARTIAL) return -1;
+            String range = connection.getHeaderField("Content-Range");   // "bytes 0-1/7234567"
+            if (range != null && range.contains("/")) {
+                try { return Long.parseLong(range.substring(range.indexOf('/') + 1).trim()); }
+                catch (NumberFormatException ignored) {}
+            }
+            return 0;
         } catch (Exception error) {
             Log.w("MusicBoxPlayer", "Resolved stream was not reachable", error);
-            return false;
+            return -1;
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -442,10 +662,10 @@ public class PlayerManager {
         releasePlayer();
         loading(false);
         String message;
-        if (!online) message = "No se pudo abrir el archivo de música.";
+        if (!online) message = cl.arichard.descargador.util.Tr.t("No se pudo abrir el archivo de música.");
         else if (context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork())
-            message = "Sin conexión a internet. Revisa Wi-Fi o datos móviles.";
-        else message = "No pudimos reproducir esta canción. YouTube rechazó temporalmente el audio.";
+            message = cl.arichard.descargador.util.Tr.t("Sin conexión a internet. Revisa Wi-Fi o datos móviles.");
+        else message = cl.arichard.descargador.util.Tr.t("No pudimos reproducir esta canción. YouTube rechazó temporalmente el audio.");
         for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackError(message);
         notifyState();
     }
@@ -606,11 +826,13 @@ public class PlayerManager {
         if (shuffle) Collections.shuffle(queue);
         currentIndex = indexOf(currentSong);
         notifyQueue();
+        refreshNotification();
         return shuffle;
     }
     public int toggleRepeat() {
         repeatMode = (repeatMode + 1) % 3;
         context.getSharedPreferences("player", 0).edit().putInt("repeat", repeatMode).apply();
+        refreshNotification();
         return repeatMode;
     }
     public void removeSong(String path) {

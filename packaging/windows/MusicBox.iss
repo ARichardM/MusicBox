@@ -44,6 +44,7 @@ Name: "{autodesktop}\MusicBox"; Filename: "{app}\MusicBox.exe"; WorkingDir: "{ap
 
 [Run]
 Filename: "{app}\MusicBox.exe"; Description: "Abrir MusicBox"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\MusicBox.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

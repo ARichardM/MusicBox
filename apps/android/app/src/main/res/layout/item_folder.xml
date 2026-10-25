@@ -20,5 +20,5 @@
         android:id="@+id/switchFolderAutoDownload"
         android:visibility="gone"
         android:layout_width="wrap_content" android:layout_height="36dp"
-        android:showText="false" android:contentDescription="Descarga automática"/>
+        android:showText="false" android:contentDescription="@string/descarga_automatica"/>
 </LinearLayout>

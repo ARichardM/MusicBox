@@ -37,7 +37,7 @@ public class CoverCollageView extends FrameLayout {
             empty.setText("Sin\ncanciones"); empty.setTextSize(9); empty.setTextColor(0xFFFFFFFF);
             empty.setGravity(Gravity.CENTER);
             addView(empty, new LayoutParams(-1, -1));
-            setContentDescription("Colección sin canciones");
+            setContentDescription(Tr.t("Colección sin canciones"));
             return;
         }
         for (Song song : top) {
@@ -46,7 +46,7 @@ public class CoverCollageView extends FrameLayout {
             covers.add(image); addView(image, new LayoutParams(1, 1));
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), image);
         }
-        setContentDescription("Portadas de las canciones más escuchadas");
+        setContentDescription(Tr.t("Portadas de las canciones más escuchadas"));
         post(this::layoutCovers);
     }
 

@@ -20,7 +20,7 @@ import java.util.Arrays;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 28, application = Application.class)
+@Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class PlayerManagerTest {
     private Context context;
     private PlayerManager player;
@@ -53,6 +53,7 @@ public class PlayerManagerTest {
     }
     @Test public void manualNextStillAdvancesWhenRepeatingOneSong() {
         assertEquals(PlayerManager.REPEAT_ONE, player.toggleRepeat());
+        cl.arichard.descargador.data.ClickStats.getInstance(context).resetForAccount();
         player.playNext(); prepared();
         assertEquals(c.getPath(), player.getCurrentSong().getPath());
         assertEquals(0, player.getCurrentPosition());
@@ -94,9 +95,10 @@ public class PlayerManagerTest {
         assertFalse(restored.isPlaying()); assertEquals(4200, restored.getCurrentPosition());
     }
     @Test public void automaticAdvanceCountsTowardsCollectionCollages() {
+        cl.arichard.descargador.data.ClickStats.getInstance(context).resetForAccount();
         player.playNext(); prepared();
         SearchHistoryManager history = SearchHistoryManager.getInstance(context);
-        assertEquals(1, history.getPlayCount(c.getPath()));
+        assertEquals(1, cl.arichard.descargador.data.ClickStats.getInstance(context).count(c));
         assertEquals(c.getPath(), history.getTopPlayed(Arrays.asList(a, b, c), 1).get(0).getPath());
     }
     @Test public void oldOnlineHistoryUsesTheSameIdentityAsPlaylistTracks() {

@@ -32,6 +32,9 @@ public class MusicService extends Service {
     public static final String ACTION_PREV = "cl.arichard.descargador.PREV";
     public static final String ACTION_STOP = "cl.arichard.descargador.STOP";
     public static final String ACTION_UPDATE = "cl.arichard.descargador.UPDATE";
+    public static final String ACTION_SHUFFLE = "cl.arichard.descargador.SHUFFLE";
+    public static final String ACTION_REPEAT = "cl.arichard.descargador.REPEAT";
+    public static final String ACTION_FAVORITE = "cl.arichard.descargador.FAVORITE";
 
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_ARTIST = "extra_artist";
@@ -58,6 +61,9 @@ public class MusicService extends Service {
             @Override public void onSkipToPrevious() { PlayerManager.getInstance().playPrevious(); }
             @Override public void onSeekTo(long pos) { PlayerManager.getInstance().seekTo((int) pos); }
             @Override public void onStop() { PlayerManager.getInstance().pause(); }
+            @Override public void onCustomAction(String action, android.os.Bundle extras) {
+                if (handleControl(action)) refresh();
+            }
             @Override
             public boolean onMediaButtonEvent(Intent mediaButtonEvent) {
                 return super.onMediaButtonEvent(mediaButtonEvent);
@@ -83,6 +89,8 @@ public class MusicService extends Service {
                 pm.playNext();
             } else if (ACTION_PREV.equals(action)) {
                 pm.playPrevious();
+            } else if (ACTION_SHUFFLE.equals(action) || ACTION_REPEAT.equals(action) || ACTION_FAVORITE.equals(action)) {
+                handleControl(action);
             } else if (ACTION_STOP.equals(action)) {
                 pm.pause();
                 if (mediaSession != null) mediaSession.setActive(false);
@@ -117,14 +125,40 @@ public class MusicService extends Service {
         return START_NOT_STICKY;
     }
 
+    /** Shuffle, repeat and favorite buttons shared by the notification and the lock-screen controls. */
+    private boolean handleControl(String action) {
+        PlayerManager pm = PlayerManager.getInstance();
+        if (ACTION_SHUFFLE.equals(action)) { pm.toggleShuffle(); return true; }
+        if (ACTION_REPEAT.equals(action)) { pm.toggleRepeat(); return true; }
+        if (ACTION_FAVORITE.equals(action)) {
+            cl.arichard.descargador.data.PlaylistManager.getInstance(this).toggleFavoriteSong(pm.getCurrentSong());
+            return true;
+        }
+        return false;
+    }
+
+    private void refresh() {
+        PlayerManager pm = PlayerManager.getInstance();
+        Song song = pm.getCurrentSong();
+        if (song == null) return;
+        Notification notification = buildNotification(song.getTitle(), song.getArtist(), pm.isPlaying());
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null) nm.notify(NOTIFICATION_ID, notification);
+    }
+
+    private PendingIntent controlIntent(int code, String action) {
+        return PendingIntent.getService(this, code, new Intent(this, MusicService.class).setAction(action),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Reproductor de Música",
+                cl.arichard.descargador.util.Tr.t("Reproductor de Música"),
                 NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("Controles de música en segundo plano");
+            channel.setDescription(cl.arichard.descargador.util.Tr.t("Controles de música en segundo plano"));
             channel.setShowBadge(false);
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) nm.createNotificationChannel(channel);
@@ -150,9 +184,24 @@ public class MusicService extends Service {
                 | PlaybackStateCompat.ACTION_STOP;
 
         int state = isPlaying ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
+        boolean shuffle = pm.isShuffle();
+        int repeat = pm.getRepeatMode();
+        boolean favorite = cl.arichard.descargador.data.PlaylistManager.getInstance(this).isFavoriteSong(song);
+        int repeatIcon = repeat == PlayerManager.REPEAT_ONE ? R.drawable.ic_repeat_one
+                : repeat == PlayerManager.REPEAT_ALL ? R.drawable.ic_repeat_on : R.drawable.ic_repeat;
+        String repeatLabel = repeat == PlayerManager.REPEAT_ONE ? cl.arichard.descargador.util.Tr.t("Repetir canción")
+                : repeat == PlayerManager.REPEAT_ALL ? cl.arichard.descargador.util.Tr.t("Repetir lista")
+                : cl.arichard.descargador.util.Tr.t("Bucle desactivado");
+        String shuffleLabel = cl.arichard.descargador.util.Tr.t(shuffle ? "Aleatorio activado" : "Aleatorio");
+        int shuffleIcon = shuffle ? R.drawable.ic_shuffle_on : R.drawable.ic_shuffle;
         PlaybackStateCompat playbackState = new PlaybackStateCompat.Builder()
                 .setActions(actions)
                 .setState(state, position, isPlaying ? 1.0f : 0.0f)
+                .addCustomAction(ACTION_SHUFFLE, shuffleLabel, shuffleIcon)
+                .addCustomAction(ACTION_REPEAT, repeatLabel, repeatIcon)
+                .addCustomAction(ACTION_FAVORITE,
+                        cl.arichard.descargador.util.Tr.t(favorite ? "Quitar de favoritos" : "Agregar a favoritos"),
+                        favorite ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite)
                 .build();
         mediaSession.setPlaybackState(playbackState);
 
@@ -207,12 +256,14 @@ public class MusicService extends Service {
             .setSubText("MusicBox")
             .setContentIntent(openApp)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .addAction(R.drawable.ic_skip_previous, "Anterior", pPrev)
-            .addAction(playIcon, isPlaying ? "Pausar" : "Reproducir", pToggle)
-            .addAction(R.drawable.ic_skip_next, "Siguiente", pNext)
+            .addAction(shuffleIcon, shuffleLabel, controlIntent(4, ACTION_SHUFFLE))
+            .addAction(R.drawable.ic_skip_previous, cl.arichard.descargador.util.Tr.t("Anterior"), pPrev)
+            .addAction(playIcon, isPlaying ? cl.arichard.descargador.util.Tr.t("Pausar") : cl.arichard.descargador.util.Tr.t("Reproducir"), pToggle)
+            .addAction(R.drawable.ic_skip_next, cl.arichard.descargador.util.Tr.t("Siguiente"), pNext)
+            .addAction(repeatIcon, repeatLabel, controlIntent(5, ACTION_REPEAT))
             .setStyle(new MediaStyle()
                 .setMediaSession(mediaSession.getSessionToken())
-                .setShowActionsInCompactView(0, 1, 2)
+                .setShowActionsInCompactView(1, 2, 3)
                 .setShowCancelButton(true)
                 .setCancelButtonIntent(MediaButtonReceiver.buildMediaButtonPendingIntent(this, PlaybackStateCompat.ACTION_STOP)))
             .setOngoing(isPlaying);

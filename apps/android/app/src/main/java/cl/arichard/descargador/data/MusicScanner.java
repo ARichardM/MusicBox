@@ -28,6 +28,8 @@ public class MusicScanner {
             scanDirectory(appMusicDir, songs, seenPaths);
         } catch (Exception ignored) {}
 
+        java.util.List<String> chosenFolders = LibraryFolders.get(context);
+
         // 2. Scan standard MediaStore Audio. This covers public Downloads/Music
         // without requiring unrestricted filesystem access.
         try {
@@ -56,12 +58,13 @@ public class MusicScanner {
                     while (cursor.moveToNext()) {
                         String path = dataCol >= 0 ? cursor.getString(dataCol) : null;
                         if (path == null || seenPaths.contains(path)) continue;
+                        if (!LibraryFolders.accepts(chosenFolders, path)) continue;
                         File file = new File(path);
                         if (!file.exists() || !isAudioFile(file.getName())) continue;
 
                         long id = idCol >= 0 ? cursor.getLong(idCol) : System.currentTimeMillis();
                         String title = titleCol >= 0 ? cursor.getString(titleCol) : file.getName();
-                        String artist = artistCol >= 0 ? cursor.getString(artistCol) : "Artista desconocido";
+                        String artist = artistCol >= 0 ? cursor.getString(artistCol) : cl.arichard.descargador.util.Tr.t("Artista desconocido");
                         String album = albumCol >= 0 ? cursor.getString(albumCol) : "";
                         long duration = durCol >= 0 ? cursor.getLong(durCol) : 0;
                         long dateAdded = dateCol >= 0 ? cursor.getLong(dateCol) : file.lastModified();
@@ -94,7 +97,7 @@ public class MusicScanner {
 
                 long duration = 0;
                 String title = file.getName();
-                String artist = "Artista desconocido";
+                String artist = cl.arichard.descargador.util.Tr.t("Artista desconocido");
                 String album = "";
 
                 try {

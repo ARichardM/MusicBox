@@ -184,7 +184,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="10dp"
-                        android:text="Descargar Canción MP3"
+                        android:text="@string/descargar_cancion_mp3"
                         android:textColor="#FFFFFF"
                         android:textSize="15sp"
                         android:textStyle="bold"/>

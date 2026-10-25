@@ -42,6 +42,32 @@ def _api_config():
     return project_id, api_key
 
 
+SIGN_IN_DONE_PAGE = (
+    "<!doctype html><html><head><meta charset='utf-8'><title>MusicBox</title></head>"
+    "<body style=\"margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;"
+    "justify-content:center;gap:10px;background:#0E1116;color:#fff;font-family:'Segoe UI',sans-serif\">"
+    "<div style='font-size:42px;color:#50E9FF'>&#10003;</div>"
+    "<div style='font-size:20px;font-weight:600'>Sesi&oacute;n iniciada / Signed in</div>"
+    "<div style='font-size:14px;color:#8E93A3'>Ya puedes cerrar esta pesta&ntilde;a y volver a MusicBox."
+    "<br>You can close this tab and return to MusicBox.</div>"
+    "<script>setTimeout(function(){window.close()},600)</script></body></html>"
+)
+
+
+class _HtmlRedirectApp:
+    """Respuesta de retorno de Google servida como HTML y no como texto plano."""
+
+    def __init__(self, success_message):
+        self.last_request_uri = None
+        self._success_message = success_message
+
+    def __call__(self, environ, start_response):
+        import wsgiref.util
+        start_response("200 OK", [("Content-Type", "text/html; charset=utf-8")])
+        self.last_request_uri = wsgiref.util.request_uri(environ)
+        return [self._success_message.encode("utf-8")]
+
+
 class FirebaseDesktopClient:
     def __init__(self, refresh_token=""):
         self.project_id, self.api_key = _api_config()
@@ -58,16 +84,15 @@ class FirebaseDesktopClient:
 
         flow = InstalledAppFlow.from_client_secrets_file(
             str(OAUTH_FILE), scopes=GOOGLE_SCOPES)
-        credentials = flow.run_local_server(
-            host="127.0.0.1", port=0, open_browser=True,
-            authorization_prompt_message="",
-            success_message=(
-                "<html><body style='background:#111;color:#fff;font-family:sans-serif;"
-                "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
-                "<p>✔ Sesión iniciada. Cerrando…</p>"
-                "<script>setTimeout(function(){window.close()},800)</script>"
-                "</body></html>"
-            ))
+        import google_auth_oauthlib.flow as flow_module
+        original_app = flow_module._RedirectWSGIApp
+        flow_module._RedirectWSGIApp = _HtmlRedirectApp
+        try:
+            credentials = flow.run_local_server(
+                host="127.0.0.1", port=0, open_browser=True,
+                authorization_prompt_message="", success_message=SIGN_IN_DONE_PAGE)
+        finally:
+            flow_module._RedirectWSGIApp = original_app
         if not credentials.id_token:
             raise RuntimeError("Google no devolvió un token de identidad.")
         response = _post_json(
@@ -105,10 +130,52 @@ class FirebaseDesktopClient:
         self.user = {"uid": response["localId"], "name": response.get("displayName", ""),
                      "email": response.get("email", ""), "photo": response.get("photoUrl", "")}
 
-    def _document_url(self):
+    def _document_url(self, name="musicbox"):
         uid = self.user["uid"]
         return (f"https://firestore.googleapis.com/v1/projects/{self.project_id}/databases/(default)"
-                f"/documents/users/{uid}/state/musicbox")
+                f"/documents/users/{uid}/state/{name}")
+
+    @staticmethod
+    def revocation_field(device_id):
+        return "d_" + device_id
+
+    def load_revocations(self):
+        """Marcas de cierre de sesión remoto: {campo: milisegundos}."""
+        if not self.id_token or not self.user:
+            return {}
+        request = Request(self._document_url("revocations"), headers={"Authorization": "Bearer " + self.id_token})
+        try:
+            with urlopen(request, timeout=20) as response:
+                document = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code == 404:
+                return {}
+            raise
+        marks = {}
+        for key, value in (document.get("fields") or {}).items():
+            raw = value.get("integerValue", value.get("doubleValue"))
+            if raw is None:
+                continue
+            try:
+                marks[key] = int(float(raw))
+            except (TypeError, ValueError):
+                pass
+        return marks
+
+    def revoke_device(self, device_id, now_ms):
+        """Pide a otro dispositivo que cierre su sesión guardada."""
+        if not self.id_token or not self.user:
+            raise RuntimeError("No hay una sesión activa.")
+        field = self.revocation_field(device_id)
+        _post_json(self._document_url("revocations") + "?updateMask.fieldPaths=" + field,
+                   {"fields": {field: {"integerValue": str(int(now_ms))}}},
+                   {"Authorization": "Bearer " + self.id_token}, method="PATCH")
+        state = self.load_state()
+        devices = state.get("devices") if isinstance(state.get("devices"), dict) else {}
+        if device_id in devices:
+            devices.pop(device_id)
+            state["devices"] = devices
+            self.save_state(state)
 
     def load_state(self):
         if not self.id_token or not self.user:

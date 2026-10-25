@@ -1,6 +1,7 @@
 package cl.arichard.descargador.util;
 
 import android.view.MotionEvent;
+import android.view.animation.OvershootInterpolator;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
@@ -16,6 +17,20 @@ public final class SafeTap {
         install(view, true);
     }
     public static void installRowTap(View view) { install(view, false); }
+
+    /** Elegant "pop" for toggles such as the heart: a quick squash, then a springy overshoot. */
+    public static void pop(View view, boolean activated) {
+        view.animate().cancel();
+        view.setScaleX(0.7f); view.setScaleY(0.7f);
+        view.animate().scaleX(1f).scaleY(1f).setDuration(activated ? 380 : 220)
+                .setInterpolator(new OvershootInterpolator(activated ? 4f : 1.5f)).start();
+    }
+
+    private static void press(View view, boolean down) {
+        view.animate().cancel();
+        if (down) view.animate().scaleX(0.82f).scaleY(0.82f).setDuration(90).start();
+        else view.animate().scaleX(1f).scaleY(1f).setDuration(260).setInterpolator(new OvershootInterpolator(3f)).start();
+    }
     private static void install(View view, boolean protectNavigation) {
         if (protectNavigation) view.setTag(R.id.protectedAction, true);
         int slop = ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
@@ -23,10 +38,10 @@ public final class SafeTap {
             float x, y; boolean dragged;
             @Override public boolean onTouch(View target, MotionEvent event) {
                 switch (event.getActionMasked()) {
-                    case MotionEvent.ACTION_DOWN: x = event.getRawX(); y = event.getRawY(); dragged = false; break;
+                    case MotionEvent.ACTION_DOWN: x = event.getRawX(); y = event.getRawY(); dragged = false; if (protectNavigation) press(target, true); break;
                     case MotionEvent.ACTION_MOVE:
                         if (!dragged && Math.hypot(event.getRawX() - x, event.getRawY() - y) > slop) {
-                            dragged = true; MotionEvent cancel = MotionEvent.obtain(event);
+                            dragged = true; if (protectNavigation) press(target, false); MotionEvent cancel = MotionEvent.obtain(event);
                             cancel.setAction(MotionEvent.ACTION_CANCEL); target.onTouchEvent(cancel); cancel.recycle();
                         }
                         return dragged;
@@ -35,8 +50,8 @@ public final class SafeTap {
                         MotionEvent cancel = MotionEvent.obtain(event);
                         cancel.setAction(MotionEvent.ACTION_CANCEL); target.onTouchEvent(cancel); cancel.recycle();
                         return true;
-                    case MotionEvent.ACTION_CANCEL: dragged = true; break;
-                    case MotionEvent.ACTION_UP: return dragged;
+                    case MotionEvent.ACTION_CANCEL: dragged = true; if (protectNavigation) press(target, false); break;
+                    case MotionEvent.ACTION_UP: if (protectNavigation) press(target, false); return dragged;
                 }
                 return false;
             }

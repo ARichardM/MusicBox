@@ -74,21 +74,17 @@
                 android:id="@+id/imgDownloadedBadge"
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:contentDescription="Descargada en el dispositivo"
+                android:contentDescription="@string/descargada_en_el_dispositivo"
                 android:layout_marginEnd="5dp"
                 android:src="@drawable/ic_downloaded_badge"
                 app:tint="@color/accent"
                 android:visibility="visible"/>
 
-            <ProgressBar
+            <cl.arichard.descargador.util.LoadingRingView
                 android:id="@+id/progressSongDownload"
-                style="?android:attr/progressBarStyleSmall"
                 android:layout_width="18dp"
                 android:layout_height="18dp"
-                android:layout_marginEnd="5dp"
-                android:indeterminate="true"
-                android:indeterminateTint="@color/accent"
-                android:visibility="gone"/>
+                android:layout_marginEnd="5dp"/>
 
             <TextView
                 android:id="@+id/txtSongSubtitle"
@@ -99,26 +95,44 @@
                 android:textSize="13sp"
                 android:singleLine="true"
                 android:ellipsize="end"/>
+
+            <!-- Clics: compact play counter, like YouTube views -->
+            <TextView
+                android:id="@+id/txtSongClicks"
+                android:layout_width="wrap_content"
+                android:layout_height="16dp"
+                android:layout_marginStart="6dp"
+                android:paddingStart="5dp"
+                android:paddingEnd="6dp"
+                android:gravity="center_vertical"
+                android:background="@drawable/bg_clicks_chip"
+                android:drawableStart="@drawable/ic_clicks"
+                android:drawablePadding="3dp"
+                android:drawableTint="@color/text_secondary"
+                android:textColor="@color/text_secondary"
+                android:textSize="10sp"
+                android:singleLine="true"
+                android:visibility="gone"/>
         </LinearLayout>
     </LinearLayout>
 
     <cl.arichard.descargador.util.GuardedActionsLayout
         android:id="@+id/songActionZone"
-        android:layout_width="96dp" android:layout_height="match_parent"
+        android:layout_width="78dp" android:layout_height="match_parent"
         android:orientation="horizontal" android:gravity="center">
     <ImageView
         android:id="@+id/btnFavorite"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:padding="8dp"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="9dp"
         android:src="@drawable/ic_favorite"
         android:background="?attr/selectableItemBackgroundBorderless"/>
 
     <ImageView
         android:id="@+id/btnSongMenu"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:padding="7dp"
+        android:layout_width="36dp"
+        android:layout_height="40dp"
+        android:padding="6dp"
         android:src="@drawable/ic_more_vert"
         android:background="?attr/selectableItemBackgroundBorderless"/>
     </cl.arichard.descargador.util.GuardedActionsLayout>

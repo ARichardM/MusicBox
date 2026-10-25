@@ -25,6 +25,7 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.GoogleAuthProvider;
 
 public class LoginActivity extends AppCompatActivity {
+    public static final String EXTRA_REVOKED = "revoked";
     private Button login;
     private View progress;
     private TextView error;
@@ -42,6 +43,9 @@ public class LoginActivity extends AppCompatActivity {
         stage.addView(animatedLogo, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         login.setOnClickListener(v -> beginGoogleLogin(false));
+        if (getIntent().getBooleanExtra(EXTRA_REVOKED, false)) {
+            showError(cl.arichard.descargador.util.Tr.t("Tu sesión se cerró desde otro dispositivo."));
+        }
     }
 
     @Override protected void onStart() {
@@ -67,11 +71,11 @@ public class LoginActivity extends AppCompatActivity {
                     @Override public void onResult(GetCredentialResponse result) { handleCredential(result.getCredential()); }
                     @Override public void onError(@NonNull GetCredentialException e) {
                         if (e instanceof NoCredentialException) {
-                            showError("No hay una cuenta de Google disponible en este dispositivo.");
+                            showError(cl.arichard.descargador.util.Tr.t("No hay una cuenta de Google disponible en este dispositivo."));
                             return;
                         }
                         android.util.Log.e("LoginActivity", "GetCredential error: ", e);
-                        showError("No se pudo iniciar sesión: " + e.getMessage());
+                        showError(cl.arichard.descargador.util.Tr.t("No se pudo iniciar sesión: ") + e.getMessage());
                     }
                 });
     }
@@ -79,20 +83,23 @@ public class LoginActivity extends AppCompatActivity {
     private void handleCredential(Credential credential) {
         if (!(credential instanceof CustomCredential) ||
                 !GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL.equals(credential.getType())) {
-            showError("Google devolvió una credencial no compatible."); return;
+            showError(cl.arichard.descargador.util.Tr.t("Google devolvió una credencial no compatible.")); return;
         }
         try {
             GoogleIdTokenCredential google = GoogleIdTokenCredential.createFrom(credential.getData());
             FirebaseAuth.getInstance().signInWithCredential(
                     GoogleAuthProvider.getCredential(google.getIdToken(), null))
-                    .addOnSuccessListener(result -> openApp())
+                    .addOnSuccessListener(result -> {
+                        cl.arichard.descargador.data.DeviceSessions.markSignedIn(this);
+                        openApp();
+                    })
                     .addOnFailureListener(e -> {
                         android.util.Log.e("LoginActivity", "Firebase rejected login: ", e);
-                        showError("Firebase rechazó el inicio de sesión: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                        showError(cl.arichard.descargador.util.Tr.t("Firebase rechazó el inicio de sesión: ") + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
                     });
         } catch (Exception e) {
             android.util.Log.e("LoginActivity", "Error validating Google account: ", e);
-            showError("No se pudo validar la cuenta de Google: " + e.getMessage());
+            showError(cl.arichard.descargador.util.Tr.t("No se pudo validar la cuenta de Google: ") + e.getMessage());
         }
     }
 

@@ -16,9 +16,9 @@ public class Song implements Serializable {
 
     public Song(long id, String title, String artist, String album, long duration, String path, String folder, long dateAdded) {
         this.id = id;
-        this.title = (title != null && !title.trim().isEmpty()) ? title.trim() : "Canción sin título";
-        this.artist = (artist != null && !artist.trim().isEmpty() && !artist.equals("<unknown>")) ? artist.trim() : "Artista desconocido";
-        this.album = (album != null && !album.trim().isEmpty()) ? album.trim() : "Álbum desconocido";
+        this.title = (title != null && !title.trim().isEmpty()) ? title.trim() : cl.arichard.descargador.util.Tr.t("Canción sin título");
+        this.artist = (artist != null && !artist.trim().isEmpty() && !artist.equals("<unknown>")) ? artist.trim() : cl.arichard.descargador.util.Tr.t("Artista desconocido");
+        this.album = (album != null && !album.trim().isEmpty()) ? album.trim() : cl.arichard.descargador.util.Tr.t("Álbum desconocido");
         this.duration = duration;
         if ("YouTube".equals(album) && path != null && !path.startsWith("youtube:")) {
             java.util.regex.Matcher video = java.util.regex.Pattern.compile(
@@ -73,7 +73,7 @@ public class Song implements Serializable {
         return new Song(
             obj.optLong("id", System.currentTimeMillis()),
             obj.optString("title", "Canción"),
-            obj.optString("artist", "Artista desconocido"),
+            obj.optString("artist", cl.arichard.descargador.util.Tr.t("Artista desconocido")),
             obj.optString("album", ""),
             obj.optLong("duration", 0),
             obj.optString("path", ""),

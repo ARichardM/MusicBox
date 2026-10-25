@@ -24,9 +24,9 @@
         android:id="@+id/switchAutoDownload"
         android:visibility="gone"
         android:layout_width="wrap_content" android:layout_height="36dp"
-        android:showText="false" android:contentDescription="Descarga automática"/>
+        android:showText="false" android:contentDescription="@string/descarga_automatica"/>
     <ImageView android:id="@+id/btnPlaylistMore" android:layout_width="36dp"
         android:layout_height="36dp" android:padding="8dp" android:src="@drawable/ic_more_vert"
-        android:contentDescription="Configurar playlist"
+        android:contentDescription="@string/configurar_playlist"
         android:background="?attr/selectableItemBackgroundBorderless"/>
 </LinearLayout>

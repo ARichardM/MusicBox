@@ -66,7 +66,8 @@ public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.FolderView
 
         holder.collage.setSongs(songs);
         holder.txtName.setText(name);
-        holder.txtCount.setText(count + (count == 1 ? " canción" : " canciones"));
+        holder.txtCount.setText(count + (count == 1 ? cl.arichard.descargador.util.Tr.t(" canción") : cl.arichard.descargador.util.Tr.t(" canciones"))
+                + cl.arichard.descargador.util.Clicks.suffix(cl.arichard.descargador.util.Clicks.of(holder.itemView.getContext(), songs)));
 
         holder.itemView.setOnClickListener(v -> {
             if (listener != null) listener.onFolderClick(name, songs);
@@ -80,14 +81,14 @@ public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.FolderView
             if (!checked) {
                 holder.autoDownload.setChecked(true);
                 new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-                        .setTitle("¿Desactivar descarga automática?")
-                        .setMessage("Si desactivas la auto-descarga, las canciones nuevas no se descargarán automáticamente al agregarse.\nLas ya descargadas se mantendrán.")
-                        .setPositiveButton("Desactivar", (dialog, which) -> {
+                        .setTitle(cl.arichard.descargador.util.Tr.t("¿Desactivar descarga automática?"))
+                        .setMessage(cl.arichard.descargador.util.Tr.t("Si desactivas la auto-descarga, las canciones nuevas no se descargarán automáticamente al agregarse.\nLas ya descargadas se mantendrán."))
+                        .setPositiveButton(cl.arichard.descargador.util.Tr.t("Desactivar"), (dialog, which) -> {
                             holder.autoDownload.setChecked(false);
                             context.getSharedPreferences("auto_download_folders", Context.MODE_PRIVATE).edit()
                                     .putBoolean(name, false).apply();
                         })
-                        .setNegativeButton("Cancelar", null)
+                        .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
                         .show();
             } else {
                 context.getSharedPreferences("auto_download_folders", Context.MODE_PRIVATE).edit()

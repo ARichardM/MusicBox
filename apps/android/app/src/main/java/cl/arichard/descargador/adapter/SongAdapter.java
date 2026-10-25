@@ -1,5 +1,6 @@
 package cl.arichard.descargador.adapter;
 
+import cl.arichard.descargador.util.Tr;
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -46,7 +47,18 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         updateSongs(songs);
     }
 
+    private final java.util.Map<String, Boolean> fileExists = new java.util.HashMap<>();
+
+    /** Cached: hitting the disk for every row bound while flinging is what made fast scrolling stutter. */
+    private boolean fileExists(String path) {
+        if (path == null) return false;
+        Boolean cached = fileExists.get(path);
+        if (cached == null) { cached = new File(path).exists(); fileExists.put(path, cached); }
+        return cached;
+    }
+
     public void updateSongs(List<Song> songs) {
+        fileExists.clear();
         originalList.clear();
         if (songs != null) {
             originalList.addAll(songs);
@@ -131,6 +143,18 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     public List<Song> getDisplayedList() { return displayedList; }
 
+    private static final String PROGRESS = "progress";
+    private final java.util.Map<String, Float> downloadProgress = new java.util.HashMap<>();
+
+    /** Real progress (0 to 1) of the download of [videoId]; a negative value means "still connecting". */
+    public void setDownloadProgress(String videoId, float fraction) {
+        if (videoId == null || videoId.isEmpty()) return;
+        downloadProgress.put(videoId, fraction);
+        for (int i = 0; i < displayedList.size(); i++) {
+            if (videoId.equals(displayedList.get(i).getVideoId())) notifyItemChanged(i, PROGRESS);
+        }
+    }
+
     public void setDownloadStarted(String videoId) {
         if (videoId == null || videoId.isEmpty()) return;
         downloadingVideoIds.add(videoId);
@@ -140,6 +164,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     public void setDownloadFinished(String videoId, boolean success) {
         if (videoId == null || videoId.isEmpty()) return;
         downloadingVideoIds.remove(videoId);
+        downloadProgress.remove(videoId);
         if (success) justCompletedVideoIds.add(videoId);
         notifyDataSetChanged();
     }
@@ -151,10 +176,24 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     }
 
     @Override
+    public void onBindViewHolder(@NonNull SongViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
+        if (payloads.contains(PROGRESS)) {
+            String id = displayedList.get(position).getVideoId();
+            Float fraction = id == null ? null : downloadProgress.get(id);
+            holder.progressDownload.setProgress(fraction == null ? -1f : fraction);
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
+    }
+
+    @Override
     public void onBindViewHolder(@NonNull SongViewHolder holder, int position) {
         Song song = displayedList.get(position);
         holder.txtTitle.setText(song.getTitle());
         holder.txtSubtitle.setText(song.getArtist() + " • " + song.getFormattedDuration());
+        int clicks = cl.arichard.descargador.util.Clicks.of(holder.itemView.getContext(), song);
+        holder.txtClicks.setVisibility(clicks > 0 ? View.VISIBLE : View.GONE);
+        holder.txtClicks.setText(cl.arichard.descargador.util.Clicks.format(clicks));
 
         CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), holder.imgCover);
 
@@ -162,15 +201,18 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         boolean downloading = videoId != null && downloadingVideoIds.contains(videoId);
         boolean savedOnline = videoId != null && context.getSharedPreferences("downloaded_videos", Context.MODE_PRIVATE)
                 .getBoolean(videoId, false);
-        boolean isLocalFile = song.getPath() != null && new File(song.getPath()).exists();
-        holder.progressDownload.animate().cancel();
+        boolean isLocalFile = fileExists(song.getPath());
         holder.imgDownloadedBadge.animate().cancel();
-        holder.progressDownload.setVisibility(downloading && !selectionMode ? View.VISIBLE : View.GONE);
         if (downloading && !selectionMode) {
-            holder.progressDownload.setAlpha(0f);
-            holder.progressDownload.animate().alpha(1f).setDuration(180).start();
+            Float fraction = downloadProgress.get(videoId);
+            holder.progressDownload.setProgress(fraction == null ? -1f : fraction);
         }
+        holder.progressDownload.setActive(downloading && !selectionMode);
         if (holder.imgDownloadedBadge != null) {
+            // Files MusicBox downloaded get the download mark; files that come from a music folder get a folder mark.
+            boolean fromFolder = isLocalFile && !savedOnline && !isMusicBoxFile(song.getPath());
+            holder.imgDownloadedBadge.setImageResource(fromFolder ? R.drawable.ic_folder_badge : R.drawable.ic_downloaded_badge);
+            holder.imgDownloadedBadge.setContentDescription(Tr.t(fromFolder ? "De una carpeta" : "Descargada en el dispositivo"));
             holder.imgDownloadedBadge.setVisibility((isLocalFile || savedOnline) && !downloading && !selectionMode
                     ? View.VISIBLE : View.GONE);
             holder.imgDownloadedBadge.setScaleX(1f);
@@ -207,7 +249,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         } else {
             holder.itemView.setBackgroundResource(isPlayingThis ? R.drawable.bg_song_playing : 0);
             holder.imgIndicator.setImageResource(PlayerManager.getInstance().isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
-            holder.itemView.setContentDescription(song.getTitle() + (isPlayingThis ? " · Canción actual" : ""));
+            holder.itemView.setContentDescription(song.getTitle() + (isPlayingThis ? cl.arichard.descargador.util.Tr.t(" · Canción actual") : ""));
             if (isPlayingThis) {
                 holder.txtTitle.setTextColor(accentColor);
                 holder.viewPlayingOverlay.setVisibility(View.VISIBLE);
@@ -241,8 +283,9 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         });
 
         holder.btnFavorite.setOnClickListener(v -> {
-            boolean nowFav = PlaylistManager.getInstance(context).toggleFavorite(song.getPath());
+            boolean nowFav = PlaylistManager.getInstance(context).toggleFavoriteSong(song);
             holder.btnFavorite.setImageResource(nowFav ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
+            cl.arichard.descargador.util.SafeTap.pop(holder.btnFavorite, nowFav);
             if (listener != null) listener.onFavoriteClick(song, position);
         });
 
@@ -256,16 +299,21 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     @Override public int getItemCount() { return displayedList.size(); }
 
+    private boolean isMusicBoxFile(String path) {
+        return path != null && (path.contains("/Android/data/" + context.getPackageName() + "/") || path.contains("/Download/Descargador/"));
+    }
+
     static class SongViewHolder extends RecyclerView.ViewHolder {
-        TextView txtTitle, txtSubtitle;
+        TextView txtTitle, txtSubtitle, txtClicks;
         ImageView imgCover, imgIndicator, btnFavorite, btnMenu, imgDownloadedBadge;
-        android.widget.ProgressBar progressDownload;
+        cl.arichard.descargador.util.LoadingRingView progressDownload;
         View viewPlayingOverlay;
 
         public SongViewHolder(@NonNull View itemView) {
             super(itemView);
             txtTitle = itemView.findViewById(R.id.txtSongTitle);
             txtSubtitle = itemView.findViewById(R.id.txtSongSubtitle);
+            txtClicks = itemView.findViewById(R.id.txtSongClicks);
             imgCover = itemView.findViewById(R.id.imgSongCover);
             imgIndicator = itemView.findViewById(R.id.imgPlayingIndicator);
             viewPlayingOverlay = itemView.findViewById(R.id.viewPlayingOverlay);

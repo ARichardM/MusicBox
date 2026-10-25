@@ -32,7 +32,9 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     private final OnResultClickListener listener;
     private final Set<String> downloadedIds = new HashSet<>();
     private final Set<String> downloadedTitles = new HashSet<>();
+    private static final String PROGRESS = "progress";
     private final Set<String> downloadingIds = new HashSet<>();
+    private final java.util.Map<String, Float> downloadProgress = new java.util.HashMap<>();
     private final Set<String> justCompletedIds = new HashSet<>();
 
     public SearchResultAdapter(Context context, OnResultClickListener listener) {
@@ -65,8 +67,18 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         }
     }
 
+    /** Real progress (0 to 1) of the download of [id]; a negative value means "still connecting". */
+    public void setDownloadProgress(String id, float fraction) {
+        if (id == null) return;
+        downloadProgress.put(id, fraction);
+        for (int i = 0; i < results.size(); i++) {
+            if (id.equals(results.get(i).getId())) { notifyItemChanged(i, PROGRESS); break; }
+        }
+    }
+
     public void removeDownloadingId(String id) {
         if (id != null) {
+            downloadProgress.remove(id);
             downloadingIds.remove(id);
             notifyDataSetChanged();
         }
@@ -74,6 +86,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
     public void markDownloadCompleted(String id) {
         if (id != null) {
+            downloadProgress.remove(id);
             downloadingIds.remove(id);
             downloadedIds.add(id);
             justCompletedIds.add(id);
@@ -103,6 +116,16 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     }
 
     @Override
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
+        if (payloads.contains(PROGRESS)) {
+            Float fraction = downloadProgress.get(results.get(position).getId());
+            holder.progressDownload.setProgress(fraction == null ? -1f : fraction);
+            return;
+        }
+        super.onBindViewHolder(holder, position, payloads);
+    }
+
+    @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         SearchResult item = results.get(position);
         holder.txtTitle.setText(item.getTitle());
@@ -114,15 +137,14 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         boolean isDownloaded = downloadedIds.contains(item.getId()) || downloadedTitles.contains(normalize(item.getTitle()));
 
         holder.imgDownloaded.animate().cancel();
-        holder.progressDownload.animate().cancel();
         holder.imgDownloaded.setRotation(0f);
         if (isDownloading) {
-            holder.progressDownload.setVisibility(View.VISIBLE);
+            Float fraction = downloadProgress.get(item.getId());
+            holder.progressDownload.setProgress(fraction == null ? -1f : fraction);
+            holder.progressDownload.setActive(true);
             holder.imgDownloaded.setVisibility(View.GONE);
-            holder.progressDownload.setAlpha(0f);
-            holder.progressDownload.animate().alpha(1f).setDuration(180).start();
         } else {
-            holder.progressDownload.setVisibility(View.GONE);
+            holder.progressDownload.setActive(false);
             if (isDownloaded) {
                 holder.imgDownloaded.setVisibility(View.VISIBLE);
                 if (justCompletedIds.remove(item.getId())) {
@@ -161,6 +183,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             boolean exists = pm.isOnlineTrackInPlaylist("Favoritos", item.getId());
             if (exists) pm.removeSongFromPlaylist("Favoritos", "youtube:" + item.getId());
             else pm.addOnlineTrack("Favoritos", item);
+            cl.arichard.descargador.util.SafeTap.pop(holder.btnFavorite, !exists);
             if (listener != null) listener.onFavoriteChanged(item, !exists);
             notifyItemChanged(holder.getBindingAdapterPosition());
         });
@@ -181,7 +204,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         TextView txtChannel;
         FrameLayout btnAdd;
         ImageView btnPlay, btnFavorite, imgDownloaded;
-        android.widget.ProgressBar progressDownload;
+        cl.arichard.descargador.util.LoadingRingView progressDownload;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);

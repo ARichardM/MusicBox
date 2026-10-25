@@ -206,7 +206,7 @@ public class PlayerActivity extends AppCompatActivity {
 
             containerMp3Cover.setVisibility(View.VISIBLE);
             containerMp4Video.setVisibility(View.GONE);
-            txtDownloadButtonLabel.setText("Descargar Canción MP3");
+            txtDownloadButtonLabel.setText(cl.arichard.descargador.util.Tr.t("Descargar Canción MP3"));
         } else {
             tabSelectorMp4.setBackgroundResource(R.drawable.bg_chip_active);
             tabSelectorMp4.setTextColor(activeText);
@@ -215,13 +215,13 @@ public class PlayerActivity extends AppCompatActivity {
 
             containerMp3Cover.setVisibility(View.GONE);
             containerMp4Video.setVisibility(View.VISIBLE);
-            txtDownloadButtonLabel.setText("Descargar Video MP4");
+            txtDownloadButtonLabel.setText(cl.arichard.descargador.util.Tr.t("Descargar Video MP4"));
         }
     }
 
     private void startDownload() {
         if (isDownloading) {
-            Toast.makeText(this, "Descarga en curso", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Descarga en curso"), Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -255,8 +255,8 @@ public class PlayerActivity extends AppCompatActivity {
         isDownloading = true;
         layoutDownloadStatus.setVisibility(View.VISIBLE);
         downloadProgress.setProgress(0);
-        txtDownloadStatus.setText("Iniciando descarga (" + (isMp3Mode ? "MP3" : "MP4") + ")...");
-        txtDownloadEta.setText("Conectando...");
+        txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("Iniciando descarga (") + (isMp3Mode ? "MP3" : "MP4") + ")...");
+        txtDownloadEta.setText(cl.arichard.descargador.util.Tr.t("Conectando..."));
 
         DescargadorApp.IO.execute(() -> {
             try {
@@ -264,24 +264,24 @@ public class PlayerActivity extends AppCompatActivity {
                     runOnUiThread(() -> {
                         int p = Math.round(percent);
                         downloadProgress.setProgress(p);
-                        txtDownloadStatus.setText("Descargando " + p + "%");
-                        txtDownloadEta.setText("Faltan aprox. " + eta + " s");
+                        txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("Descargando ") + p + "%");
+                        txtDownloadEta.setText(cl.arichard.descargador.util.Tr.f("Faltan aprox. %d s", (long) eta));
                     });
                     return kotlin.Unit.INSTANCE;
                 });
 
                 runOnUiThread(() -> {
                     downloadProgress.setProgress(100);
-                    txtDownloadStatus.setText("¡Descarga completada con éxito!");
-                    txtDownloadEta.setText("Guardado en tu biblioteca");
-                    Toast.makeText(PlayerActivity.this, "Guardado en Descargas/Descargador", Toast.LENGTH_SHORT).show();
+                    txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("¡Descarga completada con éxito!"));
+                    txtDownloadEta.setText(cl.arichard.descargador.util.Tr.t("Guardado en tu biblioteca"));
+                    Toast.makeText(PlayerActivity.this, cl.arichard.descargador.util.Tr.t("Guardado en Descargas/Descargador"), Toast.LENGTH_SHORT).show();
                     StorageUtil.scanFile(PlayerActivity.this, dir);
                     isDownloading = false;
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    txtDownloadStatus.setText("Error en la descarga");
-                    txtDownloadEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : "Fallo");
+                    txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("Error en la descarga"));
+                    txtDownloadEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : cl.arichard.descargador.util.Tr.t("Fallo"));
                     isDownloading = false;
                 });
             }

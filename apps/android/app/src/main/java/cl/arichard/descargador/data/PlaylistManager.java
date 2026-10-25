@@ -18,16 +18,24 @@ import cl.arichard.descargador.model.SearchResult;
 public class PlaylistManager {
     private static PlaylistManager instance;
     private final File storageFile;
+    private final android.content.SharedPreferences localIds;
+    /** Downloaded file on THIS device -> its YouTube video id (paths are device specific, so this is never synced). */
+    private final Map<String, String> pathToId = new HashMap<>();
     private final Map<String, List<String>> playlists = new HashMap<>();
     private final Map<String, SearchResult> onlineTracks = new HashMap<>();
     private final Map<String, String> descriptions = new HashMap<>();
     private final Set<String> autoDownloadPlaylists = new HashSet<>();
     private Runnable changeListener;
+    private final List<Runnable> observers = new ArrayList<>();
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
     public interface AutoDownloadListener { void onTrackAdded(String playlistName, SearchResult track); }
     private AutoDownloadListener autoDownloadListener;
 
     private PlaylistManager(Context context) {
         this.storageFile = new File(context.getFilesDir(), "playlists.json");
+        this.localIds = context.getSharedPreferences("local_video_ids", Context.MODE_PRIVATE);
+        for (Map.Entry<String, ?> entry : localIds.getAll().entrySet())
+            if (entry.getValue() instanceof String) pathToId.put(entry.getKey(), (String) entry.getValue());
         load();
         if (!playlists.containsKey("Favoritos")) {
             playlists.put("Favoritos", new ArrayList<>());
@@ -103,9 +111,12 @@ public class PlaylistManager {
             e.printStackTrace();
         }
         if (changeListener != null) changeListener.run();
+        for (Runnable observer : new ArrayList<>(observers)) MAIN.post(observer);
     }
 
     public synchronized void setChangeListener(Runnable listener) { changeListener = listener; }
+    /** Extra listeners (for example the media notification) that learn about every change on the main thread. */
+    public synchronized void addObserver(Runnable observer) { if (!observers.contains(observer)) observers.add(observer); }
     public synchronized void setAutoDownloadListener(AutoDownloadListener listener) { autoDownloadListener = listener; }
 
     public synchronized JSONObject exportJson() {
@@ -209,6 +220,60 @@ public class PlaylistManager {
         return added;
     }
 
+    public synchronized String videoIdFor(String path) { return path == null ? null : pathToId.get(path); }
+
+    public synchronized boolean hasLocalCopy(String videoId) { return pathToId.containsValue(videoId); }
+
+    /** The key a song is stored under in playlists: its YouTube id whenever known, so every device agrees. */
+    public synchronized String canonicalKey(cl.arichard.descargador.model.Song song) {
+        if (song == null) return "";
+        if (song.isOnline()) return song.getPath();
+        String id = pathToId.get(song.getPath());
+        return id != null && onlineTracks.containsKey(id) ? "youtube:" + id : song.getPath();
+    }
+
+    public synchronized boolean isInPlaylist(String playlistName, cl.arichard.descargador.model.Song song) {
+        List<String> list = playlists.get(playlistName);
+        return list != null && song != null && (list.contains(canonicalKey(song)) || list.contains(song.getPath()));
+    }
+
+    /**
+     * Links downloaded files to the YouTube tracks of the playlists (by title, once) and merges the entries that
+     * pointed to both the file and the online track, so a song can no longer be in a playlist twice.
+     */
+    public synchronized void linkLocalSongs(List<cl.arichard.descargador.model.Song> library) {
+        Map<String, String> byTitle = new HashMap<>();
+        for (Map.Entry<String, SearchResult> track : onlineTracks.entrySet()) {
+            byTitle.putIfAbsent(ClickStats.normalize(track.getValue().getTitle()), track.getKey());
+            byTitle.putIfAbsent(ClickStats.normalizeLoose(track.getValue().getTitle()), track.getKey());
+        }
+        android.content.SharedPreferences.Editor editor = localIds.edit();
+        boolean linked = false;
+        for (cl.arichard.descargador.model.Song song : library) {
+            String path = song.getPath();
+            if (song.isOnline() || path == null || pathToId.containsKey(path)) continue;
+            String id = byTitle.get(ClickStats.normalize(song.getTitle()));
+            if (id == null) id = byTitle.get(ClickStats.normalizeLoose(song.getTitle()));
+            if (id == null) continue;
+            pathToId.put(path, id); editor.putString(path, id); linked = true;
+        }
+        if (linked) editor.apply();
+        boolean changed = false;
+        for (Map.Entry<String, List<String>> playlist : playlists.entrySet()) {
+            List<String> cleaned = new ArrayList<>();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (String entry : playlist.getValue()) {
+                String id = entry.startsWith("youtube:") ? entry.substring(8) : pathToId.get(entry);
+                String key = id != null && onlineTracks.containsKey(id) ? "youtube:" + id : entry;
+                if (!seen.add(key)) { changed = true; continue; }
+                if (!key.equals(entry)) changed = true;
+                cleaned.add(key);
+            }
+            if (!cleaned.equals(playlist.getValue())) playlist.setValue(cleaned);
+        }
+        if (changed) save();
+    }
+
     public synchronized SearchResult getOnlineTrack(String entry) {
         if (entry == null || !entry.startsWith("youtube:")) return null;
         return onlineTracks.get(entry.substring("youtube:".length()));
@@ -217,6 +282,20 @@ public class PlaylistManager {
     public synchronized boolean isOnlineTrackInPlaylist(String playlistName, String videoId) {
         List<String> list = playlists.get(playlistName);
         return list != null && list.contains("youtube:" + videoId);
+    }
+
+    /** Online tracks of every playlist with auto-download on, without repeats, in playlist order. */
+    public synchronized List<SearchResult> autoDownloadTracks() {
+        Map<String, SearchResult> unique = new java.util.LinkedHashMap<>();
+        for (String name : autoDownloadPlaylists) {
+            List<String> list = playlists.get(name);
+            if (list == null) continue;
+            for (String entry : list) {
+                SearchResult track = getOnlineTrack(entry);
+                if (track != null) unique.putIfAbsent(track.getId(), track);
+            }
+        }
+        return new ArrayList<>(unique.values());
     }
 
     public synchronized boolean isAutoDownloadEnabled(String playlistName) {
@@ -265,17 +344,67 @@ public class PlaylistManager {
     public synchronized List<cl.arichard.descargador.model.Song> resolveSongs(String name,
             List<cl.arichard.descargador.model.Song> library) {
         List<cl.arichard.descargador.model.Song> songs = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        Map<String, cl.arichard.descargador.model.Song> localById = new HashMap<>();
+        Map<String, cl.arichard.descargador.model.Song> localByPath = new HashMap<>();
+        for (cl.arichard.descargador.model.Song song : library) {
+            localByPath.put(song.getPath(), song);
+            String id = pathToId.get(song.getPath());
+            if (id != null) localById.putIfAbsent(id, song);
+        }
         for (String entry : getSongPaths(name)) {
-            SearchResult result = getOnlineTrack(entry);
-            if (result != null) {
-                songs.add(new cl.arichard.descargador.model.Song(0, result.getTitle(), result.getChannel(),
-                        "YouTube", result.getDurationSeconds() * 1000L, entry, "YouTube", 0));
-            } else {
-                for (cl.arichard.descargador.model.Song song : library)
-                    if (entry.equals(song.getPath())) { songs.add(song); break; }
+            String id = entry.startsWith("youtube:") ? entry.substring(8) : pathToId.get(entry);
+            if (!seen.add(id != null ? id : entry)) continue;
+            // A track already downloaded on this device plays from its file; otherwise it streams.
+            cl.arichard.descargador.model.Song resolved = id != null ? localById.get(id) : null;
+            if (resolved == null) resolved = localByPath.get(entry);
+            if (resolved == null) {
+                SearchResult result = getOnlineTrack(entry);
+                if (result != null) resolved = new cl.arichard.descargador.model.Song(0, result.getTitle(), result.getChannel(),
+                        "YouTube", result.getDurationSeconds() * 1000L, "youtube:" + result.getId(), "YouTube", 0);
             }
+            if (resolved != null) songs.add(resolved);
         }
         return songs;
+    }
+
+    public synchronized boolean isFavoriteSong(cl.arichard.descargador.model.Song song) {
+        if (song == null) return false;
+        return isInPlaylist("Favoritos", song);
+    }
+
+    /** Adds or removes a song, local or from YouTube, to Favoritos. Returns the new state. */
+    public synchronized boolean toggleFavoriteSong(cl.arichard.descargador.model.Song song) {
+        if (song == null) return false;
+        String videoId = song.getVideoId();
+        if (isFavoriteSong(song)) {
+            removeSongFromPlaylist("Favoritos", canonicalKey(song));
+            removeSongFromPlaylist("Favoritos", song.getPath());
+            removeEquivalentFavorites(song);
+            return false;
+        }
+        if (!song.isOnline()) {
+            String key = canonicalKey(song);
+            if (key.startsWith("youtube:") && !onlineTracks.containsKey(key.substring(8))) key = song.getPath();
+            addSongToPlaylist("Favoritos", key);
+            return true;
+        }
+        addOnlineTrack("Favoritos", new SearchResult(videoId, song.getTitle(), song.getArtist(),
+                Math.max(0, song.getDuration() / 1000), song.getCoverPath(), "https://www.youtube.com/watch?v=" + videoId));
+        return true;
+    }
+
+    /** Removes the other copies of the same song (e.g. its YouTube entry) so an empty heart really means "not a favorite". */
+    private void removeEquivalentFavorites(cl.arichard.descargador.model.Song song) {
+        List<String> favorites = playlists.get("Favoritos");
+        if (favorites == null) return;
+        String wanted = ClickStats.normalize(song.getTitle());
+        boolean changed = false;
+        for (java.util.Iterator<String> it = favorites.iterator(); it.hasNext(); ) {
+            SearchResult track = getOnlineTrack(it.next());
+            if (track != null && wanted.equals(ClickStats.normalize(track.getTitle()))) { it.remove(); changed = true; }
+        }
+        if (changed) save();
     }
 
     public synchronized boolean toggleFavorite(String songPath) {
