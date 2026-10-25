@@ -33,4 +33,15 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONPATH = (Resolve-Path "apps/desktop").Path
-          python -m unittest discover -s tests/desktop -v
+          $env:PYTHONIOENCODING = "utf-8"
+          python -m unittest discover -s tests/desktop -v *> test-output.txt
+          $code = $LASTEXITCODE
+          Get-Content test-output.txt -Encoding utf8 | Select-Object -Last 150
+          if ($code -ne 0) {
+            $lines = Get-Content test-output.txt -Encoding utf8
+            $start = ($lines | Select-String -Pattern '^(FAIL|ERROR):' | Select-Object -First 1).LineNumber
+            if (-not $start) { $start = [Math]::Max(1, $lines.Count - 25) }
+            $detail = ($lines[($start - 1)..([Math]::Min($lines.Count - 1, $start + 28))] -join ' | ')
+            Write-Host "::error title=Pruebas de escritorio::$detail"
+            exit $code
+          }
