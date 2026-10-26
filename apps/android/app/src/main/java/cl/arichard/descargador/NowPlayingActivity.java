@@ -309,27 +309,14 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToPlaylist(this, song, () -> updateSongInfo(PlayerManager.getInstance().getCurrentSong())); return true;
         });
-        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a carpeta")).setIcon(R.drawable.ic_folder).setOnMenuItemClickListener(item -> {
-            DescargadorApp.IO.execute(() -> {
-                java.util.List<Song> library = cl.arichard.descargador.data.MusicScanner.scanAllMusic(this);
-                runOnUiThread(() -> { if (!isFinishing()) cl.arichard.descargador.util.SongActions.addToFolder(this, song, library, () -> {}); });
-            });
-            return true;
+        if (song.isOnline()) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Descargar")).setIcon(R.drawable.ic_download).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongActions.download(this, song, () -> {}); return true;
         });
-        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar canci\u00f3n")).setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
+        if (!song.isOnline()) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.delete(this, song, this::finish); return true;
         });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Cola de reproducci\u00f3n")).setIcon(R.drawable.ic_queue).setOnMenuItemClickListener(item -> {
             queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED); return true;
-        });
-        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Guardar cola en playlist...")).setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
-            java.util.List<Song> q = PlayerManager.getInstance().getQueue();
-            if (q != null && !q.isEmpty()) {
-                cl.arichard.descargador.util.SongActions.addMultipleToPlaylist(this, q, () -> {});
-            } else {
-                Toast.makeText(this, cl.arichard.descargador.util.Tr.t("La cola est\u00e1 vac\u00eda"), Toast.LENGTH_SHORT).show();
-            }
-            return true;
         });
         for (int i = 0; i < menu.getMenu().size(); i++) {
             android.graphics.drawable.Drawable icon = menu.getMenu().getItem(i).getIcon();

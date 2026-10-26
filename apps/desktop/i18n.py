@@ -9,6 +9,7 @@ LANGUAGES = ("auto", "es", "en")
 EN = {
     # --- Interfaz QML ---
     "  ·  tienes la ": "  ·  you have ",
+    " carpetas": " folders",
     " canciones": " songs",
     " canciones)": " songs)",
     " playlists": " playlists",
@@ -42,6 +43,8 @@ EN = {
     "Calidad": "Quality",
     "Cambiar": "Change",
     "Cancelar": "Cancel",
+    "Carpetas": "Folders",
+    "No hay carpetas todavía. Agrega una carpeta de música en Configuración.": "No folders yet. Add a music folder in Settings.",
     "Canciones": "Songs",
     "Canción, artista o enlace": "Song, artist or link",
     "Cerrar": "Close",

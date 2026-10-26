@@ -16,6 +16,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 import i18n
 from historial import DownloadHistory, PAGE_SIZE
 from audio_preview import AudioPreview
+from folder_import_controller import FolderImportController
 from importer_controller import ImporterController
 from video_search_controller import VideoSearchController
 
@@ -76,6 +77,7 @@ class DownloadsController(QObject):
         self._video_search = VideoSearchController(self.addUrls, parent=self)
         self._importer = ImporterController(self.addUrls, self.recordSongTransfer, self._preview,
                                             lambda: self._cookies, parent=self)
+        self._folder_import = FolderImportController(bridge, lambda: self._cookies, parent=self)
 
     # ================= objetos hijos =================
     @Property(QObject, constant=True)
@@ -86,6 +88,9 @@ class DownloadsController(QObject):
 
     @Property(QObject, constant=True)
     def importer(self): return self._importer
+
+    @Property(QObject, constant=True)
+    def folderImport(self): return self._folder_import
 
     def _pause_main_player(self):
         try:

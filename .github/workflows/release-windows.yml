@@ -59,12 +59,17 @@ jobs:
           choco install innosetup --yes --no-progress
           $version = "${{ github.ref_name }}".TrimStart("v")
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "packaging\windows\MusicBox.iss"
-      - name: Generar suma SHA-256
+      - name: Empaquetar versión portable
         shell: pwsh
         run: |
-          $file = "dist/installer/MusicBox-Windows-Setup.exe"
-          $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  MusicBox-Windows-Setup.exe" | Set-Content "dist/installer/MusicBox-Windows-Setup.exe.sha256" -Encoding ascii
+          Compress-Archive -Path "dist/MusicBox" -DestinationPath "dist/installer/MusicBox-Windows-Portable.zip" -CompressionLevel Optimal
+      - name: Generar sumas SHA-256
+        shell: pwsh
+        run: |
+          foreach ($name in "MusicBox-Windows-Setup.exe", "MusicBox-Windows-Portable.zip") {
+            $hash = (Get-FileHash "dist/installer/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name" | Set-Content "dist/installer/$name.sha256" -Encoding ascii
+          }
       - name: Preparar notas de la versión
         shell: bash
         working-directory: ${{ github.workspace }}
@@ -78,5 +83,7 @@ jobs:
           files: |
             dist/installer/MusicBox-Windows-Setup.exe
             dist/installer/MusicBox-Windows-Setup.exe.sha256
+            dist/installer/MusicBox-Windows-Portable.zip
+            dist/installer/MusicBox-Windows-Portable.zip.sha256
           body_path: release-notes.md
           fail_on_unmatched_files: true

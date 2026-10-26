@@ -19,7 +19,7 @@ import platform
 import time
 import uuid
 
-from PySide6.QtCore import QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QFile, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -185,6 +185,8 @@ class MusicBoxBridge(QObject):
         self._queue = []
         self._queue_index = -1
         self._repeat_mode = int(self._settings.value("repeatMode", 0))
+        self._shuffle = str(self._settings.value("shuffleOn", "false")).lower() == "true"
+        self._queue_original = []
         self._current = {}
         self._favorites = set(self._settings.value("favorites", [], list) or [])
         try:
@@ -203,6 +205,11 @@ class MusicBoxBridge(QObject):
         except (ValueError, TypeError):
             self._online_tracks = {}
         self._online_tracks = identity.normalize_online_tracks(self._online_tracks)
+        try:
+            linked = json.loads(self._settings.value("linkedLocalIds", "{}", str) or "{}")
+        except (ValueError, TypeError):
+            linked = {}
+        self._linked_ids = {str(k): str(v) for k, v in linked.items()} if isinstance(linked, dict) else {}
         self._path_ids = {}
         self._auto_attempted = set()
         self._library_scanned = False
@@ -358,7 +365,7 @@ class MusicBoxBridge(QObject):
         grouped = {}
         roots = self._library_roots()
         for row in self._library_all:
-            name = self._folder_of(row.get("path", ""), roots)
+            name = self._folder_of(row.get("path", ""), roots) if row.get("fromFolder") else None
             if name is None:
                 continue
             grouped.setdefault(name, []).append(row)
@@ -434,6 +441,9 @@ class MusicBoxBridge(QObject):
 
     @Property(int, notify=playerChanged)
     def repeatMode(self): return self._repeat_mode
+
+    @Property(bool, notify=playerChanged)
+    def shuffleOn(self): return self._shuffle
 
     @Property(bool, notify=playerChanged)
     def playing(self): return self._player.playbackState() == QMediaPlayer.PlayingState
@@ -577,7 +587,7 @@ class MusicBoxBridge(QObject):
     def _unify_playlists(self):
         """Une cada canción con su ID de YouTube: sin repetidos aunque exista el archivo y la entrada online."""
         rows = self._library_all
-        self._path_ids = identity.match_local_ids(rows, self._online_tracks)
+        self._path_ids = identity.match_local_ids(rows, self._online_tracks, known=self._linked_ids)
         unified, changed = identity.canonicalize(self._playlists, self._path_ids, self._online_tracks)
         if changed:
             self._playlists = unified
@@ -587,17 +597,29 @@ class MusicBoxBridge(QObject):
             self._schedule_cloud_save()
         self._library_all = [dict(row, favorite=self._is_fav(row)) for row in rows]
 
-    def _is_video_downloaded(self, video_id, title=""):
-        if video_id and video_id in self._path_ids.values():
-            return True
+    def _local_row_for(self, video_id, title=""):
+        """Archivo local de la biblioteca que corresponde a una canción de YouTube, o None."""
+        if video_id:
+            for path, linked in self._path_ids.items():
+                if linked == video_id:
+                    row = next((r for r in self._library_all if r.get("path") == path), None)
+                    return row or {"path": path}
         norm_title = "".join(c for c in title.lower() if c.isalnum())
         for row in self._library_all:
             path = row.get("path", "")
-            if video_id and video_id in path: return True
+            if video_id and video_id in path: return row
             row_title = "".join(c for c in row.get("title", "").lower() if c.isalnum())
-            if norm_title and len(norm_title) > 3 and (norm_title in row_title or row_title in norm_title): return True
-        return False
+            if norm_title and len(norm_title) > 3 and (norm_title in row_title or row_title in norm_title): return row
+        return None
 
+    def _is_video_downloaded(self, video_id, title=""):
+        return self._local_row_for(video_id, title) is not None
+
+    def _mark_local(self, item, video_id, title=""):
+        """Marca de origen de una canción online: descargada por MusicBox o enlazada desde una carpeta."""
+        row = self._local_row_for(video_id, title)
+        item["downloaded"] = row is not None
+        item["fromFolder"] = bool(row and row.get("fromFolder"))
     def _missing_tracks(self, playlist_names):
         """Canciones de YouTube de las playlists dadas que aún no están descargadas ni en descarga."""
         missing, seen = [], set()
@@ -704,6 +726,88 @@ class MusicBoxBridge(QObject):
         if self._library_playlist == playlist_name:
             self._apply_library_view()
         self._schedule_cloud_save()
+        self._show_notice(i18n.tr("Agregada a «{name}»" if added else "Ya estaba en «{name}»", name=playlist_name), kind="info")
+
+    @Slot(str, "QVariantList", bool, str, result=int)
+    def linkLocalSongs(self, playlist_name, items, add_folder, folder):
+        """Une archivos locales con su canción de YouTube y los agrega a una playlist. Devuelve cuántos agregó."""
+        name = playlist_name.strip()
+        if not name or not items:
+            return 0
+        playlist = self._playlists.setdefault(name, [])
+        added = 0
+        for item in items:
+            video_id = identity.bare_id(item.get("id")) or str(item.get("id", ""))
+            path = str(item.get("path", ""))
+            if not video_id or not path:
+                continue
+            self._linked_ids[path] = video_id
+            self._remember_online(dict(item, id=video_id))
+            key = identity.entry_for(video_id)
+            if key not in playlist:
+                playlist.append(key)
+                added += 1
+            if name == "Favoritos":
+                self._favorites.add(key)
+        self._settings.setValue("linkedLocalIds", json.dumps(self._linked_ids))
+        if name == "Favoritos":
+            self._settings.setValue("favorites", list(self._favorites))
+        self._save_playlists()
+        self.playlistsChanged.emit()
+        self._schedule_cloud_save()
+        self._show_notice(i18n.tr("Se agregaron {n} canciones a «{name}»", n=added, name=name), kind="info")
+        if add_folder and folder:
+            self._save_library_roots(self._library_roots() + [Path(folder)])  # vuelve a leer la biblioteca
+        else:
+            self.refresh()
+        return added
+
+    @Slot(str, result=bool)
+    def isInLibrary(self, folder):
+        """¿La carpeta ya está dentro de las que MusicBox lee?"""
+        try:
+            target = Path(folder).resolve()
+            return any(target == root.resolve() or root.resolve() in target.parents for root in self._library_roots())
+        except OSError:
+            return False
+
+    @Slot("QVariantMap", result=bool)
+    def deleteTrack(self, track):
+        """Elimina el archivo (a la Papelera de reciclaje) y la canción de todas las playlists."""
+        path = str((track or {}).get("path", ""))
+        if not path or not Path(path).is_file():
+            return False
+        if not QFile.moveToTrash(path):
+            self._show_notice(i18n.tr("No se pudo eliminar el archivo. Comprueba que no esté en uso."))
+            return False
+        self._forget_track(path)
+        self._show_notice(i18n.tr("Canción eliminada"), kind="info")
+        return True
+
+    def _forget_track(self, path):
+        """Quita de la app todo rastro de un archivo que ya no existe."""
+        video_id = self._path_ids.get(path, "")
+        keys = {path} | ({identity.entry_for(video_id)} if video_id else set())
+        if self._current.get("path") == path:
+            self._player.stop()
+            self._current = {}
+        self._queue = [row for row in self._queue if row.get("path") != path]
+        self._queue_index = min(max(self._queue_index, 0), len(self._queue) - 1) if self._queue else -1
+        self._recent_paths = [entry for entry in self._recent_paths if entry != path]
+        self._settings.setValue("recentPlayed", self._recent_paths)
+        self._linked_ids.pop(path, None)
+        self._settings.setValue("linkedLocalIds", json.dumps(self._linked_ids))
+        for name in list(self._playlists):
+            self._playlists[name] = [key for key in self._playlists[name] if key not in keys]
+        self._favorites -= keys
+        for key in keys:
+            self._online_favorites_meta.pop(key, None)
+        self._settings.setValue("favorites", list(self._favorites))
+        self._settings.setValue("onlineFavoritesMeta", json.dumps(self._online_favorites_meta))
+        self._save_playlists()
+        self.playlistsChanged.emit()
+        self._schedule_cloud_save()
+        self.refresh()
 
     @Slot(str, str)
     def removeTrackFromPlaylist(self, playlist_name, track_key):
@@ -1231,6 +1335,8 @@ class MusicBoxBridge(QObject):
                 item["fromFolder"] = not any(location == root or root in location.parents for root in download_roots)
             except OSError:
                 item["fromFolder"] = False
+            if item["path"] in self._linked_ids:
+                item["fromFolder"] = True  # importada desde una carpeta del usuario
         self._library_scanned = True
         self._unify_playlists()
         files = self._library_all
@@ -1238,6 +1344,8 @@ class MusicBoxBridge(QObject):
         grouped = {}
         roots = self._library_roots()
         for item in files:
+            if not item.get("fromFolder"):
+                continue  # descargadas por MusicBox: no son una carpeta del usuario
             folder = self._folder_of(item["path"], roots)
             if folder is not None:
                 grouped.setdefault(folder, []).append(item)
@@ -1250,7 +1358,7 @@ class MusicBoxBridge(QObject):
         if self._search_results:
             for item in self._search_results:
                 vid = item.get("id", "")
-                item["downloaded"] = self._is_video_downloaded(vid, item.get("title", ""))
+                self._mark_local(item, vid, item.get("title", ""))
                 item["favorite"] = bool(f"youtube:{vid}" in self._favorites or item.get("url", "") in self._favorites)
             self.searchResultsChanged.emit()
         self.discoveryChanged.emit()
@@ -1285,7 +1393,7 @@ class MusicBoxBridge(QObject):
                 meta = self._online_tracks.get(identity.entry_for(vid)) or self._online_tracks.get(k)
                 if meta:
                     meta = dict(meta)
-                    meta["downloaded"] = self._is_video_downloaded(vid, meta.get("title", ""))
+                    self._mark_local(meta, vid, meta.get("title", ""))
                     meta["favorite"] = self._is_fav(meta)
                     meta["web"] = True
                     meta["playlistKey"] = k
@@ -1320,8 +1428,8 @@ class MusicBoxBridge(QObject):
 
     @Slot(str)
     def setLibraryFilter(self, value):
-        self._library_filter = value if value in {"songs", "playlists"} else "songs"
-        if value == "playlists":
+        self._library_filter = value if value in {"songs", "playlists", "folders"} else "songs"
+        if value in {"playlists", "folders"}:
             self._library_folder = ""
         if value != "playlists":
             self._library_playlist = ""
@@ -1379,7 +1487,7 @@ class MusicBoxBridge(QObject):
     def _apply_search(self, results, error):
         for item in results:
             vid = item.get("id", "")
-            item["downloaded"] = self._is_video_downloaded(vid, item.get("title", ""))
+            self._mark_local(item, vid, item.get("title", ""))
             item["favorite"] = bool(f"youtube:{vid}" in self._favorites or item.get("url", "") in self._favorites)
         self._search_results = results
         self.searchResultsChanged.emit()
@@ -1683,6 +1791,8 @@ class MusicBoxBridge(QObject):
         if not path or not Path(path).is_file(): return
         self._queue = list(self._library)
         self._queue_index = next((i for i, row in enumerate(self._queue) if row.get("path") == path), -1)
+        if self._shuffle:
+            self._shuffle_queue()
         self._start_local_track(item)
 
     def _start_local_track(self, item):
@@ -1817,6 +1927,32 @@ class MusicBoxBridge(QObject):
         self._queue_index = 0
         self._start_local_track(dict(self._queue[0]))
 
+    def _shuffle_queue(self):
+        """Mezcla la cola dejando la canción actual primera; recuerda el orden para poder volver."""
+        self._queue_original = list(self._queue)
+        current = self._queue_current_index() if self._queue else -1
+        first = [self._queue[current]] if 0 <= current < len(self._queue) else []
+        rest = [row for index, row in enumerate(self._queue) if index != current]
+        random.shuffle(rest)
+        self._queue = first + rest
+        self._queue_index = 0 if first else -1
+
+    def _restore_queue_order(self):
+        paths = {row.get("path") for row in self._queue}
+        ordered = [row for row in self._queue_original if row.get("path") in paths]
+        known = {row.get("path") for row in ordered}
+        self._queue = ordered + [row for row in self._queue if row.get("path") not in known]
+        self._queue_original = []
+        self._queue_index = self._queue_current_index() if self._queue else -1
+
+    @Slot()
+    def toggleShuffle(self):
+        self._shuffle = not self._shuffle
+        self._settings.setValue("shuffleOn", "true" if self._shuffle else "false")
+        if self._queue:
+            self._shuffle_queue() if self._shuffle else self._restore_queue_order()
+        self.playerChanged.emit()
+
     @Slot()
     def cycleRepeat(self):
         self._repeat_mode = (self._repeat_mode + 1) % 3
@@ -1878,21 +2014,6 @@ class MusicBoxBridge(QObject):
     @Slot("QVariantMap")
     def addToQueue(self, track):
         self._enqueue(track, False)
-
-    @Slot(str)
-    def saveQueueAsPlaylist(self, name):
-        name = name.strip()
-        if not name or name == "Favoritos" or not self._queue:
-            return
-        entries = self._playlists.setdefault(name, [])
-        for row in self._queue:
-            key = self._canonical_key(row)
-            if key and key not in entries:
-                entries.append(key)
-        self._save_playlists()
-        self.playlistsChanged.emit()
-        self._show_notice(i18n.tr("Playlist guardada"), kind="info")
-        self._schedule_cloud_save()
 
     @Slot(int)
     def playQueueIndex(self, index):

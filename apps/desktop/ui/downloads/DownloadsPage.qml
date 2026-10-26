@@ -96,6 +96,11 @@ Item {
                 enabled: !page.busy
                 onClicked: importerDialog.open()
             }
+            PillButton {
+                text: qsTr("Importar carpeta…")
+                iconName: "folder"
+                onClicked: folderImportDialog.open()
+            }
             Badge { text: "MP3  /  MP4"; tone: "accent" }
         }
 
@@ -539,4 +544,5 @@ Item {
     // ---------- diálogos ----------
     VideoSearchDialog { id: videoDialog }
     ImporterDialog { id: importerDialog }
+    FolderImportDialog { id: folderImportDialog }
 }

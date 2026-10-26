@@ -85,11 +85,6 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         cl.arichard.descargador.util.SafeTap.install(button); return button;
     }
 
-    private void saveAsPlaylist() {
-        List<Song> queue = player.getQueue();
-        if (queue != null && !queue.isEmpty()) cl.arichard.descargador.util.SongActions.addMultipleToPlaylist(activity, queue, () -> {});
-    }
-
     private void openDialog() {
         dialog = new BottomSheetDialog(activity);
         LinearLayout root = build(dialog::dismiss);
@@ -123,7 +118,6 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         subheading.setVisibility(inline ? View.VISIBLE : View.GONE);
         titles.addView(subheading);
         header.addView(titles, new LinearLayout.LayoutParams(0, dp(inline ? 52 : 56), 1));
-        if (inline) header.addView(button(Tr.t("Guardar"), this::saveAsPlaylist));
         if (close != null) header.addView(button(Tr.t("Cerrar"), close));
         root.addView(header);
 
@@ -168,10 +162,8 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
 
         LinearLayout footer = new LinearLayout(activity);
         LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(0, dp(52), 1); addParams.setMargins(0, dp(8), dp(3), 0);
-        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(52), 1); saveParams.setMargins(dp(3), dp(8), dp(3), 0);
         LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(0, dp(52), 1); clearParams.setMargins(dp(3), dp(8), 0, 0);
         footer.addView(button(Tr.t("＋ Agregar"), this::chooseSongs), addParams);
-        if (!inline) footer.addView(button(Tr.t("Guardar playlist"), this::saveAsPlaylist), saveParams);
         footer.addView(button(Tr.t("Limpiar cola"), () -> player.clearUpcoming()), clearParams);
         root.addView(footer);
         return root;

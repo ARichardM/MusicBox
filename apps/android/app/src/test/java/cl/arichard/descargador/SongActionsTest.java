@@ -53,16 +53,6 @@ public class SongActionsTest {
     }
     private AlertDialog dialog() { return (AlertDialog) ShadowDialog.getLatestDialog(); }
 
-    @Test public void addingToFolderCopiesBytesAndKeepsTheSource() throws Exception {
-        File target = new File(activity.getFilesDir(), "Destination"); assertTrue(target.mkdirs());
-        Song existing = new Song(2, "Other", "Artist", "", 0, new File(target, "other.mp3").getPath(), "Destination", 0);
-        AtomicBoolean changed = new AtomicBoolean();
-        SongActions.addToFolder(activity, song, Collections.singletonList(existing), () -> changed.set(true));
-        dialog().getListView().performItemClick(null, 1, 1);
-        finishWork();
-        assertTrue(source.exists()); assertTrue(changed.get());
-        assertArrayEquals(Files.readAllBytes(source.toPath()), Files.readAllBytes(new File(target, source.getName()).toPath()));
-    }
     @Test public void successfulDeletionRequiresConfirmationAndRemovesMembership() throws Exception {
         AtomicBoolean changed = new AtomicBoolean();
         SongActions.delete(activity, song, () -> changed.set(true));

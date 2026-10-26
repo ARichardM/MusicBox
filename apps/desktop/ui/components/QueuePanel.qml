@@ -50,14 +50,6 @@ Item {
             Item { Layout.fillWidth: true }
             PillButton {
                 variant: "ghost"
-                iconName: "save"
-                text: qsTr("Guardar")
-                enabled: musicbox.queue.length > 0
-                implicitHeight: 34
-                onClicked: { playlistName.text = ""; saveDialog.open() }
-            }
-            PillButton {
-                variant: "ghost"
                 iconName: "close"
                 implicitWidth: 34
                 implicitHeight: 34
@@ -263,51 +255,4 @@ Item {
     }
 
     readonly property bool dragActive: dragFrom >= 0
-
-    MbDialog {
-        id: saveDialog
-        width: 380
-        contentItem: ColumnLayout {
-            spacing: 14
-            Item { Layout.preferredHeight: 6 }
-            Label {
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                text: qsTr("Guardar la cola como playlist")
-                color: Theme.fg
-                font.pixelSize: 18
-                font.bold: true
-                wrapMode: Text.WordWrap
-            }
-            Field {
-                id: playlistName
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                placeholderText: qsTr("Nombre de la playlist")
-                onAccepted: saveButton.clicked()
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 24
-                Layout.rightMargin: 24
-                Layout.bottomMargin: 18
-                spacing: 10
-                Item { Layout.fillWidth: true }
-                PillButton { variant: "ghost"; text: qsTr("Cancelar"); onClicked: saveDialog.close() }
-                PillButton {
-                    id: saveButton
-                    variant: "primary"
-                    text: qsTr("Guardar")
-                    enabled: playlistName.text.trim().length > 0
-                    onClicked: {
-                        if (!enabled) return
-                        musicbox.saveQueueAsPlaylist(playlistName.text)
-                        saveDialog.close()
-                    }
-                }
-            }
-        }
-    }
 }

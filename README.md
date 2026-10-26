@@ -57,6 +57,10 @@ La interfaz actual de escritorio está construida con **Python + PySide6/QML**. 
 
 Para Windows 10/11 de 64 bits descarga `MusicBox-Windows-Setup.exe` desde [Releases](https://github.com/ARichardM/MusicBox/releases/latest). El instalador incluye MusicBox y FFmpeg; no exige tener Python instalado. Junto al instalador se publica su suma SHA-256 para comprobar su integridad.
 
+**Versión portable:** si prefieres no instalar, descarga `MusicBox-Windows-Portable.zip`, extráelo en cualquier carpeta y ejecuta `MusicBox.exe`. Tus datos se guardan en `%LOCALAPPDATA%\MusicBox`, así que puedes borrar o mover la carpeta sin perderlos.
+
+> **Aviso de SmartScreen:** como el instalador no tiene firma de código, Windows puede mostrar «Windows protegió su PC». Es normal: pulsa **Más información** y luego **Ejecutar de todas formas**. Puedes verificar el archivo con su suma SHA-256.
+
 ```powershell
 git clone https://github.com/ARichardM/MusicBox.git
 cd MusicBox
@@ -89,7 +93,7 @@ Consulta la [documentación específica de Android](apps/android/README.md) para
 
 ## Publicar una versión
 
-Los workflows de publicación compilan y adjuntan automáticamente `MusicBox-Android.apk` y `MusicBox-Windows-Setup.exe` al publicar una etiqueta `v*`.
+Los workflows de publicación compilan y adjuntan automáticamente `MusicBox-Android.apk`, `MusicBox-Windows-Setup.exe` y `MusicBox-Windows-Portable.zip` al publicar una etiqueta `v*`.
 
 Configura estos secretos en **Settings → Secrets and variables → Actions**:
 

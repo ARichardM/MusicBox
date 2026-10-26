@@ -4,5 +4,5 @@
         android:width="72dp"
         android:height="79dp"
         android:gravity="center"
-        android:drawable="@drawable/logo_cube" />
+        android:drawable="@drawable/logo_app" />
 </layer-list>

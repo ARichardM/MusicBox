@@ -1,5 +1,25 @@
 # Historial de versiones
 
+## 2.3.1 — 25 de octubre de 2026
+
+### Windows
+
+- **Importar una carpeta.** En Descargas, «Importar carpeta…» lee tus archivos de audio, reconoce cada canción en YouTube, une tu archivo con ella y la agrega a la playlist que elijas. Las dudosas quedan para revisar y sus alternativas se pueden escuchar con barra de avance.
+- **Versión portable.** Además del instalador, ahora se publica un ZIP que se usa sin instalar; tus datos siguen en tu usuario.
+- **Mi música.** Tres pestañas, Canciones, Playlists y Carpetas. Carpetas muestra solo las carpetas de tu PC y ya no la de descargas de MusicBox. El botón ＋ Playlist está siempre a la vista y el icono de descarga es igual al de Android.
+- **Origen de cada canción.** Las canciones que vienen de una carpeta muestran el icono de carpeta, también en Buscar y en las playlists; las descargadas por MusicBox, la flecha de descarga.
+- **Menú de cada canción.** Se suman Agregar a playlist, Quitar de esta playlist y Eliminar del dispositivo (a la Papelera de reciclaje). El menú se abre junto al botón y combina con el resto de la app.
+- **Reproductor.** Aleatorio y bucle siempre visibles; el aleatorio es un interruptor que mezcla la cola sin cortar la canción y al apagarlo vuelve al orden original.
+- Inicio de sesión centrado, avisos al agregar canciones a una playlist y contadores en singular.
+- Se corrige el diálogo de agregar a playlist, que no se cerraba, y las pestañas, que podían quedar marcadas de más.
+
+### Android
+
+- El corazón de las listas ahora reconoce los favoritos de canciones unidas a YouTube.
+- **Quitar de esta playlist** y **Eliminar del dispositivo** funcionan también con archivos unidos a su canción de YouTube, y la eliminación saca la canción de todas tus playlists.
+- Menú de canción más simple: un solo Eliminar (borra el archivo del dispositivo), Descargar para canciones online y Reproducir a continuación. Se quitan Agregar a carpeta y Guardar cola en playlist.
+- El splash del sistema muestra el cubo completo con su onda.
+
 ## 2.3.0 — 25 de octubre de 2026
 
 ### Novedades en Windows y Android

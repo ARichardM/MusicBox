@@ -571,7 +571,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 });
                 Song song = new Song(0, result.getTitle(), result.getChannel(), "YouTube", result.getDurationSeconds() * 1000L,
                         "youtube:" + result.getId(), "YouTube", 0);
-                menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir después")).setOnMenuItemClickListener(item -> {
+                menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir a continuación")).setOnMenuItemClickListener(item -> {
                     PlayerManager.getInstance().enqueue(song, true); Toast.makeText(MainActivity.this, cl.arichard.descargador.util.Tr.t("Agregada a continuación"), Toast.LENGTH_SHORT).show(); return true;
                 });
                 menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
@@ -1454,7 +1454,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void showSongMenu(Song song, View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir después")).setOnMenuItemClickListener(item -> {
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir a continuación")).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, true); return true;
         });
         popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
@@ -1463,8 +1463,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToPlaylist(this, song, this::refreshPlaylistsView); return true;
         });
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a carpeta")).setOnMenuItemClickListener(item -> {
-            cl.arichard.descargador.util.SongActions.addToFolder(this, song, allSongs, this::refreshMusicLibrary); return true;
+        if (song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Descargar")).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongActions.download(this, song, this::refreshMusicLibrary); return true;
         });
         if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Quitar de esta playlist")).setOnMenuItemClickListener(item -> {
             PlaylistManager.getInstance(this).removeSongFromPlaylist(currentSubListName, song.getPath());
@@ -1473,7 +1473,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Compartir archivo")).setOnMenuItemClickListener(item -> {
             shareSong(song); return true;
         });
-        popup.getMenu().add(song.isOnline() ? cl.arichard.descargador.util.Tr.t("Eliminar de mi biblioteca") : cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setOnMenuItemClickListener(item -> {
+        if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.delete(this, song, this::refreshMusicLibrary); return true;
         });
         popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Seleccionar canciones")).setOnMenuItemClickListener(item -> {

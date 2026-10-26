@@ -323,21 +323,36 @@ public class PlaylistManager {
 
     public synchronized boolean removeSongFromPlaylist(String playlistName, String songPath) {
         List<String> list = playlists.get(playlistName);
-        if (list != null && list.remove(songPath)) {
-            save();
-            return true;
-        }
-        return false;
+        if (list == null) return false;
+        boolean removed = list.remove(songPath);
+        // Un archivo unido a su canción de YouTube se guarda en las playlists como «youtube:<id>».
+        String id = pathToId.get(songPath);
+        if (id != null) removed |= list.remove("youtube:" + id);
+        if (removed) save();
+        return removed;
+    }
+
+    /** ¿La entrada de la playlist corresponde a esta ruta, directamente o por su ID de YouTube? */
+    private boolean matchesPath(String entry, String path) {
+        if (entry.equals(path)) return true;
+        String id = pathToId.get(path);
+        return id != null && entry.equals("youtube:" + id);
     }
 
     public synchronized boolean isFavorite(String songPath) {
         List<String> favs = playlists.get("Favoritos");
-        return favs != null && favs.contains(songPath);
+        if (favs == null) return false;
+        for (String entry : favs) if (matchesPath(entry, songPath)) return true;
+        return false;
     }
 
     public synchronized void removeSongEverywhere(String path) {
-        for (List<String> entries : playlists.values()) entries.remove(path);
+        for (List<String> entries : playlists.values()) {
+            for (java.util.Iterator<String> it = entries.iterator(); it.hasNext(); )
+                if (matchesPath(it.next(), path)) it.remove();
+        }
         if (path.startsWith("youtube:")) onlineTracks.remove(path.substring(8));
+        if (pathToId.remove(path) != null) localIds.edit().remove(path).apply();
         save();
     }
 

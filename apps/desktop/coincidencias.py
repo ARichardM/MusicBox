@@ -18,7 +18,7 @@ def normalize(text):
 
 
 DECORATIONS = re.compile(
-    r"\b(?:official\s+(?:music\s+)?(?:video|audio)|music\s+video|"
+    r"\b(?:official\s+(?:music\s+)?(?:video|audio)|(?:video|audio)\s+oficial|music\s+video|"
     r"official|lyrics?|lyric\s+video|hd|hq|4k|1080p|720p)\b")
 VERSIONS = (r"\blive\b|\ben vivo\b", r"\bcover\b", r"\bkaraoke\b|\binstrumental\b",
             r"\bremix\b", r"\bslowed\b|\breverb\b", r"\bnightcore\b|\bsped up\b",

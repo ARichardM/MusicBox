@@ -69,7 +69,7 @@ public final class Tr {
         m.put("Cancelar", "Cancel");
         m.put("Cuenta de Google", "Google account");
         m.put("Agregar a playlist", "Add to playlist");
-        m.put("Reproducir despu\u00e9s", "Play next");
+        m.put("Reproducir a continuaci\u00f3n", "Play next");
         m.put("Agregada a continuaci\u00f3n", "Added to play next");
         m.put("Agregar a la cola", "Add to queue");
         m.put("Agregada a la cola", "Added to queue");
@@ -123,10 +123,8 @@ public final class Tr {
         m.put("Nombre de la playlist", "Playlist name");
         m.put("Nueva Playlist", "New Playlist");
         m.put("Crear", "Create");
-        m.put("Agregar a carpeta", "Add to folder");
         m.put("Quitar de esta playlist", "Remove from this playlist");
         m.put("Compartir archivo", "Share file");
-        m.put("Eliminar de mi biblioteca", "Remove from my library");
         m.put("Eliminar del dispositivo", "Delete from device");
         m.put("Seleccionar canciones", "Select songs");
         m.put("%d seleccionada", "%d selected");
@@ -147,9 +145,7 @@ public final class Tr {
         m.put("Error en la descarga", "Download error");
         m.put("Error", "Error");
         m.put("Quitar de favoritos", "Remove from favorites");
-        m.put("Eliminar canci\u00f3n", "Delete song");
         m.put("Cola de reproducci\u00f3n", "Play queue");
-        m.put("Guardar cola en playlist...", "Save queue to playlist...");
         m.put("La cola est\u00e1 vac\u00eda", "The queue is empty");
         m.put("Cargando\u2026", "Loading\u2026");
         m.put("Reintentar \u25b6", "Retry \u25b6");
@@ -171,7 +167,6 @@ public final class Tr {
         m.put("Mant\u00e9n pulsado y arrastra para cambiar el orden", "Press and hold, then drag to reorder");
         m.put("Tu cola est\u00e1 vac\u00eda. Agrega tus canciones favoritas.", "Your queue is empty. Add your favorite songs.");
         m.put("\uff0b Agregar", "\uff0b Add");
-        m.put("Guardar playlist", "Save playlist");
         m.put("Limpiar cola", "Clear queue");
         m.put("Cola \u00b7 ", "Queue \u00b7 ");
         m.put("Buscar en tu m\u00fasica y playlists", "Search your music and playlists");
