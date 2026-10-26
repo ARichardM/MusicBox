@@ -224,6 +224,7 @@ class MusicBoxBridge(QObject):
         self._download_queue = []
         self._update = {}
         self._update_state = "idle"
+        self._update_check = "idle"   # idle, checking, uptodate, failed; «available» se deduce del estado
         self._update_progress = 0.0
         self._update_error = ""
         self._update_cancelled = False
@@ -1222,6 +1223,33 @@ class MusicBoxBridge(QObject):
                 self._updateEvent.emit({"event": "available", "info": info})
         threading.Thread(target=worker, daemon=True).start()
 
+    @Property(str, notify=updateChanged)
+    def updateCheck(self):
+        """Estado de la comprobación manual del perfil: idle, checking, uptodate, available o failed."""
+        if self._update_state in ("available", "downloading", "installing", "error"):
+            return "available"
+        return self._update_check
+
+    @Slot()
+    def checkUpdatesNow(self):
+        """Comprobación manual desde el perfil; muestra siempre el resultado y no respeta «omitir»."""
+        if self._update_state in ("downloading", "installing") or self._update_check == "checking":
+            return
+        self._update_check = "checking"
+        self.updateChanged.emit()
+
+        def worker():
+            started = time.monotonic()
+            try:
+                info = updater.check_for_update(__version__)
+                event = {"event": "checked", "result": "available", "info": info} if info else {"event": "checked", "result": "uptodate"}
+            except Exception:
+                event = {"event": "checked", "result": "failed"}
+            # Un mínimo de tiempo para que el estado «buscando» se alcance a ver.
+            time.sleep(max(0.0, 0.7 - (time.monotonic() - started)))
+            self._updateEvent.emit(event)
+        threading.Thread(target=worker, daemon=True).start()
+
     @Slot()
     def skipUpdate(self):
         if self._update.get("version"):
@@ -1234,6 +1262,7 @@ class MusicBoxBridge(QObject):
             self._update_cancelled = True
         self._update = {}
         self._update_state = "idle"
+        self._update_check = "idle"
         self._update_error = ""
         self.updateChanged.emit()
 
@@ -1266,7 +1295,15 @@ class MusicBoxBridge(QObject):
     @Slot(object)
     def _handle_update_event(self, event):
         kind = event.get("event")
-        if kind == "available":
+        if kind == "checked":
+            result = event.get("result")
+            if result == "available" and self._update_state in ("idle", "error", "available"):
+                self._update = event["info"]
+                self._update_state = "available"
+                self._update_check = "available"
+            else:
+                self._update_check = result if result in ("uptodate", "failed") else "idle"
+        elif kind == "available":
             if self._update_state in ("idle", "error"):
                 self._update = event["info"]
                 self._update_state = "available"

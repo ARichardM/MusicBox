@@ -26,11 +26,16 @@ def is_newer(candidate: str, current: str) -> bool:
 
 
 def clean_notes(body: str) -> list[str]:
-    """Extrae viñetas legibles del texto de la publicación."""
+    """Viñetas legibles del texto de la publicación; se omiten las secciones que son solo de Android."""
     notes = []
+    include = True
     for line in str(body or "").splitlines():
         line = line.strip()
-        if not line or line.startswith(("#", "**Full Changelog", "<")):
+        if line.startswith("#"):
+            heading = line.lstrip("#").strip().lower()
+            include = not ("android" in heading and "windows" not in heading)
+            continue
+        if not include or not line or line.startswith(("**Full Changelog", "<")):
             continue
         line = re.sub(r"^[-*+]\s+", "", line)
         line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", line)

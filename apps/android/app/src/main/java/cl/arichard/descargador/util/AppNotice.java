@@ -12,6 +12,11 @@ import cl.arichard.descargador.R;
 public final class AppNotice {
     private AppNotice() {}
 
+    /** Aviso informativo con el mismo estilo; se ve solo dentro de la app. */
+    public static void info(View anchor, String message) {
+        error(anchor, message, null, null);
+    }
+
     public static void error(View anchor, String message) {
         error(anchor, message, null, null);
     }

@@ -70,5 +70,15 @@ class UpdaterTests(unittest.TestCase):
             self.assertEqual(list((Path(folder) / "b").iterdir()), [])
 
 
+class WindowsNotesTest(unittest.TestCase):
+    BODY = ("### Windows\n\n- **Importar carpeta.** Lee tus archivos.\n\n### Android\n\n- Corazón arreglado.\n\n"
+            "### Novedades en Windows y Android\n\n- **Clics.** Compartidos.\n")
+
+    def test_android_only_sections_are_left_out(self):
+        self.assertEqual(updater.clean_notes(self.BODY), ["Importar carpeta. Lee tus archivos.", "Clics. Compartidos."])
+
+    def test_notes_without_headings_are_kept(self):
+        self.assertEqual(updater.clean_notes("- Uno\n- Dos"), ["Uno", "Dos"])
+
 if __name__ == "__main__":
     unittest.main()

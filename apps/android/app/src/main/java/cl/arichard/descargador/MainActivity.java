@@ -1030,6 +1030,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             activeDownloadingVideoIds.add(videoId);
             if (searchResultAdapter != null) searchResultAdapter.addDownloadingId(videoId);
             if (songAdapter != null) songAdapter.setDownloadStarted(videoId);
+            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, 0f);
+            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, 0f);
         }
         if (uiState.downloading) {
             downloadQueue.offer(new DownloadJob(targetUrl, defaultTitle, videoId));
@@ -1063,15 +1065,20 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         txtStatus.setText(defaultTitle != null ? (cl.arichard.descargador.util.Tr.t("Descargando: ") + defaultTitle) : cl.arichard.descargador.util.Tr.t("Iniciando descarga..."));
         txtEta.setText(cl.arichard.descargador.util.Tr.t("Conectando...")); publishDownloadState();
 
+        cl.arichard.descargador.util.DownloadProgress stages = new cl.arichard.descargador.util.DownloadProgress();
+        if (videoId != null && !videoId.isEmpty()) {
+            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, stages.current());
+            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, stages.current());
+        }
         DescargadorApp.IO.execute(() -> {
             try {
                 YoutubeDL.getInstance().execute(request, "mobile-dl", (percent, eta, line) -> {
+                    float overall = stages.update(percent, line);
                     runOnUiThread(() -> {
                         int p = Math.round(percent);
                         if (videoId != null && !videoId.isEmpty()) {
-                            float fraction = p > 0 ? p / 100f : -1f;
-                            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, fraction);
-                            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, fraction);
+                            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, overall);
+                            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, overall);
                         }
                         progressBar.setProgress(p);
                         txtStatus.setText(cl.arichard.descargador.util.Tr.t("Descargando ") + p + "%");
@@ -1084,15 +1091,26 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     progressBar.setProgress(100);
                     txtStatus.setText(cl.arichard.descargador.util.Tr.t("¡Descarga completada con éxito!"));
                     txtEta.setText(cl.arichard.descargador.util.Tr.t("Guardado en Descargas/Descargador"));
-                    Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Guardado en tu biblioteca"), Toast.LENGTH_SHORT).show();
                     StorageUtil.scanFile(this, dir);
                     if (videoId != null && !videoId.isEmpty()) {
                         getSharedPreferences("downloaded_videos", MODE_PRIVATE).edit().putBoolean(videoId, true).apply();
-                        activeDownloadingVideoIds.remove(videoId);
-                        if (searchResultAdapter != null) searchResultAdapter.markDownloadCompleted(videoId);
-                        if (songAdapter != null) songAdapter.setDownloadFinished(videoId, true);
+                        // El anillo llega al 100 % y recién entonces deja su lugar al icono de descargada.
+                        if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, 1f);
+                        if (songAdapter != null) songAdapter.setDownloadProgress(videoId, 1f);
+                        cardProgress.postDelayed(() -> {
+                            activeDownloadingVideoIds.remove(videoId);
+                            if (searchResultAdapter != null) searchResultAdapter.markDownloadCompleted(videoId);
+                            if (songAdapter != null) songAdapter.setDownloadFinished(videoId, true);
+                        }, 380);
                     }
                     uiState.downloading = false; uiState.completedDownloads++; publishDownloadState();
+                    // Un solo resumen dentro de la app cuando termina un lote; una descarga suelta ya se ve en su anillo.
+                    savedInBatch++;
+                    if (downloadQueue.isEmpty()) {
+                        if (savedInBatch > 1) cl.arichard.descargador.util.AppNotice.info(findViewById(R.id.bottomBarArea),
+                                cl.arichard.descargador.util.Tr.f("%d canciones guardadas en tu biblioteca", savedInBatch));
+                        savedInBatch = 0;
+                    }
                     startNextQueuedDownload();
 
                     cardProgress.postDelayed(() -> {
@@ -1116,6 +1134,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             }
         });
     }
+
+    private int savedInBatch;
 
     private synchronized void startNextQueuedDownload() {
         DownloadJob next = downloadQueue.poll();

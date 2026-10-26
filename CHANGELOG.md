@@ -1,5 +1,20 @@
 # Historial de versiones
 
+## 2.3.2 — 26 de octubre de 2026
+
+### Windows
+
+- **Versión y actualizaciones en tu perfil.** En Configuración aparece la versión instalada y un botón «Buscar actualizaciones» que muestra si estás al día o si hay una versión nueva, con su insignia y su animación.
+- **Aviso de actualización más claro.** Muestra solo lo esencial, con «Ver detalles» para ampliar, y únicamente las novedades de Windows.
+
+### Android
+
+- **Actualizar sin salir de la app.** La hoja de actualización descarga el APK con una barra de progreso real, lo verifica (misma app y misma firma) y abre el instalador. Siempre se ven sus botones, ya no se corta y sus esquinas redondeadas se ven limpias.
+- **Versión y actualizaciones en tu perfil.** Nueva tarjeta «Acerca de» con la versión instalada y un botón «Buscar actualizaciones» que avisa al abrir el perfil si hay algo nuevo.
+- **Descargas con progreso real.** El anillo de cada canción avanza desde el primer momento según las etapas de la descarga (conexión, descarga, conversión y portada) y se completa antes de mostrar el icono de descargada; las canciones en cola esperan con el anillo vacío en vez de girar sin fin.
+- **Sin avisos repetidos.** Al descargar varias canciones ya no sale un aviso del sistema por cada una, ni fuera de la app; al terminar el lote aparece un solo resumen dentro de la app.
+- **Transición de arranque fluida.** El splash del sistema y el de la app comparten fondo, tamaño y posición del cubo, y la app aparece con un acercamiento suave.
+
 ## 2.3.1 — 25 de octubre de 2026
 
 ### Windows

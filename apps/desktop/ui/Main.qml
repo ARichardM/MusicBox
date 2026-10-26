@@ -205,6 +205,28 @@ ApplicationWindow {
       }
      }
      Label{visible:musicbox.devices.length===0;Layout.alignment:Qt.AlignHCenter;text:qsTr("Todavía no hay dispositivos registrados");color:w.muted}
+     Label{Layout.topMargin:10;Layout.leftMargin:6;text:qsTr("ACERCA DE");color:w.muted;font.bold:true;font.pixelSize:11;font.letterSpacing:1.2}
+     Rectangle{Layout.fillWidth:true;Layout.preferredHeight:aboutColumn.implicitHeight+36;radius:22;color:w.card
+      Behavior on Layout.preferredHeight{NumberAnimation{duration:200;easing.type:Easing.OutCubic}}
+      ColumnLayout{id:aboutColumn;anchors.fill:parent;anchors.margins:18;spacing:10
+       RowLayout{Layout.fillWidth:true;spacing:10
+        ColumnLayout{Layout.fillWidth:true;spacing:2
+         Label{text:"MusicBox";color:w.fg;font.bold:true;font.pixelSize:20}
+         Label{text:qsTr("Versión")+" "+musicbox.appVersion;color:w.muted;font.pixelSize:13}
+        }
+        Rectangle{id:aboutBadge;readonly property string kind:musicbox.updateCheck;visible:kind==="uptodate"||kind==="available";Layout.preferredWidth:aboutBadgeLabel.implicitWidth+24;Layout.preferredHeight:26;radius:13
+         color:kind==="available"?w.accent:(musicbox.darkMode?"#10301F":"#DDF5E6");scale:visible?1:0.6;opacity:visible?1:0
+         Behavior on scale{NumberAnimation{duration:260;easing.type:Easing.OutBack}}Behavior on opacity{NumberAnimation{duration:200}}Behavior on color{ColorAnimation{duration:180}}
+         Label{id:aboutBadgeLabel;anchors.centerIn:parent;text:aboutBadge.kind==="available"?qsTr("Nueva"):qsTr("Al día");color:aboutBadge.kind==="available"?"white":"#30D158";font.bold:true;font.pixelSize:12}}
+       }
+       Mb.SmoothProgress{Layout.fillWidth:true;Layout.preferredHeight:4;visible:musicbox.updateCheck==="checking";indeterminate:true}
+       Label{id:aboutStatus;Layout.fillWidth:true;wrapMode:Text.WordWrap;color:musicbox.updateCheck==="failed"?"#FF453A":w.muted;font.pixelSize:13
+        text:{var k=musicbox.updateCheck;if(k==="checking")return qsTr("Buscando actualizaciones…");if(k==="uptodate")return qsTr("Estás al día. Tienes la última versión de MusicBox.");if(k==="available")return qsTr("Hay una versión nueva. Toca para ver las novedades.");if(k==="failed")return qsTr("No se pudo comprobar. Revisa tu conexión e inténtalo de nuevo.");return qsTr("Toca el botón para ver si hay una versión nueva.")}
+        Behavior on text{SequentialAnimation{NumberAnimation{target:aboutStatus;property:"opacity";to:0;duration:90}PropertyAction{}NumberAnimation{target:aboutStatus;property:"opacity";to:1;duration:180}}}}
+       CenterButton{Layout.fillWidth:true;implicitHeight:46;enabled:musicbox.updateCheck!=="checking";text:{var k=musicbox.updateCheck;return k==="checking"?qsTr("Buscando…"):(k==="available"?qsTr("Ver novedades y actualizar"):(k==="uptodate"?qsTr("Volver a buscar"):(k==="failed"?qsTr("Reintentar"):qsTr("Buscar actualizaciones"))))}
+        highlighted:musicbox.updateCheck==="available";onClicked:{if(musicbox.updateCheck==="available"){settingsDialog.close()}musicbox.checkUpdatesNow()}}
+      }
+     }
      Item{Layout.preferredHeight:4}
     }
    }
@@ -244,6 +266,12 @@ ApplicationWindow {
  }
  Popup{id:updateSheet;parent:Overlay.overlay;anchors.centerIn:parent;width:Math.min(460,w.width-48);modal:true;padding:0;closePolicy:musicbox.updateState==="downloading"||musicbox.updateState==="installing"?Popup.NoAutoClose:Popup.CloseOnEscape
   property bool wanted:musicbox.updateState!=="idle"&&!w.splashVisible&&musicbox.authenticated
+  property bool detailed:false
+  function headline(text){var i=text.indexOf(". ");var t=text;if(i>0&&i<32){var rest=text.substring(i+2).trim();var n=rest.indexOf(". ");if(n>0)rest=rest.substring(0,n+1);t=text.substring(0,i)+" — "+rest}else if(i>0){t=text.substring(0,i+1)}if(t.length>120){var k=Math.max(t.lastIndexOf(", ",126),t.lastIndexOf("; ",126));if(k>40){t=t.substring(0,k).replace(/[,;:\s]+$/,"")+"."}else{var c=t.lastIndexOf(" ",118);t=t.substring(0,c>40?c:118).replace(/[,;:\s]+$/,"")+"…"}}return t}
+  property var allNotes:musicbox.update.notes||[]
+  property var briefNotes:{var r=[];for(var i=0;i<allNotes.length&&i<4;i++)r.push(headline(allNotes[i]));return r}
+  property bool hasMore:{if(allNotes.length>briefNotes.length)return true;for(var i=0;i<briefNotes.length;i++)if(briefNotes[i]!==allNotes[i])return true;return false}
+  onOpened:detailed=false
   onWantedChanged:{if(wanted)open();else close()}
   Component.onCompleted:{if(wanted)open()}
   onClosed:{if(musicbox.updateState==="available"||musicbox.updateState==="error")musicbox.dismissUpdate()}
@@ -259,13 +287,16 @@ ApplicationWindow {
     Label{Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.WordWrap;text:musicbox.updateState==="installing"?qsTr("Instalando actualización…"):qsTr("Nueva versión disponible");color:w.fg;font.pixelSize:21;font.bold:true}
     Label{Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.WordWrap;text:"MusicBox "+(musicbox.update.version||"")+qsTr("  ·  tienes la ")+musicbox.appVersion;color:w.muted;font.pixelSize:12}
     Label{visible:musicbox.updateState==="available"||musicbox.updateState==="error";text:qsTr("NOVEDADES");color:"#50E9FF";font.pixelSize:11;font.bold:true;font.letterSpacing:1.4;Layout.topMargin:6}
-    ScrollView{visible:musicbox.updateState==="available"||musicbox.updateState==="error";Layout.fillWidth:true;Layout.preferredHeight:Math.min(190,notesCol.implicitHeight);clip:true;contentWidth:availableWidth
+    ScrollView{id:notesScroll;visible:musicbox.updateState==="available"||musicbox.updateState==="error";Layout.fillWidth:true;Layout.preferredHeight:Math.min(updateSheet.detailed?260:190,notesCol.implicitHeight);clip:true;contentWidth:availableWidth
+     Behavior on Layout.preferredHeight{NumberAnimation{duration:200;easing.type:Easing.OutCubic}}
      Column{id:notesCol;width:parent.width;spacing:8
-      Repeater{model:musicbox.update.notes||[]
+      Repeater{model:updateSheet.detailed?updateSheet.allNotes:updateSheet.briefNotes
        delegate:Row{width:notesCol.width;spacing:10;Rectangle{width:6;height:6;radius:3;y:7;color:w.accent}Label{width:parent.width-16;text:modelData;color:w.fg;font.pixelSize:13;wrapMode:Text.WordWrap;lineHeight:1.15}}}
-      Label{visible:(musicbox.update.notes||[]).length===0;width:parent.width;text:qsTr("Mejoras de rendimiento y correcciones.");color:w.muted;font.pixelSize:13}
+      Label{visible:updateSheet.allNotes.length===0;width:parent.width;text:qsTr("Mejoras de rendimiento y correcciones.");color:w.muted;font.pixelSize:13}
      }
     }
+    Label{visible:(musicbox.updateState==="available"||musicbox.updateState==="error")&&updateSheet.hasMore;text:updateSheet.detailed?qsTr("Ver menos"):qsTr("Ver detalles");color:"#50E9FF";font.pixelSize:12;font.bold:true
+     MouseArea{anchors.fill:parent;anchors.margins:-6;cursorShape:Qt.PointingHandCursor;onClicked:{updateSheet.detailed=!updateSheet.detailed;notesScroll.ScrollBar.vertical.position=0}}}
     Item{visible:musicbox.updateState==="downloading"||musicbox.updateState==="installing";Layout.fillWidth:true;Layout.preferredHeight:34
      ProgressBar{anchors.left:parent.left;anchors.right:parent.right;anchors.top:parent.top;value:musicbox.updateProgress;indeterminate:musicbox.updateState==="installing"}
      Label{anchors.horizontalCenter:parent.horizontalCenter;anchors.bottom:parent.bottom;text:musicbox.updateState==="installing"?qsTr("MusicBox se reiniciará solo"):Math.round(musicbox.updateProgress*100)+" %";color:w.muted;font.pixelSize:11}

@@ -65,6 +65,7 @@ public final class SettingsActivity extends AppCompatActivity {
         findViewById(R.id.btnAddFolder).setOnClickListener(v -> pickFolder.launch(null));
         renderFolders();
         renderStats();
+        setupAbout();
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         String name = user != null && user.getDisplayName() != null ? user.getDisplayName() : Tr.t("Cuenta de Google");
@@ -110,6 +111,98 @@ public final class SettingsActivity extends AppCompatActivity {
         TextView topView = findViewById(R.id.txtStatsTop);
         topView.setText(top);
         topView.setVisibility(top.length() == 0 ? android.view.View.GONE : android.view.View.VISIBLE);
+    }
+
+    // ------------------------------------------------------------ versión y actualizaciones
+
+    private cl.arichard.descargador.util.UpdateChecker.Release foundRelease;
+    private boolean checkingUpdate;
+
+    /** Cambia un texto con un fundido corto para que el cambio de estado se sienta suave. */
+    private void swapText(TextView view, CharSequence text) {
+        if (text.toString().contentEquals(view.getText())) return;
+        view.animate().cancel();
+        view.animate().alpha(0f).translationY(dp(4)).setDuration(110).withEndAction(() -> {
+            view.setText(text);
+            view.setTranslationY(-dp(4));
+            view.animate().alpha(1f).translationY(0f).setDuration(200).start();
+        }).start();
+    }
+
+    private void showBadge(String text, int background, int foreground) {
+        TextView badge = findViewById(R.id.txtUpdateBadge);
+        android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+        shape.setCornerRadius(dp(14));
+        shape.setColor(background);
+        badge.setBackground(shape);
+        badge.setTextColor(foreground);
+        badge.setText(text);
+        if (badge.getVisibility() != View.VISIBLE) {
+            badge.setScaleX(0.6f);
+            badge.setScaleY(0.6f);
+            badge.setAlpha(0f);
+            badge.setVisibility(View.VISIBLE);
+        }
+        badge.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(260)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(1.6f)).start();
+    }
+
+    private void setupAbout() {
+        ((TextView) findViewById(R.id.txtAboutTitle)).setText(Tr.t("ACERCA DE"));
+        ((TextView) findViewById(R.id.txtVersionNumber)).setText(Tr.f("Versión %s", cl.arichard.descargador.util.UpdateChecker.versionName(this)));
+        TextView status = findViewById(R.id.txtUpdateStatus);
+        status.setText(Tr.t("Toca el botón para ver si hay una versión nueva."));
+        com.google.android.material.button.MaterialButton button = findViewById(R.id.btnCheckUpdate);
+        button.setText(Tr.t("Buscar actualizaciones"));
+        button.setOnClickListener(v -> {
+            if (foundRelease != null) cl.arichard.descargador.util.UpdateChecker.showSheet(this, foundRelease);
+            else checkForUpdate(true);
+        });
+        checkForUpdate(false);
+    }
+
+    /** [manual] muestra siempre el resultado; la comprobación al abrir el perfil solo avisa si hay algo nuevo. */
+    private void checkForUpdate(boolean manual) {
+        if (checkingUpdate) return;
+        checkingUpdate = true;
+        foundRelease = null;
+        TextView status = findViewById(R.id.txtUpdateStatus);
+        View bar = findViewById(R.id.barUpdate);
+        com.google.android.material.button.MaterialButton button = findViewById(R.id.btnCheckUpdate);
+        button.setEnabled(false);
+        button.setText(Tr.t("Buscando…"));
+        swapText(status, Tr.t("Buscando actualizaciones…"));
+        bar.setAlpha(0f);
+        bar.setVisibility(View.VISIBLE);
+        bar.animate().alpha(1f).setDuration(180).start();
+        long started = android.os.SystemClock.uptimeMillis();
+        cl.arichard.descargador.util.UpdateChecker.checkNow(this, (state, release) -> {
+            // Un mínimo de tiempo para que el estado «buscando» se alcance a ver y no parpadee.
+            long wait = Math.max(0, 700 - (android.os.SystemClock.uptimeMillis() - started));
+            status.postDelayed(() -> {
+                checkingUpdate = false;
+                if (isFinishing() || isDestroyed()) return;
+                bar.animate().alpha(0f).setDuration(200).withEndAction(() -> bar.setVisibility(View.GONE)).start();
+                button.setEnabled(true);
+                switch (state) {
+                    case AVAILABLE:
+                        foundRelease = release;
+                        swapText(status, Tr.f("Hay una versión nueva: %s. Toca para ver las novedades.", release.version));
+                        button.setText(Tr.t("Ver novedades y actualizar"));
+                        showBadge(Tr.t("Nueva"), Color.rgb(10, 132, 255), Color.WHITE);
+                        break;
+                    case UP_TO_DATE:
+                        swapText(status, Tr.t("Estás al día. Tienes la última versión de MusicBox."));
+                        button.setText(Tr.t("Volver a buscar"));
+                        showBadge(Tr.t("Al día"), Color.rgb(16, 48, 33), Color.rgb(48, 209, 88));
+                        break;
+                    default:
+                        button.setText(Tr.t("Reintentar"));
+                        swapText(status, manual ? Tr.t("No se pudo comprobar. Revisa tu conexión e inténtalo de nuevo.")
+                                : Tr.t("Toca el botón para ver si hay una versión nueva."));
+                }
+            }, wait);
+        });
     }
 
     @Override protected void onDestroy() {

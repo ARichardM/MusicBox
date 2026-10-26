@@ -274,7 +274,6 @@ public class PlayerActivity extends AppCompatActivity {
                     downloadProgress.setProgress(100);
                     txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("¡Descarga completada con éxito!"));
                     txtDownloadEta.setText(cl.arichard.descargador.util.Tr.t("Guardado en tu biblioteca"));
-                    Toast.makeText(PlayerActivity.this, cl.arichard.descargador.util.Tr.t("Guardado en Descargas/Descargador"), Toast.LENGTH_SHORT).show();
                     StorageUtil.scanFile(PlayerActivity.this, dir);
                     isDownloading = false;
                 });

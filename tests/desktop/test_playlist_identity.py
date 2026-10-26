@@ -269,6 +269,40 @@ class DeleteTrackTest(unittest.TestCase):
             self.assertTrue(Path(self.path).exists())
 
 
+class ManualUpdateCheckTest(unittest.TestCase):
+    def make(self):
+        bridge = make_bridge()
+        bridge._update = {}
+        bridge._update_state = "idle"
+        bridge._update_check = "idle"
+        bridge._update_progress = 0.0
+        return bridge
+
+    def test_up_to_date_result_is_shown_and_does_not_open_the_sheet(self):
+        bridge = self.make()
+        bridge._handle_update_event({"event": "checked", "result": "uptodate"})
+        self.assertEqual(bridge.updateCheck, "uptodate")
+        self.assertEqual(bridge.updateState, "idle")
+
+    def test_new_version_opens_the_update_sheet_and_reports_available(self):
+        bridge = self.make()
+        info = {"version": "2.4.0", "notes": ["Algo nuevo"], "url": "u"}
+        bridge._handle_update_event({"event": "checked", "result": "available", "info": info})
+        self.assertEqual((bridge.updateCheck, bridge.updateState), ("available", "available"))
+        self.assertEqual(bridge.update["version"], "2.4.0")
+
+    def test_failed_check_is_reported(self):
+        bridge = self.make()
+        bridge._handle_update_event({"event": "checked", "result": "failed"})
+        self.assertEqual(bridge.updateCheck, "failed")
+
+    def test_dismissing_the_sheet_resets_the_profile_state(self):
+        bridge = self.make()
+        bridge._handle_update_event({"event": "checked", "result": "available", "info": {"version": "2.4.0"}})
+        bridge.dismissUpdate()
+        self.assertEqual((bridge.updateCheck, bridge.updateState), ("idle", "idle"))
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -33,6 +33,8 @@ public class LoginActivity extends AppCompatActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // Se retira el fundido propio del splash del sistema: la app ya dibuja el mismo cubo en el mismo sitio.
+        if (android.os.Build.VERSION.SDK_INT >= 31) getSplashScreen().setOnExitAnimationListener(view -> view.remove());
         if (FirebaseAuth.getInstance().getCurrentUser() != null) { openApp(); return; }
         setContentView(R.layout.activity_login);
         login = findViewById(R.id.btnGoogleLogin);
@@ -114,5 +116,6 @@ public class LoginActivity extends AppCompatActivity {
         startActivity(new Intent(this, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         finish();
+        overridePendingTransition(0, 0);
     }
 }

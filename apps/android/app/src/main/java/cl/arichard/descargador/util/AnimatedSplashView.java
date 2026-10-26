@@ -25,6 +25,8 @@ public final class AnimatedSplashView extends View {
     private ValueAnimator introAnimator;
     private float phase;
     private float intro;
+    private static final long LAUNCH_HOLD_MS = 1650;
+    private static final long LAUNCH_EXIT_MS = 460;
     private final boolean dismissAutomatically;
 
     public AnimatedSplashView(Context context) {
@@ -35,7 +37,8 @@ public final class AnimatedSplashView extends View {
     public AnimatedSplashView(Context context, boolean dismissAutomatically) {
         super(context);
         this.dismissAutomatically = dismissAutomatically;
-        setBackgroundColor(dismissAutomatically ? Color.rgb(17, 22, 28) : Color.TRANSPARENT);
+        // El mismo negro del splash del sistema: el cambio entre uno y otro no se nota.
+        setBackgroundColor(dismissAutomatically ? Color.BLACK : Color.TRANSPARENT);
         cube = BitmapFactory.decodeResource(getResources(), R.drawable.logo_cube);
         paint.setFilterBitmap(true);
         paint.setDither(true);
@@ -45,6 +48,8 @@ public final class AnimatedSplashView extends View {
     public void start() {
         stop();
         setAlpha(1f);
+        setScaleX(1f);
+        setScaleY(1f);
         animator = ValueAnimator.ofFloat(0f, 1f);
         animator.setDuration(1650);
         animator.setRepeatCount(ValueAnimator.INFINITE);
@@ -57,11 +62,13 @@ public final class AnimatedSplashView extends View {
         introAnimator.addUpdateListener(value -> { intro = (float) value.getAnimatedValue(); invalidate(); });
         introAnimator.start();
         if (dismissAutomatically) {
-            postDelayed(() -> animate().alpha(0f).setDuration(360).withEndAction(() -> {
+            // Una vuelta completa de la onda y luego un acercamiento suave mientras aparece la app.
+            postDelayed(() -> animate().alpha(0f).scaleX(1.14f).scaleY(1.14f).setDuration(LAUNCH_EXIT_MS)
+                    .setInterpolator(new DecelerateInterpolator(1.4f)).withEndAction(() -> {
                 stop();
                 ViewGroup parent = (ViewGroup) getParent();
                 if (parent != null) parent.removeView(this);
-            }).start(), 2100);
+            }).start(), LAUNCH_HOLD_MS);
         }
     }
 
@@ -77,13 +84,14 @@ public final class AnimatedSplashView extends View {
         super.onDraw(canvas);
         if (cube == null) return;
         float cycle = (float) Math.sin(phase * Math.PI * 2);
-        float size = Math.min(dp(250), Math.min(getWidth(), getHeight()) * (dismissAutomatically ? .42f : .88f));
+        float size = Math.min(dp(250), Math.min(getWidth(), getHeight()) * (dismissAutomatically ? .335f : .88f));
         float maxSide = Math.max(cube.getWidth(), cube.getHeight());
         float drawWidth = size * cube.getWidth() / maxSide;
         float drawHeight = size * cube.getHeight() / maxSide;
         float left = (getWidth() - drawWidth) / 2f;
         float top = (getHeight() - drawHeight) / 2f - dp(5) * Math.abs(cycle);
         android.graphics.RectF target = new android.graphics.RectF(left, top, left + drawWidth, top + drawHeight);
+        float cubeAlpha = dismissAutomatically ? 1f : intro;
         float auraPulse = 1f + .08f * cycle;
         float auraRadius = Math.max(drawWidth, drawHeight) * .55f * auraPulse;
         float centerX = target.centerX();
@@ -94,12 +102,12 @@ public final class AnimatedSplashView extends View {
                 new float[]{0f, .48f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawCircle(centerX, centerY, auraRadius, paint);
         paint.setShader(null);
-        paint.setAlpha(Math.round(255f * intro));
+        paint.setAlpha(Math.round(255f * cubeAlpha));
         canvas.drawBitmap(cube, null, target, paint);
-        drawWave(canvas, left, top, drawWidth, drawHeight);
+        drawWave(canvas, left, top, drawWidth, drawHeight, cubeAlpha);
     }
 
-    private void drawWave(Canvas canvas, float left, float top, float width, float height) {
+    private void drawWave(Canvas canvas, float left, float top, float width, float height, float alpha) {
         final float[][] raw = {
                 {18,238},{32,245},{43,238},{56,192},{67,190},{83,282},{94,295},
                 {120,122},{130,128},{148,361},{158,364},{177,244},{187,242},{201,302},{220,312}
@@ -124,7 +132,7 @@ public final class AnimatedSplashView extends View {
         paint.setStrokeJoin(Paint.Join.ROUND);
         paint.setStrokeWidth(9f / 446f * width);
         paint.setColor(Color.rgb(80, 233, 255));
-        paint.setAlpha(Math.round(255f * intro));
+        paint.setAlpha(Math.round(255f * alpha));
         paint.setShadowLayer(12f / 446f * width, 0, 0, Color.rgb(32, 191, 255));
         canvas.drawPath(wavePath, paint);
         paint.clearShadowLayer();
