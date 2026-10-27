@@ -20,6 +20,11 @@ La interfaz empaquetada se prueba con preferencias temporales, sin acceder a la
 cuenta ni iniciar sincronizaciones. El ensayo online usa audio silenciado y una
 caché temporal, que se libera al terminar.
 
+La prueba del historial resuelve la carpeta temporal antes de buscar por ruta:
+Windows puede devolver un alias 8.3 o una unión, mientras SQLite conserva la ruta
+canónica. Se reprodujo el fallo con una unión local y se verificó la corrección;
+el guardado de descargas no requería cambios.
+
 ## Cobertura del teléfono
 
 `PendingFeaturesDeviceTest` comprueba selección múltiple, seleccionar todo,

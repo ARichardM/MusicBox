@@ -162,7 +162,9 @@ class DownloadTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
-        cls.root = Path(cls.temp.name)
+        # Windows CI puede entregar TEMP mediante un alias 8.3 o una unión.
+        # El historial guarda rutas resueltas: buscar con el alias no coincide.
+        cls.root = Path(cls.temp.name).resolve()
         cls.media = cls.root / "video.mp4"
         subprocess.run([
             app.find_ffmpeg(), "-hide_banner", "-loglevel", "error",
@@ -262,6 +264,7 @@ class DownloadTests(unittest.TestCase):
             result, events, destination = self.worker("MP3", folder="history-check")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             rows, total = DownloadHistory(self.root / "history.sqlite3").page(str(destination))
+            self.assertTrue(rows, events)
             self.assertEqual(rows[0]["state"], expected_state)
             self.assertEqual(rows[0]["source_url"], self.url)
             self.assertEqual(rows[0]["title"], "video")
