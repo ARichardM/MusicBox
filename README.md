@@ -33,7 +33,9 @@
 | **Playlists** | Nombre, descripción, menú de configuración y descarga automática de nuevas canciones. |
 | **Favoritos** | Una playlist especial y sincronizada; las canciones se identifican por su ID de YouTube, así que no se duplican entre dispositivos. |
 | **Clics** | Contador de reproducciones por canción, carpeta y playlist, y estadísticas de tu cuenta. |
-| **Descargas** | MP3 o MP4, progreso real, historial, descarga automática de playlists y archivos que permanecen en cada dispositivo. |
+| **Inicio y descubrimiento** | Búsqueda y recomendaciones «Para ti» que se adaptan a lo que escuchas, con canciones de audio de YouTube Music (no videoclips) y artistas con su foto. |
+| **Artistas** | Página de cada artista con sus canciones más escuchadas, todas sus canciones, álbumes y sencillos. |
+| **Descargas** | MP3 o MP4 con calidad a elegir, playlists con rango, cookies, progreso real, historial y registro; importar listas y carpetas. Disponible en Windows y en Android (desde el perfil). |
 | **Cuenta** | Inicio con Google, preferencias sincronizadas, listado de dispositivos y desconexión remota. |
 | **Idiomas** | Español e inglés, según el idioma del sistema o el que elijas en Configuración. |
 | **Actualizaciones** | Aviso de versión nueva con sus novedades; en Windows se instala sola y verificada. |

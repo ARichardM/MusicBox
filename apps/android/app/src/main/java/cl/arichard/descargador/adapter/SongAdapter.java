@@ -40,6 +40,21 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     private String currentQuery = "";
 
+    /** Cómo se ordena la lista. DEFAULT respeta el orden recibido (el de la playlist o el del escáner). */
+    public enum Sort { DEFAULT, TITLE, ARTIST, RECENT, PLAYS, DURATION }
+    private Sort sort = Sort.DEFAULT;
+    /** Sentido natural de cada orden: A→Z, de menor a mayor duración, lo más reciente o lo más escuchado primero. */
+    private boolean ascending = true;
+
+    public Sort getSort() { return sort; }
+    public boolean isAscending() { return ascending; }
+
+    public void setSort(Sort newSort, boolean newAscending) {
+        if (sort == newSort && ascending == newAscending) return;
+        sort = newSort; ascending = newAscending;
+        applyFiltersAndSort();
+    }
+
     public SongAdapter(Context context, List<Song> songs, OnSongClickListener listener) {
         this.context = context;
         this.listener = listener;
@@ -66,6 +81,29 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         applyFiltersAndSort();
     }
 
+    private void sortDisplayed() {
+        if (sort == Sort.DEFAULT) { if (!ascending) java.util.Collections.reverse(displayedList); return; }
+        java.text.Collator collator = java.text.Collator.getInstance();
+        collator.setStrength(java.text.Collator.PRIMARY);
+        java.util.Comparator<Song> byTitle = (a, b) -> collator.compare(a.getTitle(), b.getTitle());
+        java.util.Comparator<Song> order;
+        switch (sort) {
+            case ARTIST: order = ((java.util.Comparator<Song>) (a, b) -> collator.compare(a.getArtist(), b.getArtist())).thenComparing(byTitle); break;
+            case DURATION: order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(a.getDuration(), b.getDuration())).thenComparing(byTitle); break;
+            case RECENT: order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(b.getDateAdded(), a.getDateAdded())).thenComparing(byTitle); break;
+            case PLAYS: {
+                // Se cuentan una sola vez: contar dentro del comparador tomaría el candado de los clics muchas veces.
+                java.util.Map<String, Integer> plays = new java.util.HashMap<>();
+                cl.arichard.descargador.data.ClickStats stats = cl.arichard.descargador.data.ClickStats.getInstance(context);
+                for (Song song : displayedList) plays.put(song.getPath(), stats.count(song));
+                order = ((java.util.Comparator<Song>) (a, b) -> Integer.compare(plays.get(b.getPath()), plays.get(a.getPath()))).thenComparing(byTitle);
+                break;
+            }
+            default: order = byTitle;
+        }
+        java.util.Collections.sort(displayedList, ascending ? order : order.reversed());
+    }
+
     public void filter(String query) {
         this.currentQuery = query != null ? query.trim().toLowerCase() : "";
         applyFiltersAndSort();
@@ -88,6 +126,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             displayedList.add(s);
         }
 
+        sortDisplayed();
         List<Song> after = new ArrayList<>(displayedList);
         androidx.recyclerview.widget.DiffUtil.calculateDiff(new androidx.recyclerview.widget.DiffUtil.Callback() {
             @Override public int getOldListSize() { return before.size(); }
@@ -112,38 +151,60 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     }
     public int getSelectionCount() { return selectedPaths.size(); }
     public boolean isSelectionMode() { return selectionMode; }
+    public boolean areAllSelected() { return !displayedList.isEmpty() && selectedPaths.size() >= displayedList.size() && allDisplayedSelected(); }
+
+    private boolean allDisplayedSelected() {
+        for (Song s : displayedList) if (!selectedPaths.contains(s.getPath())) return false;
+        return true;
+    }
+
+    private int indexOfPath(String path) {
+        for (int i = 0; i < displayedList.size(); i++) if (displayedList.get(i).getPath().equals(path)) return i;
+        return -1;
+    }
+
+    /** Solo se repintan las filas que cambian, con una pequeña animación en la marca. */
     public void clearSelection() {
+        boolean wasActive = selectionMode;
         selectedPaths.clear();
         selectionMode = false;
-        notifyDataSetChanged();
+        if (wasActive) notifyItemRangeChanged(0, displayedList.size(), SELECTION);
         if (listener != null) listener.onSelectionChanged(0);
     }
     public void selectAll() {
         for (Song s : displayedList) selectedPaths.add(s.getPath());
         if (!displayedList.isEmpty()) {
             selectionMode = true;
-            notifyDataSetChanged();
+            notifyItemRangeChanged(0, displayedList.size(), SELECTION);
             if (listener != null) listener.onSelectionChanged(selectedPaths.size());
         }
+    }
+    /** Marca todas si falta alguna; si ya están todas, las desmarca (y sale del modo selección). */
+    public void toggleSelectAll() {
+        if (areAllSelected()) clearSelection(); else selectAll();
     }
     private void toggleSelection(Song song) {
         if (selectedPaths.contains(song.getPath())) selectedPaths.remove(song.getPath());
         else selectedPaths.add(song.getPath());
-        if (selectedPaths.isEmpty()) { selectionMode = false; }
-        notifyDataSetChanged();
+        boolean ended = selectedPaths.isEmpty();
+        if (ended) selectionMode = false;
+        int index = indexOfPath(song.getPath());
+        if (ended) notifyItemRangeChanged(0, displayedList.size(), SELECTION);
+        else if (index >= 0) notifyItemChanged(index, SELECTION);
         if (listener != null) listener.onSelectionChanged(selectedPaths.size());
     }
     public void activateSelectionMode(Song firstSong) {
         selectionMode = true;
         selectedPaths.clear();
         if (firstSong != null) selectedPaths.add(firstSong.getPath());
-        notifyDataSetChanged();
+        notifyItemRangeChanged(0, displayedList.size(), SELECTION);
         if (listener != null) listener.onSelectionChanged(selectedPaths.size());
     }
 
     public List<Song> getDisplayedList() { return displayedList; }
 
     private static final String PROGRESS = "progress";
+    private static final String SELECTION = "selection";
     private final java.util.Map<String, Float> downloadProgress = new java.util.HashMap<>();
 
     /** Real progress (0 to 1) of the download of [videoId]; a negative value means "still connecting". */
@@ -177,6 +238,10 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     @Override
     public void onBindViewHolder(@NonNull SongViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
+        if (payloads.contains(SELECTION)) {
+            bindSelection(holder, displayedList.get(position), true);
+            return;
+        }
         if (payloads.contains(PROGRESS)) {
             String id = displayedList.get(position).getVideoId();
             Float fraction = id == null ? null : downloadProgress.get(id);
@@ -230,38 +295,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             }
         }
 
-        boolean isSelected = selectedPaths.contains(song.getPath());
-        Song current = PlayerManager.getInstance().getCurrentSong();
-        boolean isPlayingThis = !selectionMode && current != null && current.getPath() != null && current.getPath().equals(song.getPath());
-
-        int accentColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.accent);
-        int primaryTextColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.text_primary);
-
-        if (selectionMode) {
-            // Selection mode UI
-            holder.itemView.setBackgroundResource(isSelected ? R.drawable.bg_song_playing : 0);
-            holder.txtTitle.setTextColor(isSelected ? accentColor : primaryTextColor);
-            holder.viewPlayingOverlay.setVisibility(isSelected ? View.VISIBLE : View.GONE);
-            holder.imgIndicator.setVisibility(isSelected ? View.VISIBLE : View.GONE);
-            if (isSelected) holder.imgIndicator.setImageResource(R.drawable.ic_check);
-            holder.btnFavorite.setVisibility(View.GONE);
-            holder.btnMenu.setVisibility(View.GONE);
-        } else {
-            holder.itemView.setBackgroundResource(isPlayingThis ? R.drawable.bg_song_playing : 0);
-            holder.imgIndicator.setImageResource(PlayerManager.getInstance().isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
-            holder.itemView.setContentDescription(song.getTitle() + (isPlayingThis ? cl.arichard.descargador.util.Tr.t(" · Canción actual") : ""));
-            if (isPlayingThis) {
-                holder.txtTitle.setTextColor(accentColor);
-                holder.viewPlayingOverlay.setVisibility(View.VISIBLE);
-                holder.imgIndicator.setVisibility(View.VISIBLE);
-            } else {
-                holder.txtTitle.setTextColor(primaryTextColor);
-                holder.viewPlayingOverlay.setVisibility(View.GONE);
-                holder.imgIndicator.setVisibility(View.GONE);
-            }
-            holder.btnFavorite.setVisibility(View.VISIBLE);
-            holder.btnMenu.setVisibility(View.VISIBLE);
-        }
+        bindSelection(holder, song, false);
 
         boolean fav = PlaylistManager.getInstance(context).isFavorite(song.getPath());
         holder.btnFavorite.setImageResource(fav ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
@@ -295,6 +329,49 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         cl.arichard.descargador.util.SafeTap.install(holder.btnMenu);
         cl.arichard.descargador.util.SafeTap.install(holder.btnFavorite);
         cl.arichard.descargador.util.SafeTap.installRowTap(holder.itemView);
+    }
+
+    /** Todo lo que cambia al seleccionar: resalte, marca, botones y el sello de descargada. Se repite sin tocar la portada. */
+    private void bindSelection(SongViewHolder holder, Song song, boolean animate) {
+        boolean isSelected = selectedPaths.contains(song.getPath());
+        Song current = PlayerManager.getInstance().getCurrentSong();
+        boolean isPlayingThis = !selectionMode && current != null && current.getPath() != null && current.getPath().equals(song.getPath());
+
+        int accentColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.accent);
+        int primaryTextColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.text_primary);
+
+        if (selectionMode) {
+            // Selection mode UI
+            holder.itemView.setBackgroundResource(isSelected ? R.drawable.bg_song_playing : 0);
+            holder.txtTitle.setTextColor(isSelected ? accentColor : primaryTextColor);
+            holder.viewPlayingOverlay.setVisibility(isSelected ? View.VISIBLE : View.GONE);
+            holder.imgIndicator.setVisibility(isSelected ? View.VISIBLE : View.GONE);
+            if (isSelected) holder.imgIndicator.setImageResource(R.drawable.ic_check);
+            holder.btnFavorite.setVisibility(View.GONE);
+            holder.btnMenu.setVisibility(View.GONE);
+        } else {
+            holder.itemView.setBackgroundResource(isPlayingThis ? R.drawable.bg_song_playing : 0);
+            holder.imgIndicator.setImageResource(PlayerManager.getInstance().isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
+            holder.itemView.setContentDescription(song.getTitle() + (isPlayingThis ? cl.arichard.descargador.util.Tr.t(" · Canción actual") : ""));
+            if (isPlayingThis) {
+                holder.txtTitle.setTextColor(accentColor);
+                holder.viewPlayingOverlay.setVisibility(View.VISIBLE);
+                holder.imgIndicator.setVisibility(View.VISIBLE);
+            } else {
+                holder.txtTitle.setTextColor(primaryTextColor);
+                holder.viewPlayingOverlay.setVisibility(View.GONE);
+                holder.imgIndicator.setVisibility(View.GONE);
+            }
+            holder.btnFavorite.setVisibility(View.VISIBLE);
+            holder.btnMenu.setVisibility(View.VISIBLE);
+        }
+        if (holder.imgDownloadedBadge != null) {
+            String id = song.getVideoId();
+            boolean busy = id != null && downloadingVideoIds.contains(id);
+            boolean saved = id != null && context.getSharedPreferences("downloaded_videos", Context.MODE_PRIVATE).getBoolean(id, false);
+            holder.imgDownloadedBadge.setVisibility((fileExists(song.getPath()) || saved) && !busy && !selectionMode ? View.VISIBLE : View.GONE);
+        }
+        if (animate && selectionMode && isSelected) cl.arichard.descargador.util.SafeTap.pop(holder.imgIndicator, true);
     }
 
     @Override public int getItemCount() { return displayedList.size(); }

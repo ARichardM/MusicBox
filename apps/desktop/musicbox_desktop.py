@@ -34,6 +34,8 @@ from app_paths import CODE_DIR, DATA_ROOT, DEFAULT_DOWNLOAD_DIR, worker_command
 from historial import DownloadHistory
 from musicbox_cloud import FirebaseDesktopClient
 from click_stats import ClickStats, song_key
+import ytmusic
+from recommendations import PER_SEED, Recommender, pick_autoplay
 import track_identity as identity
 from version import __version__
 from downloads_controller import DownloadsController
@@ -107,6 +109,12 @@ class MusicBoxBridge(QObject):
     sidebarChanged = Signal()
     authChanged = Signal()
     discoveryChanged = Signal()
+    forYouChanged = Signal()
+    artistChanged = Signal()
+    _artistReady = Signal(object, int)
+    _artistSongsReady = Signal(object, int)
+    _albumReady = Signal(object, int)
+    _forYouReady = Signal(object, int)
     downloadingIdsChanged = Signal()
     autoDownloadChanged = Signal()
     playlistsChanged = Signal()
@@ -119,6 +127,8 @@ class MusicBoxBridge(QObject):
     _searchFinished = Signal(object, str)
     _downloadEvent = Signal(object)
     _streamReady = Signal(object, str)
+    _autoplayReady = Signal(str, list)
+    autoplayChanged = Signal()
     _authResult = Signal(object, str)
     _remotePlaylists = Signal(object)
     _devicesPolled = Signal(object, bool)
@@ -234,10 +244,43 @@ class MusicBoxBridge(QObject):
         self._player.positionChanged.connect(lambda _: self.playerChanged.emit())
         self._player.durationChanged.connect(lambda _: self.playerChanged.emit())
         self._player.playbackStateChanged.connect(self._playback_state_changed)
+        self._listening_sample = None
+        self._listening_started = False
+        self._last_listening_save = 0.0
+        self._listening_timer = QTimer(self)
+        self._listening_timer.setInterval(1000)
+        self._listening_timer.timeout.connect(self._sample_listening)
+        self._listening_timer.start()
         self._player.mediaStatusChanged.connect(self._media_status)
         self._searchFinished.connect(self._apply_search)
+        self._artist_open = self._album_open = False
+        self._artist, self._album, self._artist_all = {}, {}, []
+        self._artist_loading = self._album_loading = self._artist_all_loading = self._artist_all_loaded = False
+        self._artist_error = ""
+        self._artist_gen = self._album_gen = 0
+        self._online_queue, self._online_index = [], -1
+        try:
+            self._artist_directory = dict(json.loads(self._settings.value("artistDirectory", "{}", str) or "{}"))
+        except (TypeError, ValueError):
+            self._artist_directory = {}
+        self._artistReady.connect(self._apply_artist)
+        self._artistSongsReady.connect(self._apply_artist_songs)
+        self._albumReady.connect(self._apply_album)
+        self._for_you = {"songs": [], "artists": [], "mode": ""}
+        self._for_you_loading = False
+        self._for_you_generation = 0
+        self._recommender = Recommender(
+            self._related_songs,
+            lambda query: youtube_streams.search(query, self._extract_info, 12))
+        try:
+            self._recommender.restore(json.loads(self._settings.value("forYouCache", "{}", str) or "{}"))
+        except (TypeError, ValueError):
+            pass
+        self._forYouReady.connect(self._apply_for_you)
         self._downloadEvent.connect(self._handle_download_event)
         self._streamReady.connect(self._play_stream)
+        self._autoplayReady.connect(self._apply_autoplay)
+        self._autoplay_tried, self._autoplay_loading = "", False
         self._updateEvent.connect(self._handle_update_event)
         self._player.errorOccurred.connect(self._player_error)
         self._authResult.connect(self._apply_auth_result)
@@ -253,6 +296,7 @@ class MusicBoxBridge(QObject):
         if self._cloud.refresh_token:
             threading.Thread(target=self._restore_session, daemon=True).start()
         QTimer.singleShot(4000, self.checkForUpdate)
+        QTimer.singleShot(2500, self.refreshForYou)
 
     @Property("QVariantList", notify=searchResultsChanged)
     def searchResults(self):
@@ -260,6 +304,325 @@ class MusicBoxBridge(QObject):
 
     def _save_clicks(self):
         self._settings.setValue("clickStats", json.dumps(self._clicks_stats.export(), ensure_ascii=False, separators=(",", ":")))
+
+    # --- Artistas: foto, canciones más escuchadas, todas sus canciones y discografía ---
+
+    @Property(bool, notify=artistChanged)
+    def artistOpen(self): return self._artist_open
+
+    @Property(str, notify=artistChanged)
+    def artistName(self): return self._artist.get("name", "")
+
+    @Property(str, notify=artistChanged)
+    def artistPhoto(self): return self._artist.get("photo", "")
+
+    @Property(str, notify=artistChanged)
+    def artistSubscribers(self): return self._artist.get("subscribers", "")
+
+    @Property(str, notify=artistChanged)
+    def artistError(self): return self._artist_error
+
+    @Property(bool, notify=artistChanged)
+    def artistLoading(self): return self._artist_loading
+
+    @Property("QVariantList", notify=artistChanged)
+    def artistTopSongs(self): return self._artist.get("top_songs", [])
+
+    @Property("QVariantList", notify=artistChanged)
+    def artistAlbums(self): return self._artist.get("albums", [])
+
+    @Property("QVariantList", notify=artistChanged)
+    def artistSingles(self): return self._artist.get("singles", [])
+
+    @Property("QVariantList", notify=artistChanged)
+    def artistAllSongs(self): return self._artist_all
+
+    @Property(bool, notify=artistChanged)
+    def artistCanLoadAll(self): return bool(self._artist.get("songs_playlist")) and not self._artist_all_loaded
+
+    @Property(bool, notify=artistChanged)
+    def artistAllLoading(self): return self._artist_all_loading
+
+    @Property(bool, notify=artistChanged)
+    def albumOpen(self): return self._album_open
+
+    @Property(bool, notify=artistChanged)
+    def albumLoading(self): return self._album_loading
+
+    @Property(str, notify=artistChanged)
+    def albumTitle(self): return self._album.get("title", "")
+
+    @Property(str, notify=artistChanged)
+    def albumYear(self): return self._album.get("year", "")
+
+    @Property(str, notify=artistChanged)
+    def albumArtist(self): return self._album.get("artist", "")
+
+    @Property(str, notify=artistChanged)
+    def albumThumbnail(self): return self._album.get("thumbnail", "")
+
+    @Property("QVariantList", notify=artistChanged)
+    def albumTracks(self): return self._album.get("tracks", [])
+
+    def _decorate_tracks(self, tracks):
+        """Marca descargadas y favoritas, igual que los resultados de búsqueda."""
+        for item in tracks:
+            video_id = item.get("id", "")
+            self._mark_local(item, video_id, item.get("title", ""))
+            item["favorite"] = bool(f"youtube:{video_id}" in self._favorites or item.get("url", "") in self._favorites)
+        return tracks
+
+    @Slot(str, str)
+    def openArtist(self, browse_id, name):
+        self._artist_gen += 1
+        generation = self._artist_gen
+        self._artist_open = True
+        self._artist = {"name": name or "", "browse_id": browse_id or ""}
+        self._artist_all, self._artist_all_loaded, self._artist_all_loading = [], False, False
+        self._artist_loading, self._artist_error = True, ""
+        self._album_open, self._album = False, {}
+        self.artistChanged.emit()
+
+        def worker():
+            try:
+                target = browse_id
+                if not target:
+                    found = ytmusic.find_artist(name)
+                    target = found["browse_id"] if found else ""
+                page = ytmusic.artist_page(target) if target else {}
+                self._artistReady.emit(page, generation)
+            except Exception as exc:
+                self._artistReady.emit({"error": str(exc).splitlines()[-1] if str(exc) else "error"}, generation)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(object, int)
+    def _apply_artist(self, page, generation):
+        if generation != self._artist_gen:
+            return
+        self._artist_loading = False
+        if page.get("error") or not page.get("name"):
+            self._artist_error = i18n.tr("No se pudo cargar este artista. Revisa tu conexión.")
+        else:
+            self._decorate_tracks(page.get("top_songs", []))
+            self._artist = page
+        self.artistChanged.emit()
+
+    @Slot()
+    def closeArtist(self):
+        self._artist_gen += 1
+        self._artist_open = self._album_open = False
+        self._artist, self._album, self._artist_all = {}, {}, []
+        self._artist_all_loaded = self._artist_all_loading = self._artist_loading = False
+        self.artistChanged.emit()
+
+    @Slot()
+    def loadAllArtistSongs(self):
+        playlist = self._artist.get("songs_playlist")
+        if not playlist or self._artist_all_loading or self._artist_all_loaded:
+            return
+        generation = self._artist_gen
+        self._artist_all_loading = True
+        self.artistChanged.emit()
+        name = self._artist.get("name", "")
+
+        def worker():
+            try:
+                tracks = ytmusic.playlist_tracks(playlist, limit=300, artist=name)
+            except Exception:
+                tracks = []
+            self._artistSongsReady.emit(tracks, generation)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(object, int)
+    def _apply_artist_songs(self, tracks, generation):
+        if generation != self._artist_gen:
+            return
+        self._artist_all = self._decorate_tracks(tracks)
+        self._artist_all_loading = False
+        self._artist_all_loaded = bool(tracks)
+        self.artistChanged.emit()
+
+    @Slot(str)
+    def openAlbum(self, browse_id):
+        if not browse_id:
+            return
+        self._album_gen += 1
+        generation = self._album_gen
+        self._album_open, self._album_loading, self._album = True, True, {}
+        self.artistChanged.emit()
+
+        def worker():
+            try:
+                page = ytmusic.album_page(browse_id)
+            except Exception:
+                page = {}
+            self._albumReady.emit(page, generation)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(object, int)
+    def _apply_album(self, page, generation):
+        if generation != self._album_gen:
+            return
+        self._album_loading = False
+        if page.get("tracks"):
+            self._decorate_tracks(page["tracks"])
+            self._album = page
+        else:
+            self._album_open = False
+            self._show_notice(i18n.tr("No se pudo cargar este álbum."), None)
+        self.artistChanged.emit()
+
+    @Slot()
+    def closeAlbum(self):
+        self._album_gen += 1
+        self._album_open, self._album_loading, self._album = False, False, {}
+        self.artistChanged.emit()
+
+    @Property(bool, notify=autoplayChanged)
+    def autoplay(self):
+        return self._settings.value("autoplay", True, bool)
+
+    @Slot(bool)
+    def setAutoplay(self, enabled):
+        self._settings.setValue("autoplay", bool(enabled))
+        self.autoplayChanged.emit()
+        if enabled and self._current.get("url") and not self._current.get("path"):
+            self._maybe_autoplay(self._current)
+
+    def _maybe_autoplay(self, item):
+        """Al sonar lo último de la cola online, busca canciones parecidas y las deja a continuación."""
+        video_id = item.get("id")
+        if not self.autoplay or not video_id or self._autoplay_loading or video_id == self._autoplay_tried:
+            return
+        queue = self._online_queue
+        if queue and self._online_index < len(queue) - 1:
+            return
+        if not queue or not 0 <= self._online_index < len(queue) or queue[self._online_index].get("id") != video_id:
+            self._online_queue, self._online_index = [dict(item)], 0
+        self._autoplay_tried, self._autoplay_loading = video_id, True
+
+        def work():
+            try:
+                tracks = self._related_songs(video_id)
+            except Exception:
+                tracks = []
+            self._autoplayReady.emit(video_id, tracks or [])
+        threading.Thread(target=work, daemon=True).start()
+
+    @Slot(str, list)
+    def _apply_autoplay(self, video_id, tracks):
+        self._autoplay_loading = False
+        queue = self._online_queue
+        if not self.autoplay or not queue or self._current.get("id") != video_id and queue[-1].get("id") != video_id:
+            return
+        queue.extend(pick_autoplay(tracks, [track.get("id") for track in queue]))
+
+    def _advance_online(self, step):
+        """Pasa a la siguiente (o anterior) canción de la lista online en curso. True si había una."""
+        queue = self._online_queue
+        if not queue or not 0 <= self._online_index < len(queue) or self._current.get("id") != queue[self._online_index].get("id"):
+            return False
+        target = self._online_index + step
+        if 0 <= target < len(queue):
+            self._online_index = target
+            self._play_online(queue[target])
+        return True
+
+    @Slot("QVariantList", int)
+    def playOnlineList(self, tracks, index):
+        """Reproduce una lista de canciones de YouTube Music desde ``index`` y sigue con las demás."""
+        queue = [dict(track) for track in (tracks or []) if track.get("url")]
+        if not queue or not 0 <= index < len(queue):
+            return
+        self._online_queue, self._online_index = queue, index
+        self._play_online(queue[index])
+
+    @Property("QVariantList", notify=forYouChanged)
+    def forYou(self):
+        return self._for_you["songs"]
+
+    @Property("QVariantList", notify=forYouChanged)
+    def forYouArtists(self):
+        return self._for_you["artists"]
+
+    @Property(str, notify=forYouChanged)
+    def forYouMode(self):
+        return self._for_you.get("mode", "")
+
+    @Property(bool, notify=forYouChanged)
+    def forYouLoading(self):
+        return self._for_you_loading
+
+    def _related_songs(self, video_id):
+        """Canciones parecidas de YouTube Music (solo audio oficial); si falla, la lista Mix de YouTube."""
+        try:
+            tracks = ytmusic.related(video_id, PER_SEED)
+            if tracks:
+                return tracks
+        except Exception:
+            pass
+        return youtube_streams.related(video_id, self._extract_info, PER_SEED)
+
+    def _resolve_artist(self, name):
+        """Foto e id de YouTube Music de un artista; los aciertos se recuerdan para no repetir la consulta."""
+        key = ytmusic.normalize(name)
+        cached = self._artist_directory.get(key)
+        if cached and cached.get("photo"):
+            return dict(cached)
+        try:
+            found = ytmusic.find_artist(name)
+        except Exception:
+            found = None
+        entry = {"name": found["name"] if found else name, "browseId": found["browse_id"] if found else "",
+                 "photo": found["photo"] if found else ""}
+        if found:
+            self._artist_directory[key] = entry
+        return entry
+
+    @Slot()
+    def refreshForYou(self):
+        """Recalcula "Para ti". Solo ocurre al abrir la app y al pulsar el botón de actualizar."""
+        self._for_you_generation += 1
+        generation = self._for_you_generation
+        self._for_you_loading = True
+        self.forYouChanged.emit()
+        known_ids = set(self._path_ids.values())
+        known_titles = [row.get("title", "") for row in self._library_all]
+        queries = list(self._recent_queries)
+
+        def worker():
+            try:
+                outcome = dict(self._recommender.compute(self._clicks_stats, known_ids, known_titles, queries, fresh=True))
+                outcome["artists"] = [self._resolve_artist(name) for name in outcome.get("artists", [])]
+            except Exception:
+                outcome = {"songs": [], "artists": [], "mode": "offline"}
+            self._forYouReady.emit(outcome, generation)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(object, int)
+    def _apply_for_you(self, outcome, generation):
+        if generation != self._for_you_generation:
+            return
+        self._for_you_loading = False
+        if outcome.get("mode") == "offline" and self._for_you["songs"]:
+            self.forYouChanged.emit()
+            return
+        songs = []
+        for item in outcome.get("songs", []):
+            item = dict(item)
+            video_id = item.get("id", "")
+            self._mark_local(item, video_id, item.get("title", ""))
+            item["favorite"] = bool(f"youtube:{video_id}" in self._favorites or item.get("url", "") in self._favorites)
+            songs.append(item)
+        self._for_you = {"songs": songs, "artists": list(outcome.get("artists", [])), "mode": outcome.get("mode", "")}
+        self._settings.setValue("artistDirectory", json.dumps(self._artist_directory, ensure_ascii=False, separators=(",", ":")))
+        self.forYouChanged.emit()
+        self._settings.setValue("forYouCache", json.dumps(self._recommender.snapshot(), ensure_ascii=False,
+                                                         separators=(",", ":")))
 
     def _migrate_legacy_clicks(self, rows):
         """Pasa los contadores antiguos (por ruta de archivo) a la clave común entre plataformas."""
@@ -353,12 +716,61 @@ class MusicBoxBridge(QObject):
     @Property("QVariantList", notify=discoveryChanged)
     def topPlayed(self):
         def clicks(row): return self._clicks(self._row_keys(row))
-        rows = [row for row in self._library_all if clicks(row) > 0]
+        rows = [dict(row, clicks=clicks(row)) for row in self._library_all if clicks(row) > 0]
         return sorted(rows, key=lambda row: (-clicks(row), row.get("title", "").casefold()))[:5]
 
     @Property("QVariantList", notify=discoveryChanged)
     def topClicks(self):
         return [{"title": title, "clicks": clicks} for _key, title, clicks in self._clicks_stats.top(3)]
+
+    @Property("QVariantMap", notify=discoveryChanged)
+    def statistics(self):
+        songs = self._clicks_stats.listening_rows()
+        metadata = {}
+        for row in list(self._online_tracks.values()) + self._library_all:
+            for key in self._row_keys(row):
+                metadata[key] = row
+        for row in songs:
+            meta = metadata.get(row["key"], {})
+            for field in ("title", "artist", "thumbnail"):
+                if meta.get(field): row[field] = meta[field]
+            if not row.get("thumbnail") and row["key"].startswith("yt:"):
+                row["thumbnail"] = "https://i.ytimg.com/vi/" + row["key"][3:] + "/mqdefault.jpg"
+        playlists = self._clicks_stats.listening_rows(playlists=True)
+        covers = {row["name"]: row["thumbnail"] for row in self.playlists}
+        for row in playlists:
+            if covers.get(row["title"]): row["thumbnail"] = covers[row["title"]]
+        return {"songs": songs, "playlists": playlists, "ms": sum(row.get("ms", 0) for row in songs), "plays": self._clicks_stats.total()}
+
+    def _sample_listening(self):
+        import time
+        now = time.monotonic()
+        current = dict(self._current)
+        playing = self._player.playbackState() == QMediaPlayer.PlayingState
+        key = song_key(current.get("title", ""), current.get("id") or self._path_ids.get(current.get("path", ""), ""))
+        position = self._player.position()
+        previous = self._listening_sample
+        playlist = self._library_playlist
+        if playlist:
+            by_path = {row.get("path"): row for row in self._library_all}
+            members = {self._playlist_entry_key(entry, by_path) for entry in self._playlists.get(playlist, [])}
+            if not self._row_keys(current).intersection(members): playlist = ""
+        if previous and previous[0] == key:
+            playlist = previous[5]
+        if playing and current and not self._listening_started:
+            self._clicks_stats.record_listening(key, current.get("title", ""), current.get("artist", ""), current.get("thumbnail", ""), start=True, playlist=playlist)
+            self._listening_started = True
+        if previous and previous[0] == key and previous[3]:
+            wall = (now - previous[1]) * 1000
+            delta = position - previous[2]
+            if delta > 0 and wall > 0 and abs(delta - wall) < 1200:
+                self._clicks_stats.record_listening(key, current.get("title", ""), current.get("artist", ""), current.get("thumbnail", ""), millis=min(delta, wall), playlist=playlist)
+                if now - self._last_listening_save >= 5 or not playing:
+                    self._settings.setValue("clickStats", json.dumps(self._clicks_stats.export(), ensure_ascii=False, separators=(",", ":")))
+                    self._last_listening_save = now
+                    self.discoveryChanged.emit()
+                    self._schedule_cloud_save()
+        self._listening_sample = (key, now, position, playing, current, playlist) if current else None
 
     @Property("QVariantList", notify=discoveryChanged)
     def topCollections(self):
@@ -1833,6 +2245,10 @@ class MusicBoxBridge(QObject):
         self._start_local_track(item)
 
     def _start_local_track(self, item):
+        self._sample_listening()
+        self._listening_sample = None
+        self._listening_started = False
+        self._online_queue = []
         path = item.get("path", "")
         self._current = item
         self._recorded_source = ""
@@ -1840,6 +2256,8 @@ class MusicBoxBridge(QObject):
         self._player.play(); self.playerChanged.emit()
 
     def _playback_state_changed(self, state):
+        if hasattr(self, "_listening_timer"):
+            self._sample_listening()
         if state == QMediaPlayer.PlayingState:
             path = self._current.get("path", "")
             if path and Path(path).is_file() and path != self._recorded_source:
@@ -1856,17 +2274,33 @@ class MusicBoxBridge(QObject):
                 self.foldersChanged.emit()
                 self.playlistsChanged.emit()
                 self._schedule_cloud_save()
+            elif not path and self._current.get("id") and self._current.get("url") != self._recorded_source:
+                self._recorded_source = self._current.get("url", "")
+                title = self._current.get("title", "")
+                self._clicks_stats.record(song_key(title, self._current["id"]), title)
+                self._save_clicks()
+                self.discoveryChanged.emit()
+                self._schedule_cloud_save()
         self.playerChanged.emit()
 
     @Slot("QVariantMap")
     def playOnline(self, track):
+        self._online_queue = []
+        self._play_online(track)
+
+    def _play_online(self, track):
+        self._sample_listening()
+        self._listening_sample = None
+        self._listening_started = False
         item = dict(track or {})
         url = item.get("url", "")
         if not url: return
         self._current = item
+        self._recorded_source = ""
         self._current.setdefault("artist", item.get("subtitle", "YouTube"))
         self._current.setdefault("album", "Streaming")
         self._cache_fallback_tried.discard(url)
+        self._maybe_autoplay(item)
         self._set_status(i18n.tr("Preparando reproducción…"))
         self.playerChanged.emit()
         def resolve():
@@ -1935,7 +2369,10 @@ class MusicBoxBridge(QObject):
         else: self._player.play()
 
     @Slot(int)
-    def seek(self, milliseconds): self._player.setPosition(max(0, milliseconds))
+    def seek(self, milliseconds):
+        self._sample_listening()
+        self._listening_sample = None
+        self._player.setPosition(max(0, milliseconds))
 
     @Slot(float)
     def setVolume(self, value):
@@ -1952,6 +2389,7 @@ class MusicBoxBridge(QObject):
 
     @Slot(int)
     def skip(self, direction):
+        if self._advance_online(1 if direction >= 0 else -1): return
         if not self._queue: return
         self._queue_index = (self._queue_index + (1 if direction >= 0 else -1)) % len(self._queue)
         self._start_local_track(dict(self._queue[self._queue_index]))
@@ -2106,6 +2544,7 @@ class MusicBoxBridge(QObject):
     @Slot()
     def _media_status(self):
         if self._player.mediaStatus() != QMediaPlayer.EndOfMedia: return
+        if self._advance_online(1): return
         if self._repeat_mode == 2 and self._current:
             self._player.setPosition(0); self._player.play()
         elif self._repeat_mode == 1 or self._queue_index + 1 < len(self._queue):

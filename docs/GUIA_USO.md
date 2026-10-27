@@ -303,3 +303,28 @@ Pruebas locales de interfaz, descarga, conversión, playlists y cancelación:
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -v
 ```
+
+
+## Descargador en Android
+
+Se abre desde tu **perfil → Descargador** y tiene tres pestañas.
+
+**Descargar.** Pega los enlaces, uno por línea (**Pegar** toma el portapapeles). Elige **MP3** o **MP4** y su calidad. Con un enlace de playlist de YouTube el modo cambia solo a *Playlist completa o rango*; escribe un rango como `1-10` o `1,3,5-8` para bajar solo esas, o déjalo vacío para toda la lista. Cada playlist se guarda en su carpeta y los archivos llevan su número; en un lote de enlaces sueltos el nombre empieza con `001 -`, `002 -`… para conservar el orden. Pulsa **Descargar**: la cola sigue aunque cierres la pantalla, con una notificación y el botón **Cancelar**. Un archivo que ya existe se conserva y se marca como *Existente*; si algo falla se explica el motivo.
+
+**Historial.** Lo descargado, más reciente primero, con búsqueda. Cada fila permite **Abrir** (se reproduce), **Compartir** y **A la cola**.
+
+**Registro.** Lo que hizo la cola, con colores por nivel.
+
+**Cookies.** Si un video pide iniciar sesión, carga un `cookies.txt` (formato Netscape) en *Cookies de YouTube*; se valida antes de usarse y se puede quitar.
+
+**Buscar con portadas.** Busca videos con su miniatura, marca varios y pulsa **Añadir elegidos a la cola**: solo se agregan los enlaces, la descarga la inicias tú.
+
+**Importar lista.** Pega una lista (una canción por línea, o la copiada de Spotify o YouTube Music), revisa la tabla, busca las coincidencias y elige las alternativas dudosas. La elección automática solo ocurre cuando coinciden el título, el artista, la versión y la duración. Al final, **Añadir a la cola** y un informe que puedes copiar o compartir.
+
+**Importar carpeta.** Elige una carpeta de tu teléfono: cada archivo se reconoce en YouTube y se enlaza a la playlist que elijas, sin descargar nada.
+
+## Inicio, Para ti y artistas
+
+En **Inicio**, sin escribir en la búsqueda, ves **Para ti**. Se calcula con lo que escuchas últimamente: se toman tus canciones favoritas del momento, se piden a YouTube Music las parecidas y se mezclan; una canción que aparece en varias listas sube. Son siempre **canciones de audio**, nunca videoclips ni videos subidos por otras personas. El botón de actualizar vuelve a calcularla.
+
+**Artistas para ti** muestra a cada artista con su foto. Al tocarlo se abre su página con sus **canciones más escuchadas**, el botón **Ver todas sus canciones**, sus **álbumes** y sus **sencillos y EPs**. Tocar un álbum abre sus pistas, y tocar una canción reproduce la lista como cola.

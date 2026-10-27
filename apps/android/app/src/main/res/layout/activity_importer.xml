@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/importerRoot"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/bg_primary" android:orientation="vertical">
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center_vertical" android:orientation="horizontal"
+        android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingTop="20dp">
+        <ImageView android:id="@+id/btnImporterBack" android:layout_width="44dp" android:layout_height="44dp"
+            android:padding="11dp" android:src="@drawable/ic_arrow_back" android:contentDescription="@string/volver"
+            android:background="@drawable/bg_settings_icon_button"/>
+        <TextView android:id="@+id/txtImporterTitle" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_weight="1" android:layout_marginStart="14dp" android:textColor="@color/text_primary"
+            android:textSize="26sp" android:textStyle="bold" android:letterSpacing="-0.02"/>
+    </LinearLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginStart="20dp" android:layout_marginEnd="20dp" android:layout_marginTop="16dp"
+        android:background="@drawable/bg_chip_inactive" android:orientation="horizontal" android:padding="4dp">
+        <TextView android:id="@+id/step0" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:gravity="center" android:textSize="12sp" android:textStyle="bold" android:maxLines="1"/>
+        <TextView android:id="@+id/step1" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:gravity="center" android:textSize="12sp" android:textStyle="bold" android:maxLines="1"/>
+        <TextView android:id="@+id/step2" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1.25"
+            android:gravity="center" android:textSize="12sp" android:textStyle="bold" android:maxLines="1"/>
+        <TextView android:id="@+id/step3" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:gravity="center" android:textSize="12sp" android:textStyle="bold" android:maxLines="1"/>
+    </LinearLayout>
+
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+
+        <!-- 1. Lista -->
+        <ScrollView android:id="@+id/pageText" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scrollbars="none" android:fillViewport="true">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="20dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_settings_card">
+                    <TextView android:id="@+id/txtListTitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                    <TextView android:id="@+id/txtListHelp" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+                    <EditText android:id="@+id/inputList" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" android:background="@drawable/bg_input_field" android:gravity="top|start"
+                        android:inputType="textMultiLine" android:minLines="10" android:maxLines="18" android:padding="14dp"
+                        android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary" android:textSize="14sp"/>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+                        <TextView android:id="@+id/txtListCount" android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+                        <TextView android:id="@+id/btnListPaste" android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
+                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                        <TextView android:id="@+id/btnListTidy" android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:layout_marginStart="8dp" android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
+                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                    </LinearLayout>
+                    <TextView android:id="@+id/txtListError" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" android:textColor="@color/heart_red" android:textSize="13sp" android:visibility="gone"/>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- 2. Canciones -->
+        <LinearLayout android:id="@+id/pageTable" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:padding="20dp" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="52dp"
+                android:background="@drawable/bg_input_field" android:gravity="center_vertical"
+                android:orientation="horizontal" android:paddingStart="16dp" android:paddingEnd="16dp">
+                <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_search"
+                    android:importantForAccessibility="no"/>
+                <EditText android:id="@+id/inputFilter" android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" android:layout_marginStart="10dp" android:background="@null"
+                    android:inputType="text" android:maxLines="1" android:textColor="@color/text_primary"
+                    android:textColorHint="@color/text_secondary" android:textSize="15sp"/>
+            </LinearLayout>
+            <TextView android:id="@+id/txtTableCount" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:layout_marginStart="4dp" android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerSongs" android:layout_width="match_parent"
+                android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" android:paddingTop="8dp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" android:orientation="horizontal">
+                <TextView android:id="@+id/btnRowsAll" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+                    android:gravity="center" android:textColor="@color/accent" android:textSize="12sp" android:textStyle="bold"
+                    android:background="@drawable/bg_text_button"/>
+                <TextView android:id="@+id/btnRowsNone" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+                    android:layout_marginStart="8dp" android:gravity="center" android:textColor="@color/accent" android:textSize="12sp"
+                    android:textStyle="bold" android:background="@drawable/bg_text_button"/>
+                <TextView android:id="@+id/btnRowAdd" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+                    android:layout_marginStart="8dp" android:gravity="center" android:textColor="@color/accent" android:textSize="12sp"
+                    android:textStyle="bold" android:background="@drawable/bg_text_button"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 3. Coincidencias -->
+        <LinearLayout android:id="@+id/pageMatches" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:padding="20dp" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/txtMatchStatus" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+                <TextView android:id="@+id/btnMatchStop" android:layout_width="wrap_content" android:layout_height="40dp"
+                    android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
+                    android:textColor="@color/heart_red" android:textSize="13sp" android:textStyle="bold"
+                    android:background="@drawable/bg_text_button"/>
+                <TextView android:id="@+id/btnMatchRetry" android:layout_width="wrap_content" android:layout_height="40dp"
+                    android:layout_marginStart="8dp" android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
+                    android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                    android:background="@drawable/bg_text_button"/>
+            </LinearLayout>
+            <ProgressBar android:id="@+id/progressMatches" style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="8dp"
+                android:progressDrawable="@drawable/bg_download_progress" android:max="1000"/>
+            <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerMatches" android:layout_width="match_parent"
+                android:layout_height="0dp" android:layout_weight="1" android:clipToPadding="false" android:paddingTop="10dp"/>
+        </LinearLayout>
+
+        <!-- 4. Informe -->
+        <ScrollView android:id="@+id/pageReport" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:scrollbars="none" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="20dp">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_settings_card">
+                    <TextView android:id="@+id/txtReportSummary" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                    <TextView android:id="@+id/txtReport" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp" android:textColor="@color/text_secondary" android:textSize="12.5sp"
+                        android:fontFamily="monospace" android:textIsSelectable="true"/>
+                </LinearLayout>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp" android:orientation="horizontal">
+                    <TextView android:id="@+id/btnReportCopy" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+                        android:gravity="center" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                        android:background="@drawable/bg_text_button"/>
+                    <TextView android:id="@+id/btnReportShare" android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+                        android:layout_marginStart="8dp" android:gravity="center" android:textColor="@color/accent" android:textSize="13sp"
+                        android:textStyle="bold" android:background="@drawable/bg_text_button"/>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:paddingStart="20dp" android:paddingEnd="20dp"
+        android:paddingTop="8dp" android:paddingBottom="16dp">
+        <TextView android:id="@+id/btnStepBack" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="0.6"
+            android:gravity="center" android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"
+            android:background="@drawable/bg_button_secondary"/>
+        <TextView android:id="@+id/btnStepNext" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="1.4"
+            android:layout_marginStart="10dp" android:gravity="center" android:textColor="#FFFFFF" android:textSize="15sp"
+            android:textStyle="bold" android:background="@drawable/bg_button_accent"/>
+    </LinearLayout>
+</LinearLayout>

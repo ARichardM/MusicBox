@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/bg_queue_sheet" android:orientation="vertical"
+    android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingTop="8dp" android:paddingBottom="12dp">
+
+    <View android:layout_width="40dp" android:layout_height="4dp" android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp" android:background="@drawable/bg_sheet_handle"/>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+        android:text="@string/buscar_con_portadas" android:textColor="@color/text_primary"
+        android:textSize="20sp" android:textStyle="bold"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="52dp" android:layout_marginTop="12dp"
+        android:background="@drawable/bg_input_field" android:gravity="center_vertical" android:orientation="horizontal"
+        android:paddingStart="16dp" android:paddingEnd="6dp">
+        <EditText android:id="@+id/inputVideoQuery" android:layout_width="0dp" android:layout_height="match_parent"
+            android:layout_weight="1" android:background="@null" android:hint="@string/cancion_artista_o_enlace_de_youtube"
+            android:imeOptions="actionSearch" android:inputType="text" android:maxLength="300" android:maxLines="1"
+            android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary" android:textSize="15sp"/>
+        <TextView android:id="@+id/btnVideoSearch" android:layout_width="wrap_content" android:layout_height="40dp"
+            android:gravity="center" android:minWidth="84dp" android:paddingStart="16dp" android:paddingEnd="16dp"
+            android:text="@string/buscar" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"
+            android:background="@drawable/bg_button_accent"/>
+    </LinearLayout>
+
+    <ProgressBar android:id="@+id/progressVideoSearch" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="8dp"
+        android:indeterminate="true" android:visibility="invisible"/>
+
+    <TextView android:id="@+id/txtVideoStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginStart="4dp" android:layout_marginTop="2dp" android:textColor="@color/text_secondary" android:textSize="12sp"/>
+
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerVideos" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:clipToPadding="false" android:paddingTop="6dp"/>
+        <TextView android:id="@+id/txtVideoEmpty" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_gravity="center" android:gravity="center" android:padding="24dp"
+            android:text="@string/busca_videos_para_elegir" android:textColor="@color/text_secondary" android:textSize="14sp"/>
+    </FrameLayout>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+        android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:id="@+id/btnVideoAll" android:layout_width="wrap_content" android:layout_height="44dp"
+            android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
+            android:text="@string/marcar_todos" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+            android:background="@drawable/bg_text_button"/>
+        <TextView android:id="@+id/btnVideoNone" android:layout_width="wrap_content" android:layout_height="44dp"
+            android:layout_marginStart="8dp" android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
+            android:text="@string/desmarcar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+            android:background="@drawable/bg_text_button"/>
+        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
+    </LinearLayout>
+    <TextView android:id="@+id/btnVideoAdd" android:layout_width="match_parent" android:layout_height="52dp"
+        android:layout_marginTop="8dp" android:gravity="center" android:textColor="#FFFFFF" android:textSize="15sp"
+        android:textStyle="bold" android:background="@drawable/bg_button_accent"/>
+</LinearLayout>

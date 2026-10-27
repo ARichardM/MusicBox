@@ -63,6 +63,8 @@ public class PlayerManager {
     private boolean hasAudioFocus = false;
     private boolean resumeOnFocusGain = false;
     private boolean noisyReceiverRegistered = false;
+    private boolean autoplayLoading, advanceWhenReady;
+    private String autoplayTriedFor = "";
 
     /** Reserved key that carries the stream length next to the headers; it is never sent over HTTP. */
     private static final String LENGTH_KEY = "X-MusicBox-Length";
@@ -342,6 +344,7 @@ public class PlayerManager {
     private final Runnable progressUpdater = new Runnable() {
         @Override public void run() {
             if (!prepared || mediaPlayer == null) return;
+            sampleListening();
             int second = getCurrentPosition() / 1000;
             if (second % 5 == 0 && second != lastSavedSecond) { savePosition(); lastSavedSecond = second; }
             for (PlaybackListener l : new ArrayList<>(listeners))
@@ -349,6 +352,41 @@ public class PlayerManager {
             handler.postDelayed(this, 350);
         }
     };
+
+    private Song listeningSong;
+    private String listeningPlaylist = "";
+    private long listeningClock;
+    private int listeningPosition;
+    private boolean listeningPlaying;
+    private boolean listeningStarted;
+
+    private void startListening() {
+        listeningSong = currentSong;
+        listeningPlaylist = "playlist".equals(sourceType) ? sourceName : "";
+        listeningClock = android.os.SystemClock.elapsedRealtime();
+        listeningPosition = getCurrentPosition();
+        listeningPlaying = isPlaying();
+        listeningStarted = listeningPlaying;
+        if (listeningPlaying && context != null)
+            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, 0, true);
+    }
+
+    private void sampleListening() {
+        if (listeningSong == null || context == null || !prepared || mediaPlayer == null) return;
+        long now = android.os.SystemClock.elapsedRealtime();
+        int position = getCurrentPosition();
+        long wall = now - listeningClock, delta = (long) position - listeningPosition;
+        // Position jumps are seeks, while a stalled position is buffering. Neither is listening time.
+        if (listeningPlaying && wall > 0 && delta > 0 && Math.abs(delta - wall) < 1200)
+            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, Math.min(delta, wall), false);
+        listeningClock = now;
+        listeningPosition = position;
+        listeningPlaying = isPlaying();
+        if (listeningPlaying && !listeningStarted) {
+            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, 0, true);
+            listeningStarted = true;
+        }
+    }
 
     public static synchronized PlayerManager getInstance() {
         if (instance == null) instance = new PlayerManager();
@@ -368,6 +406,7 @@ public class PlayerManager {
         if ("folder".equals(sourceType) && !sourceName.isEmpty()) return cl.arichard.descargador.util.Tr.t("Carpeta") + " · " + sourceName;
         if ("playlist".equals(sourceType) && !sourceName.isEmpty()) return cl.arichard.descargador.util.Tr.t("Playlist") + " · " + cl.arichard.descargador.util.Tr.name(sourceName);
         if ("search".equals(sourceType)) return cl.arichard.descargador.util.Tr.t("Búsqueda de YouTube");
+        if ("artist".equals(sourceType) && !sourceName.isEmpty()) return cl.arichard.descargador.util.Tr.t("Artista") + " · " + sourceName;
         return cl.arichard.descargador.util.Tr.t("Canciones");
     }
     public String getSourceType() { return sourceType; }
@@ -510,6 +549,8 @@ public class PlayerManager {
         notifyTrack();
         notifyState();
         loading(true);
+        advanceWhenReady = false;
+        if (currentIndex >= queue.size() - 1) fetchAutoplay();
         final String target = currentOnlineUrl;
         final String videoId = currentOnlineVideoId;
         CachedStream cached;
@@ -633,6 +674,7 @@ public class PlayerManager {
                 }
             }
             SearchHistoryManager.getInstance(context).recordPlayedSong(currentSong);
+            startListening();
             notifyState();
             handler.post(progressUpdater);
             Log.i("MusicBoxPlayer", "Prepared: duration=" + mp.getDuration() + " video=" + mp.getVideoWidth() + "x" + mp.getVideoHeight());
@@ -646,6 +688,7 @@ public class PlayerManager {
             if (repeatMode == REPEAT_ONE) {
                 mp.seekTo(0); mp.start();
                 SearchHistoryManager.getInstance(context).recordPlayedSong(currentSong);
+                startListening();
             }
             else playNext();
         });
@@ -763,6 +806,17 @@ public class PlayerManager {
         }
     }
 
+    /**
+     * Detiene todo y libera el reproductor (la app se cerró desde recientes). Recuerda la posición para retomar la próxima vez.
+     */
+    public void stopAndRelease() {
+        savePosition();
+        playWhenReady = false;
+        releasePlayer();
+        detachOnlineWebView();
+        notifyState();
+    }
+
     /** Llamado por MediaSessionCompat.Callback desde MusicService */
     public void pause() {
         if (!prepared || mediaPlayer == null || !mediaPlayer.isPlaying()) return;
@@ -799,12 +853,60 @@ public class PlayerManager {
         resumePosition = 0; savedDuration = 0;
         currentIndex++;
         if (currentIndex >= queue.size()) {
+            if (repeatMode != REPEAT_ALL && autoplayNeeded(true)) { currentIndex = queue.size() - 1; advanceWhenReady = true; return; }
             if (repeatMode != REPEAT_ALL) { currentIndex = queue.size() - 1; playWhenReady = false; releasePlayer(); loading(false); notifyState(); return; }
             currentIndex = 0;
         }
         currentSong = queue.get(Math.max(0, currentIndex));
         startCurrent();
     }
+    public boolean isAutoplay() { return context != null && context.getSharedPreferences("player", 0).getBoolean("autoplay", true); }
+
+    public void setAutoplay(boolean enabled) {
+        if (context != null) context.getSharedPreferences("player", 0).edit().putBoolean("autoplay", enabled).apply();
+        if (enabled) fetchAutoplay(); else advanceWhenReady = false;
+    }
+
+    /** Hay que buscar canciones relacionadas: sonando una de YouTube, al final de la cola y sin haberlo intentado ya. */
+    private boolean autoplayNeeded(boolean atEnd) {
+        if (!isAutoplay() || !online || currentSong == null || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return false;
+        if (autoplayLoading) return true;
+        if (currentOnlineVideoId.equals(autoplayTriedFor)) return false;
+        if (!atEnd && currentIndex < queue.size() - 1) return false;
+        fetchAutoplay();
+        return autoplayLoading;
+    }
+
+    /** Agrega al final de la cola canciones parecidas a la actual (radio de YouTube Music, solo canciones). */
+    private void fetchAutoplay() {
+        if (autoplayLoading || !isAutoplay() || !online || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return;
+        final String seed = currentOnlineVideoId;
+        if (seed.equals(autoplayTriedFor)) return;
+        autoplayTriedFor = seed;
+        autoplayLoading = true;
+        PLAYBACK_IO.execute(() -> {
+            List<cl.arichard.descargador.model.SearchResult> related = null;
+            try { related = cl.arichard.descargador.util.YtMusicApi.related(seed, 25); }
+            catch (Exception e) { Log.w("MusicBoxPlayer", "Autoplay sin resultados", e); }
+            final List<cl.arichard.descargador.model.SearchResult> found = related;
+            handler.post(() -> {
+                autoplayLoading = false;
+                List<String> paths = new ArrayList<>();
+                for (Song queued : queue) paths.add(queued.getPath());
+                List<Song> more = isAutoplay() ? Autoplay.pick(found, paths) : new ArrayList<>();
+                if (!more.isEmpty()) {
+                    queue.addAll(more); originalQueue.addAll(more);
+                    notifyQueue();
+                }
+                if (advanceWhenReady) {
+                    advanceWhenReady = false;
+                    if (!more.isEmpty() && currentIndex == queue.size() - more.size() - 1) playNext();
+                    else { playWhenReady = false; releasePlayer(); loading(false); notifyState(); }
+                }
+            });
+        });
+    }
+
     public void playPrevious() {
         if (getCurrentPosition() > 3000) { seekTo(0); return; }
         skipPrevious();
@@ -816,6 +918,8 @@ public class PlayerManager {
         currentSong = queue.get(currentIndex); startCurrent();
     }
     public void seekTo(int ms) {
+        sampleListening();
+        listeningPlaying = false;
         if (prepared && mediaPlayer != null) mediaPlayer.seekTo(Math.max(0, ms));
         else resumePosition = Math.max(0, ms);
         savePosition();
@@ -920,6 +1024,8 @@ public class PlayerManager {
     public void removeListener(PlaybackListener l) { listeners.remove(l); }
     private void notifyTrack() { saveSession(); for (PlaybackListener l : new ArrayList<>(listeners)) l.onTrackChanged(currentSong); }
     private void notifyState() {
+        sampleListening();
+        if (context != null && listeningSong != null) cl.arichard.descargador.data.ClickStats.getInstance(context).flushListening();
         savePosition();
         boolean playing = isPlaying();
         for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackStateChanged(playing);
@@ -927,6 +1033,9 @@ public class PlayerManager {
     }
     private void loading(boolean value) { loading = value; for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackLoading(value); }
     private void releasePlayer() {
+        sampleListening();
+        if (context != null && listeningSong != null) cl.arichard.descargador.data.ClickStats.getInstance(context).flushListening();
+        listeningSong = null;
         generation++;
         prepared = false;
         handler.removeCallbacks(progressUpdater);

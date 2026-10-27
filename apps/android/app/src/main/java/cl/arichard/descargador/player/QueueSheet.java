@@ -98,6 +98,24 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         scrollToCurrent();
     }
 
+    /** Interruptor de reproducción automática: al acabar la cola sigue con canciones parecidas. */
+    private View autoplayRow() {
+        LinearLayout row = new LinearLayout(activity); row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout labels = new LinearLayout(activity); labels.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text(Tr.t("Reproducción automática"), 15); title.setTypeface(null, Typeface.BOLD);
+        TextView detail = text(Tr.t("Agrega canciones similares al final de la cola"), 12);
+        detail.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary));
+        labels.addView(title); labels.addView(detail);
+        row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+        com.google.android.material.switchmaterial.SwitchMaterial toggle = new com.google.android.material.switchmaterial.SwitchMaterial(activity);
+        toggle.setChecked(player.isAutoplay());
+        toggle.setContentDescription(Tr.t("Reproducción automática"));
+        toggle.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) player.setAutoplay(checked); });
+        row.addView(toggle);
+        return row;
+    }
+
     private void attach() { player.addListener(this); refresh(); }
 
     /** The queue UI: header, list and footer actions. [close] adds a "Cerrar" button when it is not null. */
@@ -123,6 +141,7 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
 
         TextView hint = text(Tr.t("Mantén pulsado y arrastra para cambiar el orden"), 12);
         hint.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary)); root.addView(hint);
+        root.addView(autoplayRow());
         empty = text(Tr.t("Tu cola está vacía. Agrega tus canciones favoritas."), 15);
         empty.setPadding(0, dp(24), 0, dp(24)); root.addView(empty);
         recycler = new RecyclerView(activity); recycler.setLayoutManager(new LinearLayoutManager(activity));

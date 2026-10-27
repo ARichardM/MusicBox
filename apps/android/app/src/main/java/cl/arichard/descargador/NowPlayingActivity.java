@@ -51,6 +51,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private View nowPlayingCoordinator;
     private com.google.android.material.bottomsheet.BottomSheetBehavior<View> queueBehavior;
     private cl.arichard.descargador.player.QueueSheet queuePanel;
+    private final cl.arichard.descargador.util.SongDeleter.SystemPrompt deletePrompt = cl.arichard.descargador.util.SongDeleter.prompter(this);
 
     private boolean isMp3Mode = true;
     private boolean isUserSeeking = false;
@@ -208,7 +209,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         queueBehavior.setPeekHeight(Math.round(84 * density));
         queueBehavior.setHideable(false);
         queueBehavior.setFitToContents(false);
-        queueBehavior.setExpandedOffset(Math.round(56 * density));
+        queueBehavior.setExpandedOffset(Math.round(88 * density));
         queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
         queuePanel = cl.arichard.descargador.player.QueueSheet.embed(this, sheet, queueBehavior);
         queueBehavior.addBottomSheetCallback(new com.google.android.material.bottomsheet.BottomSheetBehavior.BottomSheetCallback() {
@@ -225,6 +226,51 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     /** "Reproduciendo desde": the folder, the playlist, all songs or the YouTube search the queue came from. */
     private void updatePlayingFrom() {
         ((TextView) findViewById(R.id.txtPlayingFromName)).setText(PlayerManager.getInstance().playingFromLabel());
+    }
+
+    private boolean outsideQueueGesture, outsideQueueTap;
+    private float outsideQueueX, outsideQueueY;
+
+    /**
+     * With the queue pulled up, a tap on the dimmed player above it collapses the sheet with its own settle
+     * animation. The whole gesture is consumed so nothing underneath (buttons, swipe to dismiss) reacts to it.
+     */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent event) {
+        boolean expanded = queueBehavior != null
+                && queueBehavior.getState() == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED;
+        switch (event.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+                if (expanded) {
+                    int[] at = new int[2];
+                    findViewById(R.id.queueSheet).getLocationOnScreen(at);
+                    outsideQueueGesture = event.getRawY() < at[1];
+                    outsideQueueTap = outsideQueueGesture;
+                    outsideQueueX = event.getRawX(); outsideQueueY = event.getRawY();
+                } else {
+                    outsideQueueGesture = false;
+                }
+                break;
+            case android.view.MotionEvent.ACTION_MOVE:
+                if (outsideQueueGesture && Math.hypot(event.getRawX() - outsideQueueX, event.getRawY() - outsideQueueY)
+                        > android.view.ViewConfiguration.get(this).getScaledTouchSlop()) outsideQueueTap = false;
+                break;
+            case android.view.MotionEvent.ACTION_UP:
+                if (outsideQueueGesture) {
+                    if (outsideQueueTap && expanded) queueBehavior.setState(
+                            com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
+                    outsideQueueGesture = false; outsideQueueTap = false;
+                    return true;
+                }
+                break;
+            case android.view.MotionEvent.ACTION_CANCEL:
+                if (outsideQueueGesture) { outsideQueueGesture = false; outsideQueueTap = false; return true; }
+                break;
+            default:
+                break;
+        }
+        if (outsideQueueGesture) return true;
+        return super.dispatchTouchEvent(event);
     }
 
     private void closeWithSlideDown() {
@@ -313,7 +359,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             cl.arichard.descargador.util.SongActions.download(this, song, () -> {}); return true;
         });
         if (!song.isOnline()) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
-            cl.arichard.descargador.util.SongActions.delete(this, song, this::finish); return true;
+            cl.arichard.descargador.util.SongActions.delete(this, song, deletePrompt, this::finish); return true;
         });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Cola de reproducci\u00f3n")).setIcon(R.drawable.ic_queue).setOnMenuItemClickListener(item -> {
             queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED); return true;

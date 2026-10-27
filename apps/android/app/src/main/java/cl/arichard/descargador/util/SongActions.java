@@ -122,24 +122,13 @@ public final class SongActions {
         });
     }
 
-    /** Elimina el archivo del dispositivo y la canción de todas las playlists. Las canciones online no se eliminan. */
+    /** Elimina la canción del dispositivo y de todas las playlists (con la confirmación del sistema cuando hace falta). */
+    public static void delete(Activity activity, Song song, SongDeleter.SystemPrompt prompt, Runnable changed) {
+        SongDeleter.delete(activity, java.util.Collections.singletonList(song), prompt, changed);
+    }
+
+    /** Versión sin confirmación del sistema: solo borra lo que la app puede borrar por sí sola. */
     public static void delete(Activity activity, Song song, Runnable changed) {
-        if (song.isOnline()) return;
-        new MaterialAlertDialogBuilder(activity).setTitle(Tr.t("Eliminar «") + song.getTitle() + "»")
-                .setMessage(Tr.t("Se eliminará el archivo del dispositivo y se quitará de tus playlists."))
-                .setNegativeButton(Tr.t("Cancelar"), null)
-                .setPositiveButton(Tr.t("Eliminar"), (d, which) -> DescargadorApp.IO.execute(() -> {
-                    try {
-                        File file = new File(song.getPath());
-                        if (!file.isFile() || !file.delete()) throw new Exception(Tr.t("No se pudo eliminar. Revisa el permiso de acceso a archivos."));
-                        MediaScannerConnection.scanFile(activity, new String[]{song.getPath()}, null, null);
-                        PlaylistManager.getInstance(activity).removeSongEverywhere(song.getPath());
-                        cl.arichard.descargador.data.SearchHistoryManager.getInstance(activity).removeSong(song.getPath());
-                        activity.runOnUiThread(() -> {
-                            PlayerManager.getInstance().removeSong(song.getPath());
-                            message(activity, Tr.t("Canción eliminada")); changed.run();
-                        });
-                    } catch (Exception e) { activity.runOnUiThread(() -> message(activity, e.getMessage())); }
-                })).show();
+        delete(activity, song, (sender, accepted) -> accepted.accept(false), changed);
     }
 }

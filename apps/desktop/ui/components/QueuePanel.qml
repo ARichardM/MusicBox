@@ -58,6 +58,32 @@ Item {
             }
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                Label {
+                    text: qsTr("Reproducción automática")
+                    color: Theme.fg
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Agrega canciones similares al final de la cola")
+                    color: Theme.muted
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+            }
+            Switch {
+                checked: musicbox.autoplay
+                onToggled: musicbox.setAutoplay(checked)
+            }
+        }
+
         Label {
             Layout.fillWidth: true
             text: panel.upcoming ? qsTr("Siguiente: ") + panel.upcoming.title : qsTr("No hay más canciones en la cola")

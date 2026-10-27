@@ -224,6 +224,13 @@ public class PlaylistManager {
 
     public synchronized boolean hasLocalCopy(String videoId) { return pathToId.containsValue(videoId); }
 
+    /** Declara que un archivo local es la copia de un video de YouTube (importar carpeta). */
+    public synchronized void linkLocalFile(String path, String videoId) {
+        if (path == null || path.isEmpty() || videoId == null || videoId.isEmpty()) return;
+        pathToId.put(path, videoId);
+        localIds.edit().putString(path, videoId).apply();
+    }
+
     /** The key a song is stored under in playlists: its YouTube id whenever known, so every device agrees. */
     public synchronized String canonicalKey(cl.arichard.descargador.model.Song song) {
         if (song == null) return "";

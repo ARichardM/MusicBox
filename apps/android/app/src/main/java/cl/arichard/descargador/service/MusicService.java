@@ -294,6 +294,15 @@ public class MusicService extends Service {
         }
     }
 
+    /** Al cerrar la app desde recientes la música se detiene y la notificación desaparece. */
+    @Override public void onTaskRemoved(Intent rootIntent) {
+        PlayerManager.getInstance().stopAndRelease();
+        if (mediaSession != null) mediaSession.setActive(false);
+        stopForeground(true);
+        stopSelf();
+        super.onTaskRemoved(rootIntent);
+    }
+
     @Override public void onDestroy() {
         if (mediaSession != null) {
             mediaSession.setActive(false);

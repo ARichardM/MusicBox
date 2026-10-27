@@ -55,7 +55,7 @@ public class SongActionsTest {
 
     @Test public void successfulDeletionRequiresConfirmationAndRemovesMembership() throws Exception {
         AtomicBoolean changed = new AtomicBoolean();
-        SongActions.delete(activity, song, () -> changed.set(true));
+        SongActions.delete(activity, song, () -> changed.set(true)); finishWork();
         assertTrue(source.exists()); assertFalse(changed.get());
         dialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick(); finishWork();
         assertFalse(source.exists()); assertTrue(changed.get());
@@ -63,7 +63,7 @@ public class SongActionsTest {
     }
     @Test public void failedDeletionKeepsPlaylistMembershipAndDoesNotReportSuccess() throws Exception {
         assertTrue(source.delete()); AtomicBoolean changed = new AtomicBoolean();
-        SongActions.delete(activity, song, () -> changed.set(true));
+        SongActions.delete(activity, song, () -> changed.set(true)); finishWork();
         dialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick(); finishWork();
         assertFalse(changed.get());
         assertTrue(PlaylistManager.getInstance(activity).getSongPaths("Test collection").contains(song.getPath()));

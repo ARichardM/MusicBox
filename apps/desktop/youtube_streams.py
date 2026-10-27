@@ -67,6 +67,25 @@ def search(query: str, extractor, count: int = 12) -> list:
     return []
 
 
+def related(video_id: str, extractor, count: int = 15) -> list:
+    """Canciones relacionadas: la lista Mix de YouTube (``RD<id>``) que arranca en ese video."""
+    last_error: Exception | None = None
+    url = f"https://www.youtube.com/watch?v={video_id}&list=RD{video_id}"
+    for client in (None, "web,android", "ios,web"):
+        try:
+            data = extractor(_options(client, noplaylist=False, extract_flat=True, skip_download=True,
+                                      socket_timeout=8, playlistend=count + 1), url)
+            entries = [entry for entry in (data or {}).get("entries") or []
+                       if entry and entry.get("id") != video_id]
+            if entries:
+                return entries[:count]
+        except Exception as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    return []
+
+
 def download_to_cache(url: str, folder: Path, extractor_download) -> str:
     """Último recurso: descarga el audio completo y devuelve la ruta del archivo local."""
     folder.mkdir(parents=True, exist_ok=True)

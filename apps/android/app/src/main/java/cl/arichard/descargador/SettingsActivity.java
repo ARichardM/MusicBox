@@ -63,8 +63,12 @@ public final class SettingsActivity extends AppCompatActivity {
         setupLanguage();
         setupTheme();
         findViewById(R.id.btnAddFolder).setOnClickListener(v -> pickFolder.launch(null));
+        findViewById(R.id.rowDownloader).setOnClickListener(v -> startActivity(new Intent(this, DownloaderActivity.class)));
+        cl.arichard.descargador.util.SafeTap.installRowTap(findViewById(R.id.rowDownloader));
         renderFolders();
         renderStats();
+        findViewById(R.id.cardStats).setOnClickListener(v -> startActivity(new Intent(this, StatisticsActivity.class)));
+        cl.arichard.descargador.util.SafeTap.installRowTap(findViewById(R.id.cardStats));
         setupAbout();
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
@@ -92,14 +96,16 @@ public final class SettingsActivity extends AppCompatActivity {
                 }).show());
 
         if (state == null) animateIn(findViewById(R.id.cardAccount), 0);
-        if (state == null) animateIn(findViewById(R.id.cardAppearance), 70);
+        if (state == null) animateIn(findViewById(R.id.rowDownloader), 40);
+        if (state == null) animateIn(findViewById(R.id.cardAppearance), 80);
     }
 
     /** Total "clics" (plays) across the library, plus the most played of the recent songs. */
     private void renderStats() {
         cl.arichard.descargador.data.ClickStats stats = cl.arichard.descargador.data.ClickStats.getInstance(this);
         int total = stats.total(), distinct = stats.playedSongs();
-        ((TextView) findViewById(R.id.txtStatsClicks)).setText("▶ " + cl.arichard.descargador.util.Clicks.format(total));
+        ((TextView) findViewById(R.id.txtStatsClicks)).setText(Tr.t("Ver mis estadísticas") + "  ›");
+        ((TextView) findViewById(R.id.txtStatsClicks)).setTextSize(18);
         ((TextView) findViewById(R.id.txtStatsSummary)).setText(Tr.f("%d clics en %d canciones", total, distinct));
         StringBuilder top = new StringBuilder();
         java.util.List<Object[]> ranked = stats.top(3);
@@ -110,7 +116,7 @@ public final class SettingsActivity extends AppCompatActivity {
         }
         TextView topView = findViewById(R.id.txtStatsTop);
         topView.setText(top);
-        topView.setVisibility(top.length() == 0 ? android.view.View.GONE : android.view.View.VISIBLE);
+        topView.setVisibility(android.view.View.GONE);
     }
 
     // ------------------------------------------------------------ versión y actualizaciones

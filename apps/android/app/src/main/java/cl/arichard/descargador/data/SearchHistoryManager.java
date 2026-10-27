@@ -155,10 +155,11 @@ public class SearchHistoryManager {
     public List<Song> getTopPlayed(List<Song> allSongs, int limit) {
         if (allSongs == null || allSongs.isEmpty()) return new ArrayList<>();
         List<Song> copy = new ArrayList<>(allSongs);
+        ClickStats stats = ClickStats.getInstance(appContext);
+        copy.removeIf(song -> stats.count(song) <= 0);
 
         // Sort by play count descending; if tie, sort by dateAdded descending
         Collections.sort(copy, (a, b) -> {
-            ClickStats stats = ClickStats.getInstance(appContext);
             int countA = stats.count(a);
             int countB = stats.count(b);
             if (countA != countB) {

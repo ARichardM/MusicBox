@@ -62,13 +62,21 @@ public final class LibraryFolders {
     /** Converts a folder picked with ACTION_OPEN_DOCUMENT_TREE into a plain filesystem path. */
     public static String pathFromTree(Uri tree) {
         try {
-            String id = DocumentsContract.getTreeDocumentId(tree);          // "primary:Music/Chill"
+            return pathFromDocumentId(DocumentsContract.getTreeDocumentId(tree));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** "primary:Music/Chill/a.mp3" → "/storage/emulated/0/Music/Chill/a.mp3"; null si no se entiende. */
+    public static String pathFromDocumentId(String id) {
+        try {
             int colon = id.indexOf(':');
             String volume = colon < 0 ? id : id.substring(0, colon);
             String relative = colon < 0 ? "" : id.substring(colon + 1);
             File base = "primary".equals(volume) ? Environment.getExternalStorageDirectory() : new File("/storage/" + volume);
-            File folder = relative.isEmpty() ? base : new File(base, relative);
-            return folder.getAbsolutePath();
+            File file = relative.isEmpty() ? base : new File(base, relative);
+            return file.getAbsolutePath();
         } catch (Exception e) {
             return null;
         }

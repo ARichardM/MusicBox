@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/downloaderRoot"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/bg_primary" android:orientation="vertical">
+
+    <!-- Cabecera -->
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center_vertical" android:orientation="horizontal"
+        android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingTop="20dp">
+        <ImageView android:id="@+id/btnDownloaderBack" android:layout_width="44dp" android:layout_height="44dp"
+            android:padding="11dp" android:src="@drawable/ic_arrow_back" android:contentDescription="@string/volver"
+            android:background="@drawable/bg_settings_icon_button"/>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="14dp" android:text="@string/descargador" android:textColor="@color/text_primary"
+            android:textSize="26sp" android:textStyle="bold" android:letterSpacing="-0.02"/>
+    </LinearLayout>
+
+    <!-- Pestañas -->
+    <LinearLayout android:id="@+id/downloaderTabs" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginStart="20dp" android:layout_marginEnd="20dp" android:layout_marginTop="16dp"
+        android:background="@drawable/bg_chip_inactive" android:orientation="horizontal" android:padding="4dp">
+        <TextView android:id="@+id/tabDownload" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:gravity="center" android:text="@string/descargar" android:textSize="13sp" android:textStyle="bold"/>
+        <TextView android:id="@+id/tabHistory" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:gravity="center" android:text="@string/historial" android:textSize="13sp" android:textStyle="bold"/>
+        <TextView android:id="@+id/tabLog" android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
+            android:gravity="center" android:text="@string/registro" android:textSize="13sp" android:textStyle="bold"/>
+    </LinearLayout>
+
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+
+        <!-- Página: Descargar -->
+        <ScrollView android:id="@+id/pageDownload" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:clipToPadding="false" android:scrollbars="none" android:fillViewport="true">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="20dp" android:paddingBottom="40dp">
+
+                <!-- Enlaces -->
+                <LinearLayout android:id="@+id/cardLinks" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_settings_card">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/enlaces" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                    <EditText android:id="@+id/inputLinks" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" android:background="@drawable/bg_input_field" android:gravity="top|start"
+                        android:hint="@string/pega_un_enlace_por_linea" android:inputType="textMultiLine|textUri"
+                        android:minLines="4" android:maxLines="8" android:padding="14dp"
+                        android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary" android:textSize="14sp"/>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp" android:gravity="center_vertical" android:orientation="horizontal">
+                        <TextView android:id="@+id/txtLinkCount" android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+                        <TextView android:id="@+id/btnPasteLinks" android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:gravity="center" android:minWidth="64dp" android:paddingStart="12dp" android:paddingEnd="12dp"
+                            android:text="@string/pegar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                        <TextView android:id="@+id/btnClearLinks" android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:layout_marginStart="8dp" android:gravity="center" android:minWidth="64dp"
+                            android:paddingStart="12dp" android:paddingEnd="12dp"
+                            android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                    </LinearLayout>
+                    <TextView android:id="@+id/btnSearchCovers" android:layout_width="match_parent" android:layout_height="44dp"
+                        android:layout_marginTop="10dp" android:gravity="center" android:text="@string/buscar_con_portadas"
+                        android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                        android:background="@drawable/bg_text_button"/>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:orientation="horizontal">
+                        <TextView android:id="@+id/btnImportList" android:layout_width="0dp" android:layout_height="44dp"
+                            android:layout_weight="1" android:gravity="center"
+                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                        <TextView android:id="@+id/btnImportFolder" android:layout_width="0dp" android:layout_height="44dp"
+                            android:layout_weight="1" android:layout_marginStart="8dp" android:gravity="center"
+                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                    </LinearLayout>
+                    <TextView android:id="@+id/txtLinkError" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" android:textColor="@color/heart_red" android:textSize="13sp" android:visibility="gone"/>
+                </LinearLayout>
+
+                <!-- Formato y calidad -->
+                <LinearLayout android:id="@+id/cardFormat" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:orientation="vertical" android:padding="18dp"
+                    android:background="@drawable/bg_settings_card">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/formato" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" android:orientation="horizontal">
+                        <LinearLayout android:id="@+id/tileMp3" android:layout_width="0dp" android:layout_height="64dp"
+                            android:layout_weight="1" android:layout_marginEnd="6dp" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/txtMp3" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="MP3" android:textSize="17sp" android:textStyle="bold"/>
+                            <TextView android:id="@+id/txtMp3Sub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="@string/solo_audio" android:textSize="12sp"/>
+                        </LinearLayout>
+                        <LinearLayout android:id="@+id/tileMp4" android:layout_width="0dp" android:layout_height="64dp"
+                            android:layout_weight="1" android:layout_marginStart="6dp" android:gravity="center" android:orientation="vertical">
+                            <TextView android:id="@+id/txtMp4" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="MP4" android:textSize="17sp" android:textStyle="bold"/>
+                            <TextView android:id="@+id/txtMp4Sub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="@string/video" android:textSize="12sp"/>
+                        </LinearLayout>
+                    </LinearLayout>
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"
+                        android:text="@string/calidad" android:textColor="@color/text_secondary" android:textSize="12sp"
+                        android:textStyle="bold" android:letterSpacing="0.08"/>
+                    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:scrollbars="none">
+                        <LinearLayout android:id="@+id/layoutQuality" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:orientation="horizontal"/>
+                    </HorizontalScrollView>
+                </LinearLayout>
+
+                <!-- Modo -->
+                <LinearLayout android:id="@+id/cardMode" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:orientation="vertical" android:padding="18dp"
+                    android:background="@drawable/bg_settings_card">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/modo_de_descarga" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" android:orientation="horizontal">
+                        <TextView android:id="@+id/chipSingle" android:layout_width="0dp" android:layout_height="44dp"
+                            android:layout_weight="1" android:layout_marginEnd="6dp" android:gravity="center"
+                            android:text="@string/un_video_por_enlace" android:textSize="12sp" android:textStyle="bold"
+                            android:paddingStart="6dp" android:paddingEnd="6dp"/>
+                        <TextView android:id="@+id/chipPlaylist" android:layout_width="0dp" android:layout_height="44dp"
+                            android:layout_weight="1" android:layout_marginStart="6dp" android:gravity="center"
+                            android:text="@string/playlist_o_rango" android:textSize="12sp" android:textStyle="bold"
+                            android:paddingStart="6dp" android:paddingEnd="6dp"/>
+                    </LinearLayout>
+                    <EditText android:id="@+id/inputRange" android:layout_width="match_parent" android:layout_height="48dp"
+                        android:layout_marginTop="12dp" android:background="@drawable/bg_input_field"
+                        android:hint="@string/rango_hint" android:inputType="text" android:maxLines="1"
+                        android:paddingStart="14dp" android:paddingEnd="14dp" android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_secondary" android:textSize="14sp" android:visibility="gone"/>
+                </LinearLayout>
+
+                <!-- Destino y cookies -->
+                <LinearLayout android:id="@+id/cardOptions" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:orientation="vertical" android:padding="18dp"
+                    android:background="@drawable/bg_settings_card">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/destino" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                    <TextView android:id="@+id/txtDestination" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="14dp"
+                        android:layout_marginBottom="14dp" android:background="@color/bg_primary"/>
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:gravity="center_vertical" android:orientation="horizontal">
+                        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:text="@string/cookies_de_youtube" android:textColor="@color/text_primary"
+                                android:textSize="15sp" android:textStyle="bold"/>
+                            <TextView android:id="@+id/txtCookies" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp" android:textColor="@color/text_secondary" android:textSize="12sp"/>
+                        </LinearLayout>
+                        <TextView android:id="@+id/btnCookies" android:layout_width="wrap_content" android:layout_height="40dp"
+                            android:gravity="center" android:minWidth="72dp" android:paddingStart="12dp" android:paddingEnd="12dp"
+                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:background="@drawable/bg_text_button"/>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Acciones -->
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp" android:orientation="horizontal">
+                    <TextView android:id="@+id/btnDownload" android:layout_width="0dp" android:layout_height="54dp"
+                        android:layout_weight="1" android:gravity="center" android:text="@string/descargar"
+                        android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold"
+                        android:background="@drawable/bg_button_accent"/>
+                    <TextView android:id="@+id/btnCancelAll" android:layout_width="0dp" android:layout_height="54dp"
+                        android:layout_weight="0.6" android:layout_marginStart="10dp" android:gravity="center"
+                        android:text="@string/cancelar" android:textColor="@color/heart_red" android:textSize="15sp"
+                        android:textStyle="bold" android:background="@drawable/bg_button_secondary" android:visibility="gone"/>
+                </LinearLayout>
+
+                <!-- Progreso -->
+                <LinearLayout android:id="@+id/cardJobs" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp" android:orientation="vertical" android:padding="18dp"
+                    android:background="@drawable/bg_settings_card" android:visibility="gone">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:gravity="center_vertical" android:orientation="horizontal">
+                        <TextView android:id="@+id/txtJobsTitle" android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="@string/descargas" android:textColor="@color/text_primary"
+                            android:textSize="16sp" android:textStyle="bold"/>
+                        <TextView android:id="@+id/btnClearJobs" android:layout_width="wrap_content" android:layout_height="36dp"
+                            android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
+                            android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp"
+                            android:textStyle="bold" android:background="@drawable/bg_text_button"/>
+                    </LinearLayout>
+                    <LinearLayout android:id="@+id/layoutJobs" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:orientation="vertical"/>
+                </LinearLayout>
+
+                <!-- Archivos listos -->
+                <LinearLayout android:id="@+id/cardReady" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:orientation="vertical" android:padding="18dp"
+                    android:background="@drawable/bg_settings_card" android:visibility="gone">
+                    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:text="@string/archivos_listos" android:textColor="@color/text_primary"
+                        android:textSize="16sp" android:textStyle="bold"/>
+                    <LinearLayout android:id="@+id/layoutReady" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:orientation="vertical"/>
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Página: Historial -->
+        <LinearLayout android:id="@+id/pageHistory" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:padding="20dp" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="52dp"
+                android:background="@drawable/bg_search_field" android:gravity="center_vertical"
+                android:orientation="horizontal" android:paddingStart="16dp" android:paddingEnd="6dp">
+                <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_search"
+                    android:importantForAccessibility="no"/>
+                <EditText android:id="@+id/inputHistorySearch" android:layout_width="0dp" android:layout_height="match_parent"
+                    android:layout_weight="1" android:layout_marginStart="10dp" android:background="@null"
+                    android:hint="@string/buscar_en_el_historial" android:imeOptions="actionSearch" android:inputType="text"
+                    android:maxLines="1" android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary"
+                    android:textSize="15sp"/>
+                <TextView android:id="@+id/btnHistoryAll" android:layout_width="wrap_content" android:layout_height="40dp"
+                    android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
+                    android:text="@string/todos" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"/>
+            </LinearLayout>
+            <TextView android:id="@+id/txtHistoryStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="10dp" android:layout_marginStart="4dp" android:textColor="@color/text_secondary" android:textSize="12sp"/>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+                <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerHistory" android:layout_width="match_parent"
+                    android:layout_height="match_parent" android:clipToPadding="false" android:paddingTop="8dp"/>
+                <TextView android:id="@+id/txtHistoryEmpty" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_gravity="center" android:gravity="center" android:padding="24dp"
+                    android:text="@string/historial_vacio" android:textColor="@color/text_secondary" android:textSize="14sp"
+                    android:visibility="gone"/>
+            </FrameLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:id="@+id/btnHistoryPrev" android:layout_width="48dp" android:layout_height="44dp"
+                    android:gravity="center" android:text="◀" android:textColor="@color/accent" android:textSize="16sp"
+                    android:background="@drawable/bg_text_button"/>
+                <TextView android:id="@+id/txtHistoryPage" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:gravity="center" android:textColor="@color/text_secondary" android:textSize="12sp"/>
+                <TextView android:id="@+id/btnHistoryNext" android:layout_width="48dp" android:layout_height="44dp"
+                    android:gravity="center" android:text="▶" android:textColor="@color/accent" android:textSize="16sp"
+                    android:background="@drawable/bg_text_button"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Página: Registro -->
+        <LinearLayout android:id="@+id/pageLog" android:layout_width="match_parent" android:layout_height="match_parent"
+            android:orientation="vertical" android:padding="20dp" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:gravity="center_vertical" android:orientation="horizontal">
+                <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/registro" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+                <TextView android:id="@+id/btnLogClear" android:layout_width="wrap_content" android:layout_height="36dp"
+                    android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
+                    android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                    android:background="@drawable/bg_text_button"/>
+            </LinearLayout>
+            <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+                android:layout_marginTop="10dp" android:background="@drawable/bg_settings_card">
+                <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerLog" android:layout_width="match_parent"
+                    android:layout_height="match_parent" android:padding="14dp" android:clipToPadding="false"/>
+                <TextView android:id="@+id/txtLogEmpty" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_gravity="center" android:gravity="center" android:padding="24dp"
+                    android:text="@string/registro_vacio" android:textColor="@color/text_secondary" android:textSize="14sp"/>
+            </FrameLayout>
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

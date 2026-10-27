@@ -1,5 +1,31 @@
 # Historial de versiones
 
+## 2.4.0 — 27 de octubre de 2026
+
+### Windows y Android
+
+- **Inicio.** La pestaña Buscar pasa a llamarse **Inicio**: arriba la búsqueda de siempre y, mientras no escribes nada, tus recomendaciones.
+- **Para ti.** Canciones que se adaptan a lo que escuchas. Lo que escuchas últimamente pesa más (una reproducción de hace dos semanas vale la mitad), se toman tus canciones favoritas del momento, se piden a YouTube Music las parecidas a cada una y se mezclan: la que aparece en varias listas sube. Solo salen **canciones de audio** (no videoclips ni videos subidos por otras personas), con su artista y su álbum, y se descartan las que ya tienes. Se actualiza sola al reproducir o al sincronizar, y guarda lo último por si no hay conexión.
+- **Artistas para ti.** Cada artista aparece con su foto en un marco redondo y su nombre. Al abrirlo ves su página: **canciones más escuchadas**, **todas sus canciones** (con duración y portada), **álbumes** y **sencillos y EPs**. Al tocar un álbum se abren sus pistas, y al tocar una canción se reproduce la lista como cola.
+- **Canciones, no videos.** Las recomendaciones y las páginas de artista usan YouTube Music, que distingue la pista de audio oficial de los videoclips y de los videos subidos por cualquiera, así que ya no se mezclan.
+- **Reproducciones por día.** Se sincronizan entre tus dispositivos y alimentan el algoritmo; en Windows ahora también cuentan las canciones que escuchas desde YouTube.
+
+### Android
+
+- **Descargador completo, desde tu perfil.** Pega enlaces (uno por línea) y elige MP3 (128 a 320 kbps) o MP4 (360p a la mejor calidad). Reconoce solo las playlists y permite bajar un rango (`1-10`, `1,3,5-8`), cada una en su carpeta y con los archivos numerados. La cola trabaja en segundo plano con una notificación y botón **Cancelar**; el avance muestra velocidad, tiempo restante y «archivo 3 de 20». Lo que ya existe se conserva, y lo que falla explica el motivo.
+- **Historial y registro.** Historial paginado con búsqueda (abrir, compartir o volver a la cola) y un registro con colores.
+- **Cookies de YouTube.** Carga un `cookies.txt` para los videos que piden iniciar sesión; se valida antes de usarlo.
+- **Buscar con portadas.** Resultados con miniatura para elegir varios y añadirlos a la cola sin descargar; cada uno se puede escuchar o abrir en YouTube.
+- **Importar lista.** Pega una lista (también las copiadas de Spotify o YouTube Music), revisa la tabla, busca las coincidencias en YouTube con elección automática solo cuando es segura, y añade las elegidas a la cola con un informe que se puede copiar o compartir.
+- **Importar carpeta.** Reconoce los archivos de una carpeta en YouTube y los enlaza a una playlist sin descargar nada.
+- **Cola del reproductor.** Un toque fuera de la hoja la cierra con animación.
+- **Tu música en cifras.** Estadísticas con el tiempo escuchado y tus canciones más escuchadas.
+
+### Windows
+
+- **Página del artista y de cada álbum**, con las mismas secciones que en Android.
+- **Listas de canciones online.** Al reproducir desde un artista o un álbum, la cola sigue sola con la siguiente canción y los botones de siguiente y anterior funcionan.
+
 ## 2.3.2 — 26 de octubre de 2026
 
 ### Windows
