@@ -24,6 +24,38 @@
 > [!NOTE]
 > El APK se distribuye mediante **GitHub Releases** porque supera el límite de tamaño de los archivos normales del repositorio. Android puede pedir permiso para instalar aplicaciones desde el navegador o gestor de archivos.
 
+## Así se ve MusicBox
+
+Interfaz real en Android y Windows, con una biblioteca de demostración: canciones,
+playlists y portadas de muestra, sin cuentas ni datos personales.
+
+### En tu celular
+
+<p align="center">
+  <img src="docs/images/screenshots/android-library.svg" width="310" alt="Biblioteca de MusicBox en Android, con nueve canciones de muestra y marco de celular redondeado">
+  &nbsp;&nbsp;
+  <img src="docs/images/screenshots/android-player.svg" width="310" alt="Reproductor de MusicBox en Android, con Midnight City, su portada de muestra y la cola de nueve canciones">
+</p>
+
+<p align="center"><sub>Tu biblioteca y el reproductor, siempre a mano.</sub></p>
+
+### En tu escritorio
+
+<p align="center">
+  <img src="docs/images/screenshots/desktop-home.svg" width="960" alt="Inicio de MusicBox para Windows, con recomendaciones, canciones recientes y controles de reproducción en un marco de escritorio redondeado">
+</p>
+
+<p align="center"><sub>Descubre canciones en Inicio y continúa escuchando desde el reproductor.</sub></p>
+
+<p align="center">
+  <img src="docs/images/screenshots/desktop-playlists.svg" width="960" alt="Playlists de MusicBox para Windows: Favoritos, Indie esencial, Modo concentración y Noche electrónica, todas con canciones y portadas de muestra">
+</p>
+
+<p align="center"><sub>Organiza tu música en playlists con portadas y canciones.</sub></p>
+
+Las portadas geométricas se crearon para estas capturas; no son carátulas oficiales.
+[Cómo se generaron las capturas y se protegió la privacidad](docs/CAPTURAS.md).
+
 ## Qué ofrece MusicBox
 
 | Experiencia | Funciones |
