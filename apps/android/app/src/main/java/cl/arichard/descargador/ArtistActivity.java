@@ -40,6 +40,7 @@ public class ArtistActivity extends AppCompatActivity {
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private LinearLayout content;
+    private cl.arichard.descargador.util.MiniPlayerView miniPlayer;
     private YtMusicApi.ArtistPage page;
     private List<SearchResult> allSongs;
     private boolean loadingAll, showingAlbum, destroyed;
@@ -53,13 +54,31 @@ public class ArtistActivity extends AppCompatActivity {
         scroll.setBackgroundColor(ContextCompat.getColor(this, R.color.bg_primary));
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(20), dp(20), dp(20), dp(60));
+        content.setPadding(dp(20), dp(20), dp(20), dp(24));
         scroll.addView(content, new FrameLayout.LayoutParams(-1, -2));
-        setContentView(scroll);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(ContextCompat.getColor(this, R.color.bg_primary));
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        miniPlayer = new cl.arichard.descargador.util.MiniPlayerView(this);
+        LinearLayout.LayoutParams playerLayout = new LinearLayout.LayoutParams(-1, -2);
+        playerLayout.setMargins(dp(16), dp(8), dp(16), dp(16));
+        root.addView(miniPlayer, playerLayout);
+        setContentView(root);
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() { back(); }
         });
         loadArtist();
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        miniPlayer.start();
+    }
+
+    @Override protected void onStop() {
+        miniPlayer.stop();
+        super.onStop();
     }
 
     @Override protected void onDestroy() {

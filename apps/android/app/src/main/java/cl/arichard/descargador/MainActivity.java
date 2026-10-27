@@ -309,6 +309,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         inputSearch = findViewById(R.id.inputSearch);
         inputSearch.setThreshold(0);
         inputSearch.setDropDownBackgroundResource(R.drawable.bg_search_field);
+        inputSearch.setDropDownVerticalOffset(dp(6));
+        inputSearch.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            if (inputSearch.isPopupShowing()) fitRecentSearches();
+        });
         inputSearch.setOnClickListener(v -> showRecentSearches());
         inputSearch.setOnFocusChangeListener((v, focused) -> {
             if (focused) inputSearch.post(this::showRecentSearches);
@@ -905,7 +909,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 TextView row = (TextView) super.getView(position, recycled, parent);
                 row.setTextColor(ContextCompat.getColor(MainActivity.this, R.color.text_primary));
                 row.setTextSize(15);
-                row.setPadding(dp(18), dp(14), dp(18), dp(14));
+                row.setSingleLine(true);
+                row.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                row.setMinHeight(dp(48));
+                row.setPadding(dp(16), dp(10), dp(16), dp(10));
                 row.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_search, 0, 0, 0);
                 row.setCompoundDrawablePadding(dp(12));
                 row.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(
@@ -918,7 +925,21 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void showRecentSearches() {
         if (inputSearch.hasFocus() && inputSearch.getAdapter() != null
-                && inputSearch.getAdapter().getCount() > 0) inputSearch.showDropDown();
+                && inputSearch.getAdapter().getCount() > 0 && fitRecentSearches()) inputSearch.showDropDown();
+    }
+
+    private boolean fitRecentSearches() {
+        View anchor = findViewById(R.id.searchField);
+        android.graphics.Rect visibleFrame = new android.graphics.Rect();
+        anchor.getWindowVisibleDisplayFrame(visibleFrame);
+        int[] location = new int[2];
+        anchor.getLocationOnScreen(location);
+        int available = visibleFrame.bottom - location[1] - anchor.getHeight() - dp(12);
+        if (available < dp(48)) { inputSearch.dismissDropDown(); return false; }
+        int height = Math.min(dp(216), available);
+        if (inputSearch.getDropDownHeight() != height) inputSearch.setDropDownHeight(height);
+        if (inputSearch.getDropDownWidth() != anchor.getWidth()) inputSearch.setDropDownWidth(anchor.getWidth());
+        return anchor.getWidth() > 0;
     }
 
     private static final class CollectionRank {
@@ -961,16 +982,20 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         int margin = Math.round(10 * getResources().getDisplayMetrics().density);
         for (CollectionRank item : ranked) {
             View card = getLayoutInflater().inflate(R.layout.item_folder, layoutTopCollections, false);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(width, LinearLayout.LayoutParams.WRAP_CONTENT);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(width, dp(84));
             params.setMargins(0, 0, margin, 0); card.setLayoutParams(params);
             ((cl.arichard.descargador.util.CoverCollageView) card.findViewById(R.id.folderCollage)).setSongs(item.songs);
             ((TextView) card.findViewById(R.id.txtFolderName)).setText(item.name);
+            ((TextView) card.findViewById(R.id.txtFolderName)).setSingleLine(true);
+            ((TextView) card.findViewById(R.id.txtFolderName)).setEllipsize(android.text.TextUtils.TruncateAt.END);
+            ((TextView) card.findViewById(R.id.txtFolderSongCount)).setSingleLine(true);
+            ((TextView) card.findViewById(R.id.txtFolderSongCount)).setEllipsize(android.text.TextUtils.TruncateAt.END);
             ((TextView) card.findViewById(R.id.txtFolderSongCount)).setText(
                     (item.playlist ? cl.arichard.descargador.util.Tr.t("Playlist") : cl.arichard.descargador.util.Tr.t("Carpeta")) + " • " + item.plays
                             + (item.plays == 1 ? cl.arichard.descargador.util.Tr.t(" reproducción") : cl.arichard.descargador.util.Tr.t(" reproducciones")));
             card.setOnClickListener(v -> {
                 switchTab(false);
-                setLibraryMode(item.playlist ? 2 : 1);
+                setLibraryMode(item.playlist ? 3 : 2);
                 if (item.playlist) showPlaylistSongs(item.name); else showFolderSongs(item.name, item.songs);
             });
             cl.arichard.descargador.util.SafeTap.installRowTap(card);
@@ -1273,17 +1298,12 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private void showAddOnlineToPlaylistDialog(SearchResult result) {
-        List<String> names = PlaylistManager.getInstance(this).getPlaylistNames();
-        String[] arr = names.toArray(new String[0]);
-        String[] shown = new String[arr.length];
-        for (int i = 0; i < arr.length; i++) shown[i] = cl.arichard.descargador.util.Tr.name(arr[i]);
-        new MaterialAlertDialogBuilder(this).setTitle(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setItems(shown, (d, which) -> {
-            String selected = arr[which];
+        cl.arichard.descargador.util.PlaylistPicker.show(this, cl.arichard.descargador.util.Tr.t("Agregar a playlist"), false, selected -> {
             PlaylistManager manager = PlaylistManager.getInstance(this);
             boolean added = manager.addOnlineTrack(selected, result);
             Toast.makeText(this, added ? cl.arichard.descargador.util.Tr.t("Agregada a ") + selected : cl.arichard.descargador.util.Tr.t("Ya estaba en ") + selected, Toast.LENGTH_SHORT).show();
             searchResultAdapter.notifyDataSetChanged();
-        }).setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null).show();
+        });
     }
 
     private void showPlaylistSettingsMenu(String name, View anchor) {
@@ -1553,6 +1573,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void showPlaylistSongs(String playlistName) {
         saveLibraryPosition(); changingLibrary = true;
+        currentLibraryMode = 3;
         currentSubListName = playlistName; isViewingSubList = true; heldFavorites.clear();
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
@@ -1560,6 +1581,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void showFolderSongs(String name, List<Song> songs) {
         saveLibraryPosition(); changingLibrary = true;
+        currentLibraryMode = 2;
         currentSubListName = name; isViewingSubList = true; heldFavorites.clear();
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
@@ -2146,6 +2168,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         super.onResume();
         if (uiState == null) return;
         cl.arichard.descargador.download.DownloadManager.get(this).addObserver(downloadObserver);
+        cl.arichard.descargador.download.DownloadManager.get(this).resumePending();
         renderManagedDownloads();
         if (playerPreview != null && playerPreviewCommitted) clearPlayerPreview();
         refreshDiscoveryContent();

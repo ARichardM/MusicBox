@@ -9,6 +9,15 @@ public final class Tr {
     private static final Map<String, String> EN = new HashMap<>();
     static {
         Map<String, String> m = EN;
+        m.put("Elegidas", "Chosen");
+        m.put("Por revisar", "Needs review");
+        m.put("Pendientes", "Pending");
+        m.put("Revisar pendientes", "Review pending songs");
+        m.put("No hay canciones en esta categoría.", "No songs in this category.");
+        m.put("%d elegidas · %d por revisar · %d pendientes", "%d chosen · %d to review · %d pending");
+        m.put("%d canción", "%d song");
+        m.put("%d canciones", "%d songs");
+        m.put("Sin canciones", "No songs");
         m.put("Tu música en cifras", "Your music in numbers");
         m.put("Cada reproducción cuenta", "Every play counts");
         m.put("Tiempo escuchado", "Listening time");

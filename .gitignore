@@ -1,4 +1,5 @@
 .venv/
+.gradle/
 __pycache__/
 Descargas/
 cookies.txt

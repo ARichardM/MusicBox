@@ -72,4 +72,40 @@ public class LibraryNavigationTest {
         assertEquals("", context.getSharedPreferences("library_navigation", 0).getString("sublist", ""));
         assertEquals(2, context.getSharedPreferences("library_navigation", 0).getInt("mode", -1));
     }
+
+    @Test public void mostPlayedPlaylistShortcutOpensItsSongsAndKeepsPlaylistMode() throws Exception {
+        assertCollectionShortcut("En camino", 3);
+    }
+
+    @Test public void mostPlayedFolderShortcutOpensItsSongsAndKeepsFolderMode() throws Exception {
+        assertCollectionShortcut("Viajes", 2);
+    }
+
+    private void assertCollectionShortcut(String name, int expectedMode) throws Exception {
+        Song song = cl.arichard.descargador.data.MusicScanner.scanAllMusic(context).get(0);
+        cl.arichard.descargador.data.ClickStats.getInstance(context).record(song);
+        ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup();
+        try {
+            finishScan();
+            MainActivity activity = controller.get();
+            java.lang.reflect.Method populate = MainActivity.class.getDeclaredMethod("populateTopCollections");
+            populate.setAccessible(true);
+            populate.invoke(activity);
+            android.widget.LinearLayout cards = activity.findViewById(R.id.layoutTopCollections);
+            android.view.View target = null;
+            for (int index = 0; index < cards.getChildCount(); index++) {
+                android.view.View card = cards.getChildAt(index);
+                if (name.equals(((TextView) card.findViewById(R.id.txtFolderName)).getText().toString())) target = card;
+            }
+            assertNotNull("Collection shortcut is visible", target);
+            target.performClick();
+            assertEquals(name, ((TextView) activity.findViewById(R.id.txtLibraryTitle)).getText().toString());
+            assertEquals(1, ((RecyclerView) activity.findViewById(R.id.recyclerLibrary)).getAdapter().getItemCount());
+            java.lang.reflect.Field mode = MainActivity.class.getDeclaredField("currentLibraryMode");
+            mode.setAccessible(true);
+            assertEquals(expectedMode, mode.getInt(activity));
+        } finally {
+            controller.pause().stop().destroy();
+        }
+    }
 }

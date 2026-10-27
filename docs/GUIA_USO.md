@@ -321,6 +321,13 @@ Se abre desde tu **perfil → Descargador** y tiene tres pestañas.
 
 **Importar lista.** Pega una lista (una canción por línea, o la copiada de Spotify o YouTube Music), revisa la tabla, busca las coincidencias y elige las alternativas dudosas. La elección automática solo ocurre cuando coinciden el título, el artista, la versión y la duración. Al final, **Añadir a la cola** y un informe que puedes copiar o compartir.
 
+En **Coincidencias** e **Informe**, usa **Todas**, **Elegidas**, **Por revisar** y
+**Pendientes** para ver cada grupo sin recorrer toda la lista. Los contadores se
+actualizan cuando eliges o desmarcas una alternativa. **Revisar pendientes** abre
+directamente las coincidencias que necesitan atención. Los filtros solo cambian
+lo que ves: copiar, compartir y finalizar siguen incluyendo la selección completa.
+Al enlazar a una playlist, el selector muestra su portada y cantidad de canciones.
+
 **Importar carpeta.** Elige una carpeta de tu teléfono: cada archivo se reconoce en YouTube y se enlaza a la playlist que elijas, sin descargar nada.
 
 ## Inicio, Para ti y artistas
@@ -330,6 +337,12 @@ En **Inicio**, sin escribir en la búsqueda, ves **Para ti**. Se calcula con lo 
 La lista se calcula al abrir la app y al pulsar **Actualizar**. Reproducir canciones, sincronizar o volver desde otra pantalla no la cambia. Actualizar solicita recomendaciones nuevas incluso si hay resultados recientes en caché; si no hay conexión, se conserva la última lista disponible.
 
 **Artistas para ti** muestra a cada artista con su foto. Al tocarlo se abre su página con sus **canciones más escuchadas**, el botón **Ver todas sus canciones**, sus **álbumes** y sus **sencillos y EPs**. Tocar un álbum abre sus pistas, y tocar una canción reproduce la lista como cola.
+
+En Android, el minirreproductor permanece al pie de las páginas de artista y álbum.
+Desde él puedes pausar, avanzar, abrir la cola o volver al reproductor completo.
+Las búsquedas recientes se despliegan debajo del buscador y se ajustan al teclado.
+Las tarjetas de colecciones más escuchadas mantienen la misma altura; al tocarlas
+se abre la playlist o carpeta correspondiente con sus canciones.
 
 ## Cola y reproducción automática
 
@@ -345,7 +358,7 @@ El botón de orden permite elegir **Orden original**, **Título**, **Artista**, 
 
 **Eliminar del dispositivo** muestra una confirmación con la cantidad de canciones y el espacio que ocupan. Para los archivos que no pertenecen a MusicBox, Android puede mostrar un segundo diálogo de permiso. Cancelarlo conserva los archivos. Solo lo que se eliminó correctamente se retira de las playlists, el historial de escucha y la cola. Las canciones online no ocupan espacio local y no se borran con esta acción.
 
-Al retirar MusicBox de **Recientes**, la música se detiene y desaparece la notificación del reproductor. La app recuerda la posición para retomarla. Las descargas tienen su propio servicio y continúan con su notificación; usa **Cancelar** si quieres detenerlas. Forzar la detención desde Ajustes, reiniciar o apagar el teléfono interrumpe el trabajo. La cola pendiente no se recupera automáticamente después de una detención del proceso; los archivos ya terminados y su historial se conservan.
+Al retirar MusicBox de **Recientes**, la música se detiene y desaparece la notificación del reproductor. La app recuerda la posición para retomarla. Las descargas tienen su propio servicio y continúan con su notificación; usa **Cancelar** si quieres detenerlas. Forzar la detención desde Ajustes, reiniciar o apagar el teléfono interrumpe el trabajo. Al volver a abrir la pantalla principal o el descargador, MusicBox recupera automáticamente los enlaces pendientes, con su formato, calidad, carpeta, rango y numeración originales. Se aprovechan los archivos parciales cuando el servidor permite reanudarlos y se conservan los archivos ya terminados. Las descargas canceladas o que terminaron con error no se reintentan automáticamente.
 
 ## Capturas y enlaces compartidos en Android
 

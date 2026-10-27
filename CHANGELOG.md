@@ -1,5 +1,22 @@
 # Historial de versiones
 
+## Sin publicar
+
+### Windows
+
+- El arranque ya no se cierra si falta la configuración de Firebase o contiene JSON inválido. El inicio de sesión informa del problema sin hacer solicitudes ni descartar el token guardado.
+- La prueba de interfaz usa una portada local de muestra y deja de depender de una imagen inexistente en YouTube.
+
+### Android
+
+- El minirreproductor permanece visible al abrir artistas y álbumes, con pausa, siguiente, cola, progreso y acceso al reproductor completo.
+- Las búsquedas recientes aparecen debajo del buscador, con altura limitada al espacio disponible sobre el teclado.
+- Los selectores de playlists muestran portadas y cantidad de canciones. También se muestran portadas de canciones que todavía no se han reproducido.
+- Coincidencias e Informe del importador incorporan filtros con contadores: Todas, Elegidas, Por revisar y Pendientes. El informe permite volver directamente a revisar; copiar, compartir y finalizar conservan todas las elegidas.
+- Las colecciones más escuchadas abren correctamente sus canciones: se corrige el intercambio entre los modos de playlist y carpeta. Sus tarjetas mantienen una altura uniforme y acortan los títulos largos.
+- Todas las pantallas de MusicBox quedan fijas en orientación vertical, incluido el reproductor de video.
+- La cola de descargas se guarda de forma atómica y se recupera al abrir la pantalla principal o el descargador después de reiniciar el teléfono o terminarse el proceso. Conserva enlaces, opciones, carpeta, rangos y numeración; reanuda parciales cuando el servidor lo permite, sin reiniciar descargas canceladas ni terminadas.
+
 ## 2.3.3 — 27 de octubre de 2026
 
 ### Windows y Android

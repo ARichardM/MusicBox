@@ -6,8 +6,6 @@ import android.view.View;
 import android.widget.PopupMenu;
 import android.widget.Toast;
 
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,12 +59,9 @@ public final class OnlineTrackMenu {
 
     public static void addToPlaylist(Activity activity, SearchResult result) {
         PlaylistManager manager = PlaylistManager.getInstance(activity);
-        List<String> names = manager.getPlaylistNames();
-        String[] shown = new String[names.size()];
-        for (int i = 0; i < shown.length; i++) shown[i] = Tr.name(names.get(i));
-        new MaterialAlertDialogBuilder(activity).setTitle(Tr.t("Agregar a playlist")).setItems(shown, (dialog, which) -> {
-            boolean added = manager.addOnlineTrack(names.get(which), result);
-            Toast.makeText(activity, (added ? Tr.t("Agregada a ") : Tr.t("Ya estaba en ")) + shown[which], Toast.LENGTH_SHORT).show();
-        }).setNegativeButton(Tr.t("Cancelar"), null).show();
+        PlaylistPicker.show(activity, Tr.t("Agregar a playlist"), false, name -> {
+            boolean added = manager.addOnlineTrack(name, result);
+            Toast.makeText(activity, (added ? Tr.t("Agregada a ") : Tr.t("Ya estaba en ")) + Tr.name(name), Toast.LENGTH_SHORT).show();
+        });
     }
 }

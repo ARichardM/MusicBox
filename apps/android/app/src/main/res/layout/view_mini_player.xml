@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="64dp"
+        android:gravity="center_vertical" android:paddingStart="12dp" android:paddingEnd="8dp">
+        <androidx.cardview.widget.CardView android:layout_width="44dp" android:layout_height="44dp"
+            app:cardCornerRadius="10dp" app:cardElevation="0dp" app:cardBackgroundColor="@color/bg_elevated">
+            <ImageView android:id="@+id/imgMiniCover" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:scaleType="centerCrop" android:importantForAccessibility="no" />
+        </androidx.cardview.widget.CardView>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="12dp" android:layout_marginEnd="8dp" android:orientation="vertical">
+            <TextView android:id="@+id/txtMiniTitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="14sp" android:textStyle="bold" android:textColor="@color/text_primary"
+                android:singleLine="true" android:ellipsize="end" />
+            <TextView android:id="@+id/txtMiniArtist" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textSize="12sp" android:textColor="@color/text_secondary" android:singleLine="true" android:ellipsize="end" />
+        </LinearLayout>
+        <FrameLayout android:layout_width="44dp" android:layout_height="44dp">
+            <ImageView android:id="@+id/btnMiniPlayPause" android:layout_width="match_parent" android:layout_height="match_parent"
+                android:padding="10dp" android:src="@drawable/ic_play_arrow" app:tint="@color/text_primary"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+            <cl.arichard.descargador.util.LoadingRingView android:id="@+id/miniLoadingRing"
+                android:layout_width="26dp" android:layout_height="26dp" android:layout_gravity="center" />
+        </FrameLayout>
+        <ImageView android:id="@+id/btnMiniQueue" android:layout_width="44dp" android:layout_height="44dp"
+            android:padding="10dp" android:src="@drawable/ic_queue" app:tint="@color/text_primary"
+            android:contentDescription="@string/abrir_cola" android:background="?attr/selectableItemBackgroundBorderless" />
+        <ImageView android:id="@+id/btnMiniNext" android:layout_width="44dp" android:layout_height="44dp"
+            android:padding="10dp" android:src="@drawable/ic_skip_next" app:tint="@color/text_secondary"
+            android:background="?attr/selectableItemBackgroundBorderless" />
+    </LinearLayout>
+    <ProgressBar android:id="@+id/miniProgress" style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent" android:layout_height="2dp" android:layout_marginStart="12dp" android:layout_marginEnd="12dp" />
+</merge>

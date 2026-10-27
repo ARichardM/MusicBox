@@ -37,6 +37,7 @@ import java.util.Map;
 import cl.arichard.descargador.data.LibraryFolders;
 import cl.arichard.descargador.data.PlaylistManager;
 import cl.arichard.descargador.importer.FolderImport;
+import cl.arichard.descargador.importer.ImportStatusFilter;
 import cl.arichard.descargador.importer.SongMatcher;
 import cl.arichard.descargador.importer.TextImport;
 import cl.arichard.descargador.model.SearchResult;
@@ -86,6 +87,7 @@ public class ImporterActivity extends AppCompatActivity {
     private boolean folderMode;
     private Uri treeUri;
     private boolean readingImage;
+    private ImportStatusFilter matchFilter = ImportStatusFilter.ALL, reportFilter = ImportStatusFilter.ALL;
     private final androidx.activity.result.ActivityResultLauncher<String> pickImage = registerForActivityResult(
             new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
                 if (uri != null) readImage(uri);
@@ -120,6 +122,18 @@ public class ImporterActivity extends AppCompatActivity {
         btnMatchRetry = findViewById(R.id.btnMatchRetry);
         pages = new View[]{findViewById(R.id.pageText), findViewById(R.id.pageTable), findViewById(R.id.pageMatches), findViewById(R.id.pageReport)};
         steps = new TextView[]{findViewById(R.id.step0), findViewById(R.id.step1), findViewById(R.id.step2), findViewById(R.id.step3)};
+        setupFilters(R.id.matchFilters, false);
+        setupFilters(R.id.reportFilters, true);
+        ((TextView) findViewById(R.id.txtMatchesEmpty)).setText(Tr.t("No hay canciones en esta categoría."));
+        ((TextView) findViewById(R.id.btnReportReview)).setText(Tr.t("Revisar pendientes"));
+        findViewById(R.id.btnReportReview).setOnClickListener(view -> {
+            boolean review = false;
+            for (Row row : rows) if (row.checked && accepts(row, ImportStatusFilter.REVIEW)) { review = true; break; }
+            matchFilter = review ? ImportStatusFilter.REVIEW : ImportStatusFilter.PENDING;
+            matchAdapter.reload();
+            showStep(2, true);
+        });
+        SafeTap.install(findViewById(R.id.btnReportReview));
         String[] names = {folderMode ? Tr.t("Carpeta") : Tr.t("Lista"), Tr.t("Canciones"), Tr.t("Coincidencias"), Tr.t("Informe")};
         for (int i = 0; i < steps.length; i++) steps[i].setText(names[i]);
 
@@ -517,12 +531,12 @@ public class ImporterActivity extends AppCompatActivity {
         int pending = 0, chosen = 0, review = 0;
         for (Row r : rows) {
             if (!r.checked) continue;
-            if (r.chosen >= 0) chosen++;
-            else if (r.state.equals("review")) review++;
-            else if (!r.state.equals("auto")) pending++;
+            if (accepts(r, ImportStatusFilter.READY)) chosen++;
+            else if (accepts(r, ImportStatusFilter.REVIEW)) review++;
+            else pending++;
         }
         txtMatchStatus.setText(searching ? Tr.f("Buscando %d de %d…", Math.min(searchDone + 1, searchTotal), searchTotal)
-                : Tr.f("%d elegidas · %d por revisar · %d sin resultado", chosen, review, pending));
+                : Tr.f("%d elegidas · %d por revisar · %d pendientes", chosen, review, pending));
         progressMatches.setProgress(searchTotal == 0 ? 0 : searchDone * 1000 / searchTotal);
         btnMatchStop.setVisibility(searching ? View.VISIBLE : View.GONE);
         btnMatchRetry.setVisibility(!searching && pending > 0 ? View.VISIBLE : View.GONE);
@@ -537,7 +551,9 @@ public class ImporterActivity extends AppCompatActivity {
         /** Vuelve a leer las filas marcadas y repinta. */
         void reload() {
             shown.clear();
-            for (Row r : rows) if (r.checked) shown.add(r);
+            for (Row r : rows) if (r.checked && accepts(r, matchFilter)) shown.add(r);
+            renderFilters(R.id.matchFilters, matchFilter);
+            findViewById(R.id.txtMatchesEmpty).setVisibility(shown.isEmpty() ? View.VISIBLE : View.GONE);
             notifyDataSetChanged();
         }
         @Override public void onBindViewHolder(MatchHolder h, int position) {
@@ -545,7 +561,7 @@ public class ImporterActivity extends AppCompatActivity {
             h.query.setText(row.query());
             int color; String label;
             switch (row.state) {
-                case "auto": label = Tr.t("✓ AUTO"); color = R.color.success; break;
+                case "auto": label = Tr.t(row.chosen >= 0 ? "✓ AUTO" : "REVISAR"); color = row.chosen >= 0 ? R.color.success : R.color.accent; break;
                 case "review": label = row.chosen >= 0 ? Tr.t("ELEGIDA") : Tr.t("REVISAR"); color = row.chosen >= 0 ? R.color.success : R.color.accent; break;
                 case "searching": label = Tr.t("BUSCANDO…"); color = R.color.text_secondary; break;
                 case "none": label = Tr.t("SIN RESULTADOS"); color = R.color.heart_red; break;
@@ -577,8 +593,7 @@ public class ImporterActivity extends AppCompatActivity {
                     row.chosen = row.chosen == index ? -1 : index;
                     if (row.state.equals("review") && row.chosen < 0) row.state = "review";
                     renderSearchStatus();
-                    int at = h.getBindingAdapterPosition();
-                    if (at >= 0) notifyItemChanged(at);
+                    reload();
                 });
                 view.findViewById(R.id.btnCandidateListen).setOnClickListener(v -> listen(item));
                 h.candidates.addView(view);
@@ -616,14 +631,56 @@ public class ImporterActivity extends AppCompatActivity {
         return groups;
     }
 
-    private String reportText() {
+    private static boolean accepts(Row row, ImportStatusFilter filter) {
+        return filter.matches(row.state, row.chosen >= 0 && row.chosen < row.found.size());
+    }
+
+    private void setupFilters(int containerId, boolean report) {
+        View container = findViewById(containerId);
+        int[] ids = {R.id.filterAll, R.id.filterReady, R.id.filterReview, R.id.filterPending};
+        ImportStatusFilter[] filters = ImportStatusFilter.values();
+        for (int index = 0; index < ids.length; index++) {
+            ImportStatusFilter filter = filters[index];
+            View button = container.findViewById(ids[index]);
+            button.setOnClickListener(view -> {
+                if (report) { reportFilter = filter; renderReport(); }
+                else {
+                    matchFilter = filter;
+                    matchAdapter.reload();
+                    ((RecyclerView) findViewById(R.id.recyclerMatches)).scrollToPosition(0);
+                }
+            });
+            SafeTap.install(button);
+        }
+    }
+
+    private void renderFilters(int containerId, ImportStatusFilter selected) {
+        View container = findViewById(containerId);
+        int[] ids = {R.id.filterAll, R.id.filterReady, R.id.filterReview, R.id.filterPending};
+        String[] labels = {Tr.t("Todas"), Tr.t("Elegidas"), Tr.t("Por revisar"), Tr.t("Pendientes")};
+        ImportStatusFilter[] filters = ImportStatusFilter.values();
+        for (int index = 0; index < ids.length; index++) {
+            int count = 0;
+            for (Row row : rows) if (row.checked && accepts(row, filters[index])) count++;
+            TextView button = container.findViewById(ids[index]);
+            button.setText(labels[index] + " · " + count);
+            boolean active = filters[index] == selected;
+            button.setSelected(active);
+            button.setBackgroundResource(active ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
+            button.setTextColor(ContextCompat.getColor(this, active ? R.color.chip_active_text : R.color.text_secondary));
+        }
+    }
+
+    private String reportText() { return reportText(ImportStatusFilter.ALL); }
+
+    private String reportText(ImportStatusFilter filter) {
         StringBuilder out = new StringBuilder();
         int marked = 0, chosen = 0;
         List<Row> pending = new ArrayList<>();
         for (Row r : rows) {
-            if (!r.checked) continue;
+            if (!r.checked || !accepts(r, filter)) continue;
             marked++;
-            if (r.chosen >= 0) chosen++; else pending.add(r);
+            if (accepts(r, ImportStatusFilter.READY)) chosen++; else pending.add(r);
         }
         Map<String, List<Row>> groups = chosenByUrl();
         out.append(Tr.f("Canciones marcadas: %d · elegidas: %d · pendientes: %d", marked, chosen, pending.size())).append('\n');
@@ -636,12 +693,12 @@ public class ImporterActivity extends AppCompatActivity {
         if (chosen > 0) {
             out.append('\n').append(Tr.t("ELEGIDAS")).append('\n');
             for (Row r : rows) {
-                if (!r.checked || r.chosen < 0 || r.chosen >= r.found.size()) continue;
+                if (!r.checked || !accepts(r, filter) || !accepts(r, ImportStatusFilter.READY)) continue;
                 SearchResult pick = r.found.get(r.chosen);
                 out.append("- ").append(r.query()).append(" → ").append(pick.getTitle()).append('\n').append("  ").append(pick.getUrl()).append('\n');
             }
         }
-        return out.toString().trim();
+        return marked == 0 ? Tr.t("No hay canciones en esta categoría.") : out.toString().trim();
     }
 
     private void renderReport() {
@@ -649,7 +706,9 @@ public class ImporterActivity extends AppCompatActivity {
         for (Row r : rows) { if (!r.checked) continue; marked++; if (r.chosen >= 0) chosen++; }
         ((TextView) findViewById(R.id.txtReportSummary)).setText(folderMode ? Tr.f("%d de %d canciones listas para enlazar", chosen, marked)
                 : Tr.f("%d de %d canciones listas para la cola", chosen, marked));
-        ((TextView) findViewById(R.id.txtReport)).setText(reportText());
+        renderFilters(R.id.reportFilters, reportFilter);
+        ((TextView) findViewById(R.id.txtReport)).setText(reportText(reportFilter));
+        findViewById(R.id.btnReportReview).setVisibility(marked > chosen ? View.VISIBLE : View.GONE);
         btnStepNext.setAlpha(chosen == 0 ? .4f : 1f);
         btnStepNext.setEnabled(chosen > 0);
     }
@@ -747,15 +806,8 @@ public class ImporterActivity extends AppCompatActivity {
         List<Row> picked = new ArrayList<>();
         for (Row r : rows) if (r.checked && r.chosen >= 0 && r.chosen < r.found.size() && !r.localPath.isEmpty()) picked.add(r);
         if (picked.isEmpty()) return;
-        PlaylistManager playlists = PlaylistManager.getInstance(this);
-        List<String> names = playlists.getPlaylistNames();
-        List<String> options = new ArrayList<>();
-        for (String name : names) options.add(Tr.name(name));
-        options.add(Tr.t("＋ Nueva playlist…"));
-        new MaterialAlertDialogBuilder(this)
-                .setTitle(Tr.t("Enlazar a una playlist"))
-                .setItems(options.toArray(new String[0]), (dialog, which) -> {
-                    if (which < names.size()) { applyToPlaylist(names.get(which), picked); return; }
+        cl.arichard.descargador.util.PlaylistPicker.show(this, Tr.t("Enlazar a una playlist"), true, selected -> {
+                    if (selected != null) { applyToPlaylist(selected, picked); return; }
                     EditText input = new EditText(this);
                     String folder = FolderImport.baseName(LibraryFolders.pathFromTree(treeUri) == null ? "" : LibraryFolders.pathFromTree(treeUri));
                     input.setText(folder); input.setSingleLine(true);
@@ -768,8 +820,7 @@ public class ImporterActivity extends AppCompatActivity {
                                 String name = input.getText().toString().trim();
                                 if (!name.isEmpty()) applyToPlaylist(name, picked);
                             }).show();
-                })
-                .setNegativeButton(Tr.t("Cancelar"), null).show();
+                });
     }
 
     /** Añade cada video elegido a la playlist y marca el archivo local como su copia; no descarga nada. */

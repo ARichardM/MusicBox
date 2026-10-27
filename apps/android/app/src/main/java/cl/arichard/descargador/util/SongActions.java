@@ -12,7 +12,6 @@ import cl.arichard.descargador.model.SearchResult;
 import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.player.PlayerManager;
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 
 /** Shared actions for the player and library. Every callback runs on the UI thread. */
@@ -31,12 +30,9 @@ public final class SongActions {
     public static void addMultipleToPlaylist(Activity activity, List<Song> songs, Runnable changed) {
         if (songs == null || songs.isEmpty()) return;
         PlaylistManager manager = PlaylistManager.getInstance(activity);
-        List<String> names = manager.getPlaylistNames();
-        List<String> options = new ArrayList<>(names);
-        options.add(Tr.t("＋ Nueva playlist"));
-        new MaterialAlertDialogBuilder(activity).setTitle(Tr.f(songs.size() > 1 ? "Agregar %d canciones a playlist" : "Agregar %d canción a playlist", songs.size()))
-                .setItems(options.toArray(new String[0]), (d, which) -> {
-                    if (which == names.size()) {
+        PlaylistPicker.show(activity, Tr.f(songs.size() > 1 ? "Agregar %d canciones a playlist" : "Agregar %d canción a playlist", songs.size()), true,
+                name -> {
+                    if (name == null) {
                         EditText input = new EditText(activity);
                         input.setHint(Tr.t("Nombre de la playlist"));
                         input.setSingleLine(true);
@@ -44,14 +40,14 @@ public final class SongActions {
                                 .setView(input).setPositiveButton(Tr.t("Crear y agregar"), null)
                                 .setNegativeButton(Tr.t("Cancelar"), null).create();
                         dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button -> {
-                            String name = input.getText().toString().trim();
-                            if (!manager.createPlaylist(name)) { input.setError(Tr.t("Escribe un nombre nuevo")); return; }
-                            addBulk(activity, manager, name, songs, changed);
+                            String createdName = input.getText().toString().trim();
+                            if (!manager.createPlaylist(createdName)) { input.setError(Tr.t("Escribe un nombre nuevo")); return; }
+                            addBulk(activity, manager, createdName, songs, changed);
                             dialog.dismiss();
                         }));
                         dialog.show();
-                    } else addBulk(activity, manager, names.get(which), songs, changed);
-                }).setNegativeButton(Tr.t("Cancelar"), null).show();
+                    } else addBulk(activity, manager, name, songs, changed);
+                });
     }
 
     private static void addBulk(Activity activity, PlaylistManager manager, String name, List<Song> songs, Runnable changed) {

@@ -32,9 +32,15 @@ public class CoverCollageView extends FrameLayout {
         removeAllViews(); covers.clear();
         setBackgroundResource(cl.arichard.descargador.R.drawable.bg_cover_fallback);
         List<Song> top = SearchHistoryManager.getInstance(getContext()).getTopPlayed(songs, 4);
+        if (songs != null) for (Song song : songs) {
+            if (top.size() == 4) break;
+            boolean present = false;
+            for (Song selected : top) if (selected.getPath().equals(song.getPath())) { present = true; break; }
+            if (!present) top.add(song);
+        }
         if (top.isEmpty()) {
             TextView empty = new TextView(getContext());
-            empty.setText("Sin\ncanciones"); empty.setTextSize(9); empty.setTextColor(0xFFFFFFFF);
+            empty.setText(Tr.t("Sin canciones")); empty.setTextSize(9); empty.setTextColor(0xFFFFFFFF);
             empty.setGravity(Gravity.CENTER);
             addView(empty, new LayoutParams(-1, -1));
             setContentDescription(Tr.t("Colección sin canciones"));

@@ -40,6 +40,8 @@ def _post_json(url, payload, headers=None, method="POST"):
 
 def _api_config():
     config = json.loads(FIREBASE_CONFIG_FILE.read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise RuntimeError("La configuración de Firebase para escritorio está incompleta.")
     project_id = str(config.get("project_id", "")).strip()
     api_key = str(config.get("api_key", "")).strip()
     if not project_id or not api_key:
@@ -76,16 +78,31 @@ class _HtmlRedirectApp:
 
 class FirebaseDesktopClient:
     def __init__(self, refresh_token=""):
-        self.project_id, self.api_key = _api_config()
+        self.project_id, self.api_key = "", ""
+        try:
+            self.project_id, self.api_key = _api_config()
+        except (OSError, ValueError, RuntimeError):
+            pass
         self.refresh_token = refresh_token
         self.id_token = ""
         self.user = {}
 
     @property
     def configured(self):
-        return OAUTH_FILE.is_file() and FIREBASE_CONFIG_FILE.is_file()
+        return bool(self.project_id and self.api_key and OAUTH_FILE.is_file() and FIREBASE_CONFIG_FILE.is_file())
+
+    def _ensure_api_config(self):
+        if self.project_id and self.api_key:
+            return
+        try:
+            self.project_id, self.api_key = _api_config()
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("El inicio de sesión no está configurado en esta instalación.") from exc
 
     def sign_in(self):
+        self._ensure_api_config()
+        if not OAUTH_FILE.is_file():
+            raise RuntimeError("El inicio de sesión no está configurado en esta instalación.")
         from google_auth_oauthlib.flow import InstalledAppFlow
 
         flow = InstalledAppFlow.from_client_secrets_file(
@@ -112,6 +129,7 @@ class FirebaseDesktopClient:
     def restore(self):
         if not self.refresh_token:
             return None
+        self._ensure_api_config()
         body = urlencode({"grant_type": "refresh_token", "refresh_token": self.refresh_token}).encode()
         request = Request("https://securetoken.googleapis.com/v1/token?key=" + self.api_key,
                           data=body, headers={"Content-Type": "application/x-www-form-urlencoded"})

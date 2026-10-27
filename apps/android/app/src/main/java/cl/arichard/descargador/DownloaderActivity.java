@@ -190,6 +190,7 @@ public class DownloaderActivity extends AppCompatActivity {
     @Override protected void onStart() {
         super.onStart();
         manager.addObserver(observer);
+        manager.resumePending();
         renderState();
     }
 

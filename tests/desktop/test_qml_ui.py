@@ -30,11 +30,13 @@ class QmlUiTests(unittest.TestCase):
                     patch.object(module.MusicBoxBridge, "checkForUpdate"), \
                     patch.object(module.MusicBoxBridge, "refreshForYou"):
                 bridge = module.MusicBoxBridge()
-            bridge._online_queue = [{"id": "sample", "url": "https://example.invalid/sample", "title": "Canción de prueba"}]
+            thumbnail = QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "icons" / "music.svg")).toString()
+            bridge._online_queue = [{"id": "sample", "url": "https://example.invalid/sample", "title": "Canción de prueba", "thumbnail": thumbnail}]
             bridge._online_index = 0
             bridge._current = dict(bridge._online_queue[0])
             bridge._clicks_stats.record("yt:sample", "Canción de prueba")
-            bridge._clicks_stats.record_listening("yt:sample", "Canción de prueba", millis=12500, start=True, playlist="Favoritos")
+            bridge._clicks_stats.record_listening("yt:sample", "Canción de prueba", thumbnail=thumbnail,
+                                                  millis=12500, start=True, playlist="Favoritos")
             engine = QQmlApplicationEngine()
             errors = []
             engine.warnings.connect(lambda warnings: errors.extend(warning.toString() for warning in warnings))

@@ -9,8 +9,10 @@ import com.yausername.youtubedl_android.YoutubeDLRequest;
 import com.yausername.youtubedl_android.YoutubeDLResponse;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -51,21 +53,38 @@ public final class DownloadManager {
     }
 
     private final Context context;
+    private final DownloadQueueStore queueStore;
     private final List<DownloadJob> jobs = new ArrayList<>();
     private final List<LogLine> log = new ArrayList<>();
     private final List<ReadyFile> ready = new ArrayList<>();
     private final List<Runnable> observers = new CopyOnWriteArrayList<>();
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private boolean running;
-    private int counter;
     private long lastNotify;
 
-    private DownloadManager(Context context) { this.context = context; }
+    private DownloadManager(Context context) {
+        this.context = context;
+        queueStore = new DownloadQueueStore(context.getFilesDir());
+        try { jobs.addAll(queueStore.load()); }
+        catch (IOException exception) { addLog("error", exception.getMessage()); }
+    }
+
+    public void resumePending() {
+        if (!isBusy()) return;
+        DownloadService.start(context);
+        pump();
+    }
+
+    private synchronized boolean persistQueue() {
+        try { queueStore.save(jobs); return true; }
+        catch (IOException exception) { addLog("error", exception.getMessage()); return false; }
+    }
 
     public void addObserver(Runnable observer) { observers.add(observer); }
     public void removeObserver(Runnable observer) { observers.remove(observer); }
 
     private void changed(boolean force) {
+        if (force) persistQueue();
         long now = SystemClock.uptimeMillis();
         if (!force && now - lastNotify < 150) return;
         lastNotify = now;
@@ -122,11 +141,16 @@ public final class DownloadManager {
                 if (!duplicate) fresh.add(url);
             }
             for (String url : fresh) {
-                jobs.add(new DownloadJob("dl" + (++counter), url, options, ++position, fresh.size()));
+                jobs.add(new DownloadJob("dl-" + UUID.randomUUID(), url, options, ++position, fresh.size()));
                 added++;
             }
             if (added > 0) addLog("info", Tr.f("Destino: %s · Formato: %s · %s", options.destination, options.format(), options.quality));
             trimFinished();
+            if (added > 0 && !persistQueue()) {
+                jobs.subList(jobs.size() - added, jobs.size()).clear();
+                changed(false);
+                return 0;
+            }
         }
         if (added > 0) { changed(true); DownloadService.start(context); pump(); }
         return added;
