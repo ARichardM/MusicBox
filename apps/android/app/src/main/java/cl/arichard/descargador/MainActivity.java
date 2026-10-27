@@ -67,10 +67,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 
 public class MainActivity extends AppCompatActivity implements PlayerManager.PlaybackListener {
+
+    /** La variante de pruebas usa una pantalla propia sin tocar la cuenta del usuario. */
+    protected boolean requiresSignIn() { return true; }
+    protected boolean loadsRecommendationsOnStart() { return true; }
 
     private CloudSyncManager cloudSync;
 
@@ -116,15 +119,12 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private boolean isMp3 = true;
     private String lastRecentQueries, lastTopCollections, lastRecentPlays, lastTopLibrary;
     private MainUiState uiState;
+    private boolean restoringSearchText;
     private List<SearchResult> renderedSearchResults;
     private int renderedCompletedDownloads;
-    private ArrayDeque<DownloadJob> downloadQueue;
+    private final Set<String> finishedDownloadJobs = new HashSet<>();
+    private final Runnable downloadObserver = () -> runOnUiThread(this::renderManagedDownloads);
     private Map<String, List<SearchResult>> searchCache;
-
-    static class DownloadJob {
-        final String url, title, videoId;
-        DownloadJob(String url, String title, String videoId) { this.url = url; this.title = title; this.videoId = videoId; }
-    }
 
     // Library Tab Views
     private ImageView btnBackLibrary, btnShuffleAll, btnNewPlaylist;
@@ -232,14 +232,14 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
         super.onCreate(savedInstanceState);
         boolean testRuntime = "robolectric".equals(android.os.Build.FINGERPRINT);
-        if (!testRuntime && FirebaseAuth.getInstance().getCurrentUser() == null) {
+        if (!testRuntime && requiresSignIn() && FirebaseAuth.getInstance().getCurrentUser() == null) {
             startActivity(new Intent(this, LoginActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
             finish(); return;
         }
         uiState = new androidx.lifecycle.ViewModelProvider(this).get(MainUiState.class);
         if (!testRuntime) cl.arichard.descargador.util.UpdateChecker.check(this);
-        downloadQueue = uiState.downloads; searchCache = uiState.cache; isMp3 = uiState.isMp3;
+        searchCache = uiState.cache; isMp3 = uiState.isMp3;
         allSongs.addAll(uiState.library);
         setContentView(R.layout.activity_main);
         cl.arichard.descargador.util.AnimatedSplashView splash =
@@ -257,7 +257,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         PlaylistManager.getInstance(this).setAutoDownloadListener((playlist, track) ->
                 runOnUiThread(() -> startDownload(track.getUrl(), track.getTitle(), track.getId())));
         setupMiniPlayer();
-        if (!testRuntime) {
+        if (!testRuntime && requiresSignIn()) {
             cloudSync = new CloudSyncManager(this, () -> runOnUiThread(() -> {
                 if (!isFinishing()) refreshMusicLibrary();
             }));
@@ -324,6 +324,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         inputSearch.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence text, int start, int before, int count) {
+                if (restoringSearchText) return;
                 uiState.searchQuery = text.toString();
                 btnClearSearch.setVisibility(text.length() == 0 ? View.GONE : View.VISIBLE);
                 scheduleLiveSearch(text.toString().trim());
@@ -1186,7 +1187,11 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (libraryReady) { uiState.library.clear(); uiState.library.addAll(allSongs); uiState.libraryLoaded = true; }
     }
     private void applyScreenState() {
-        if (!inputSearch.getText().toString().equals(uiState.searchQuery)) inputSearch.setText(uiState.searchQuery);
+        if (!inputSearch.getText().toString().equals(uiState.searchQuery)) {
+            restoringSearchText = true;
+            try { inputSearch.setText(uiState.searchQuery); }
+            finally { restoringSearchText = false; }
+        }
         boolean resultsChanged = renderedSearchResults != uiState.results;
         if (resultsChanged) { searchResultAdapter.setResults(uiState.results); renderedSearchResults = uiState.results; }
         recyclerSearchResults.setVisibility(uiState.resultsVisible ? View.VISIBLE : View.GONE);
@@ -1203,131 +1208,52 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             refreshMusicLibrary(); refreshDownloadedBadges();
         }
     }
-    private void publishDownloadState() {
-        uiState.downloadVisible = cardProgress.getVisibility() == View.VISIBLE;
-        uiState.downloadProgress = progressBar.getProgress(); uiState.downloadStatus = txtStatus.getText().toString();
-        uiState.downloadEta = txtEta.getText().toString(); uiState.changed();
-    }
-
     private void startDownload(String targetUrl, String defaultTitle) {
         startDownload(targetUrl, defaultTitle, extractVideoId(targetUrl));
     }
 
-    private synchronized void startDownload(String targetUrl, String defaultTitle, String videoId) {
-        if (videoId != null && !videoId.isEmpty()) {
-            activeDownloadingVideoIds.add(videoId);
-            if (searchResultAdapter != null) searchResultAdapter.addDownloadingId(videoId);
-            if (songAdapter != null) songAdapter.setDownloadStarted(videoId);
-            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, 0f);
-            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, 0f);
-        }
-        if (uiState.downloading) {
-            downloadQueue.offer(new DownloadJob(targetUrl, defaultTitle, videoId));
-            return;
-        }
-
-        File dir = StorageUtil.getDownloadDir(this);
-
-        YoutubeDLRequest request = new YoutubeDLRequest(targetUrl);
-        request.addOption("--no-playlist");
-        request.addOption("--no-update");
-        request.addOption("--extractor-args", "youtube:player_client=android,web");
-        request.addOption("--no-mtime");
-        request.addOption("--restrict-filenames");
-        request.addOption("-o", new File(dir, "%(title).160s.%(ext)s").getAbsolutePath());
-
-        if (isMp3) {
-            request.addOption("-x");
-            request.addOption("--audio-format", "mp3");
-            request.addOption("--audio-quality", "192K");
-            request.addOption("--embed-thumbnail");
-            request.addOption("--add-metadata");
-        } else {
-            request.addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best");
-            request.addOption("--merge-output-format", "mp4");
-        }
-
-        uiState.downloading = true;
-        // Progress is shown by the spinner on each song; the old bottom card covered the list.
-        progressBar.setProgress(0);
-        txtStatus.setText(defaultTitle != null ? (cl.arichard.descargador.util.Tr.t("Descargando: ") + defaultTitle) : cl.arichard.descargador.util.Tr.t("Iniciando descarga..."));
-        txtEta.setText(cl.arichard.descargador.util.Tr.t("Conectando...")); publishDownloadState();
-
-        cl.arichard.descargador.util.DownloadProgress stages = new cl.arichard.descargador.util.DownloadProgress();
-        if (videoId != null && !videoId.isEmpty()) {
-            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, stages.current());
-            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, stages.current());
-        }
-        DescargadorApp.IO.execute(() -> {
-            try {
-                YoutubeDL.getInstance().execute(request, "mobile-dl", (percent, eta, line) -> {
-                    float overall = stages.update(percent, line);
-                    runOnUiThread(() -> {
-                        int p = Math.round(percent);
-                        if (videoId != null && !videoId.isEmpty()) {
-                            if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, overall);
-                            if (songAdapter != null) songAdapter.setDownloadProgress(videoId, overall);
-                        }
-                        progressBar.setProgress(p);
-                        txtStatus.setText(cl.arichard.descargador.util.Tr.t("Descargando ") + p + "%");
-                        txtEta.setText(cl.arichard.descargador.util.Tr.f("Faltan aprox. %d s", (long) eta)); publishDownloadState();
-                    });
-                    return kotlin.Unit.INSTANCE;
-                });
-
-                runOnUiThread(() -> {
-                    progressBar.setProgress(100);
-                    txtStatus.setText(cl.arichard.descargador.util.Tr.t("¡Descarga completada con éxito!"));
-                    txtEta.setText(cl.arichard.descargador.util.Tr.t("Guardado en Descargas/Descargador"));
-                    StorageUtil.scanFile(this, dir);
-                    if (videoId != null && !videoId.isEmpty()) {
-                        getSharedPreferences("downloaded_videos", MODE_PRIVATE).edit().putBoolean(videoId, true).apply();
-                        // El anillo llega al 100 % y recién entonces deja su lugar al icono de descargada.
-                        if (searchResultAdapter != null) searchResultAdapter.setDownloadProgress(videoId, 1f);
-                        if (songAdapter != null) songAdapter.setDownloadProgress(videoId, 1f);
-                        cardProgress.postDelayed(() -> {
-                            activeDownloadingVideoIds.remove(videoId);
-                            if (searchResultAdapter != null) searchResultAdapter.markDownloadCompleted(videoId);
-                            if (songAdapter != null) songAdapter.setDownloadFinished(videoId, true);
-                        }, 380);
-                    }
-                    uiState.downloading = false; uiState.completedDownloads++; publishDownloadState();
-                    // Un solo resumen dentro de la app cuando termina un lote; una descarga suelta ya se ve en su anillo.
-                    savedInBatch++;
-                    if (downloadQueue.isEmpty()) {
-                        if (savedInBatch > 1) cl.arichard.descargador.util.AppNotice.info(findViewById(R.id.bottomBarArea),
-                                cl.arichard.descargador.util.Tr.f("%d canciones guardadas en tu biblioteca", savedInBatch));
-                        savedInBatch = 0;
-                    }
-                    startNextQueuedDownload();
-
-                    cardProgress.postDelayed(() -> {
-                        if (!uiState.downloading) { cardProgress.setVisibility(View.GONE); publishDownloadState(); }
-                    }, 4000);
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    txtStatus.setText(cl.arichard.descargador.util.Tr.t("Error al descargar"));
-                    txtEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : cl.arichard.descargador.util.Tr.t("Fallo en yt-dlp"));
-                    cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.bottomBarArea),
-                            cl.arichard.descargador.util.Tr.t("No pudimos guardar esta canción. Comprueba la conexión e inténtalo nuevamente."));
-                    if (videoId != null && !videoId.isEmpty()) {
-                        activeDownloadingVideoIds.remove(videoId);
-                        if (searchResultAdapter != null) searchResultAdapter.removeDownloadingId(videoId);
-                        if (songAdapter != null) songAdapter.setDownloadFinished(videoId, false);
-                    }
-                    uiState.downloading = false; publishDownloadState();
-                    startNextQueuedDownload();
-                });
-            }
-        });
+    private void startDownload(String targetUrl, String defaultTitle, String videoId) {
+        cl.arichard.descargador.download.DownloadManager manager = cl.arichard.descargador.download.DownloadManager.get(this);
+        int added = manager.enqueue(Collections.singletonList(targetUrl),
+                new cl.arichard.descargador.download.DownloadOptions(isMp3, isMp3 ? "192 kbps" : "1080p",
+                        false, "", cl.arichard.descargador.download.DownloadManager.cookiesPath(this),
+                        StorageUtil.getDownloadDir(this).getAbsolutePath()));
+        if (added == 0) Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Descarga en curso"), Toast.LENGTH_SHORT).show();
+        renderManagedDownloads();
     }
 
-    private int savedInBatch;
-
-    private synchronized void startNextQueuedDownload() {
-        DownloadJob next = downloadQueue.poll();
-        if (next != null) startDownload(next.url, next.title, next.videoId);
+    /** Cada pantalla observa la misma cola; ninguna tarea retiene una Activity cerrada. */
+    private void renderManagedDownloads() {
+        if (isDestroyed() || uiState == null || songAdapter == null || searchResultAdapter == null) return;
+        cl.arichard.descargador.download.DownloadManager manager = cl.arichard.descargador.download.DownloadManager.get(this);
+        activeDownloadingVideoIds.clear();
+        boolean completed = false;
+        for (cl.arichard.descargador.download.DownloadJob job : manager.jobs()) {
+            String id = extractVideoId(job.url);
+            if (id == null || id.isEmpty()) continue;
+            if (!job.status.isFinished()) {
+                activeDownloadingVideoIds.add(id);
+                searchResultAdapter.addDownloadingId(id);
+                songAdapter.setDownloadStarted(id);
+                searchResultAdapter.setDownloadProgress(id, job.progress);
+                songAdapter.setDownloadProgress(id, job.progress);
+            } else if (finishedDownloadJobs.add(job.id)) {
+                boolean success = job.status == cl.arichard.descargador.download.DownloadJob.Status.DONE;
+                searchResultAdapter.removeDownloadingId(id);
+                songAdapter.setDownloadFinished(id, success);
+                if (success) {
+                    searchResultAdapter.markDownloadCompleted(id);
+                    uiState.completedDownloads++;
+                    completed = true;
+                } else if (!job.error.isEmpty()) {
+                    cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.bottomBarArea), job.error);
+                }
+            }
+        }
+        uiState.downloading = manager.isBusy();
+        uiState.downloadVisible = false;
+        cardProgress.setVisibility(View.GONE);
+        if (completed) uiState.changed();
     }
 
     private String extractVideoId(String value) {
@@ -2218,11 +2144,14 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     @Override
     protected void onResume() {
         super.onResume();
+        if (uiState == null) return;
+        cl.arichard.descargador.download.DownloadManager.get(this).addObserver(downloadObserver);
+        renderManagedDownloads();
         if (playerPreview != null && playerPreviewCommitted) clearPlayerPreview();
         refreshDiscoveryContent();
         cl.arichard.descargador.data.ClickStats clicks = cl.arichard.descargador.data.ClickStats.getInstance(this);
         // Solo al abrir la app: volver de otra pantalla no cambia las recomendaciones que ya estás viendo.
-        if (!uiState.forYouStarted) { uiState.forYouStarted = true; refreshForYou(true); }
+        if (!uiState.forYouStarted && loadsRecommendationsOnStart()) { uiState.forYouStarted = true; refreshForYou(true); }
         PlayerManager.getInstance().addListener(this);
         updateMiniPlayer();
         if (libraryReady) refreshMusicLibrary();
@@ -2256,9 +2185,12 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     @Override
     protected void onPause() {
+        cl.arichard.descargador.download.DownloadManager.get(this).removeObserver(downloadObserver);
         PlayerManager.getInstance().savePosition();
-        rememberScreenState();
-        saveLibraryNavigation();
+        if (uiState != null) {
+            rememberScreenState();
+            saveLibraryNavigation();
+        }
         super.onPause();
         PlayerManager.getInstance().removeListener(this);
         if (playerPreview != null && playerPreviewCommitted) findViewById(R.id.mainGestureRoot).postDelayed(this::clearPlayerPreview, 180);

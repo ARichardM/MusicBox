@@ -17,7 +17,6 @@
     <application
         android:name=".DescargadorApp"
         android:allowBackup="false"
-        android:extractNativeLibs="true"
         android:icon="@drawable/logo_app"
         android:label="MusicBox"
         android:localeConfig="@xml/locales_config"
@@ -37,6 +36,7 @@
         <service
             android:name=".download.DownloadService"
             android:exported="false"
+            android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
 
         <receiver
@@ -65,7 +65,13 @@
         <activity android:name=".SettingsActivity" />
         <activity android:name=".StatisticsActivity" />
 
-        <activity android:name=".DownloaderActivity" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".DownloaderActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <activity android:name=".ImporterActivity" android:windowSoftInputMode="adjustResize" />
 
@@ -79,11 +85,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustPan">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
         </activity>
         <activity android:name=".LoginActivity" android:exported="true"
             android:theme="@style/Theme.MusicBox.Starting">

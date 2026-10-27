@@ -16,6 +16,10 @@ jobs:
         working-directory: apps/android
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validar versión consecutiva
+        run: python3 ../../scripts/check_version.py
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -43,10 +47,14 @@ jobs:
           MUSICBOX_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           MUSICBOX_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           MUSICBOX_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew testPreviewUnitTest assembleRelease --stacktrace
+        run: ./gradlew testPreviewUnitTest lintRelease assembleRelease --stacktrace
       - name: Preparar descarga
         shell: bash
         run: cp app/build/outputs/apk/release/app-release.apk ../../MusicBox-Android.apk
+      - name: Generar suma SHA-256
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: sha256sum MusicBox-Android.apk > MusicBox-Android.apk.sha256
       - name: Preparar notas de la versión
         shell: bash
         working-directory: ${{ github.workspace }}
@@ -57,6 +65,9 @@ jobs:
       - name: Crear GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: MusicBox-Android.apk
+          files: |
+            MusicBox-Android.apk
+            MusicBox-Android.apk.sha256
           body_path: release-notes.md
           fail_on_unmatched_files: true
+          draft: true

@@ -1,18 +1,16 @@
 package cl.arichard.descargador.util;
 
 import android.app.Activity;
-import android.media.MediaScannerConnection;
 import android.widget.EditText;
 import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-import cl.arichard.descargador.DescargadorApp;
+import cl.arichard.descargador.download.DownloadManager;
+import cl.arichard.descargador.download.DownloadOptions;
 import cl.arichard.descargador.data.PlaylistManager;
 import cl.arichard.descargador.model.SearchResult;
 import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.player.PlayerManager;
-import com.yausername.youtubedl_android.YoutubeDL;
-import com.yausername.youtubedl_android.YoutubeDLRequest;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -96,30 +94,11 @@ public final class SongActions {
     }
 
     private static void copyToFolder(Activity activity, Song song, File folder, Runnable changed) {
-        message(activity, Tr.t("Descarga en cola: ") + song.getTitle());
-        DescargadorApp.IO.execute(() -> {
-            try {
-                if (!folder.isDirectory() && !folder.mkdirs()) throw new Exception(Tr.t("No se pudo crear la carpeta"));
-                YoutubeDLRequest request = new YoutubeDLRequest("https://www.youtube.com/watch?v=" + song.getVideoId());
-                request.addOption("--no-playlist"); request.addOption("--no-overwrites");
-                request.addOption("-x"); request.addOption("--audio-format", "mp3");
-                request.addOption("--audio-quality", "192K");
-                request.addOption("--embed-thumbnail"); request.addOption("--add-metadata");
-                request.addOption("-o", new File(folder, "%(title).160s [%(id)s].%(ext)s").getAbsolutePath());
-                YoutubeDL.getInstance().execute(request);
-                File[] files = folder.listFiles((dir, name) -> name.endsWith("[" + song.getVideoId() + "].mp3"));
-                if (files == null || files.length == 0) throw new Exception(Tr.t("No se encontró el archivo descargado"));
-                File target = files[0];
-                StorageUtil.scanFile(activity, target);
-                activity.runOnUiThread(() -> {
-                    activity.getSharedPreferences("downloaded_videos", 0).edit()
-                            .putBoolean(song.getVideoId(), true).apply();
-                    message(activity, Tr.t("Agregada a ") + folder.getName()); changed.run();
-                });
-            } catch (Exception e) {
-                activity.runOnUiThread(() -> message(activity, e.getMessage() != null ? e.getMessage() : Tr.t("No se pudo agregar a la carpeta")));
-            }
-        });
+        int added = DownloadManager.get(activity).enqueue(java.util.Collections.singletonList(
+                "https://www.youtube.com/watch?v=" + song.getVideoId()),
+                new DownloadOptions(true, "192 kbps", false, "", DownloadManager.cookiesPath(activity), folder.getAbsolutePath()));
+        message(activity, added > 0 ? Tr.t("Descarga en cola: ") + song.getTitle() : Tr.t("Descarga en curso"));
+        changed.run();
     }
 
     /** Elimina la canción del dispositivo y de todas las playlists (con la confirmación del sistema cuando hace falta). */

@@ -13,6 +13,7 @@ import androidx.test.uiautomator.Until;
 import cl.arichard.descargador.data.MusicScanner;
 import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.player.PlayerManager;
+import cl.arichard.descargador.util.Tr;
 import org.junit.Before;
 import org.junit.After;
 import org.junit.Test;
@@ -64,11 +65,11 @@ public class DeviceGestureTest {
     }
     @Before public void start() throws Exception {
         context = InstrumentationRegistry.getInstrumentation().getTargetContext(); pkg = context.getPackageName();
-        assumeTrue("Use the independent preview app", pkg.endsWith(".pruebas"));
+        assumeTrue("Use the independent verification app", pkg.endsWith(".verification"));
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(3000);
         songs = MusicScanner.scanAllMusic(context); assumeTrue("At least 6 local songs", songs.size() >= 6);
-        Intent intent = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        Intent intent = new Intent(context, PreviewMainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         android.app.Activity launched = InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
         waitFor(() -> main(launched::hasWindowFocus)); view("navTabSearch");
         action(() -> { if (player.isShuffle()) player.toggleShuffle(); player.playSong(songs.get(0), new ArrayList<>(songs.subList(0, 5))); });
@@ -149,7 +150,7 @@ public class DeviceGestureTest {
             assertEquals(path, main(() -> player.getCurrentSong().getPath()));
         }
         action(() -> { state.resultsVisible = false; state.results = new ArrayList<>(); state.searchQuery = ""; state.searchStatus = ""; state.changed(); });
-        assertNotNull(device.wait(Until.findObject(By.text("Más escuchadas en tu biblioteca")), 5000));
+        view("sectionTopLibrary");
     }
 
     @Test public void actionStripIgnoresAccidentalDrags() throws Exception {
@@ -161,7 +162,7 @@ public class DeviceGestureTest {
         assertTrue(device.hasObject(By.res(pkg, "navTabLibrary").selected(true)));
         button = view("btnSongMenu").getVisibleBounds();
         device.swipe(button.centerX(), button.centerY(), button.centerX(), button.centerY() - 400, 30);
-        assertFalse(device.hasObject(By.text("Eliminar del dispositivo")));
+        assertFalse(device.hasObject(By.text(Tr.t("Eliminar del dispositivo"))));
         assertTrue(device.hasObject(By.res(pkg, "navTabLibrary").selected(true)));
     }
 
@@ -172,11 +173,11 @@ public class DeviceGestureTest {
         pointer(down, android.view.MotionEvent.ACTION_MOVE, mini.centerX(), mini.centerY() - 120);
         Thread.sleep(100);
         MainActivity activity = (MainActivity) resumed();
-        float first = main(() -> activity.findViewById(R.id.nowPlayingRoot).getTranslationY());
+        float first = main(() -> activity.findViewById(R.id.nowPlayingCoordinator).getTranslationY());
         pointer(down, android.view.MotionEvent.ACTION_MOVE, mini.centerX(), mini.centerY() - 360);
         Thread.sleep(80);
-        float second = main(() -> activity.findViewById(R.id.nowPlayingRoot).getTranslationY());
-        assertTrue("Player follows the finger", second < first && second > 0);
+        float second = main(() -> activity.findViewById(R.id.nowPlayingCoordinator).getTranslationY());
+        assertTrue("Player follows the finger: " + first + " -> " + second, second < first && second > 0);
         pointer(down, android.view.MotionEvent.ACTION_CANCEL, mini.centerX(), mini.centerY() - 360);
         waitFor(() -> main(() -> activity.findViewById(R.id.nowPlayingRoot) == null));
         down = android.os.SystemClock.uptimeMillis();
@@ -221,15 +222,16 @@ public class DeviceGestureTest {
         view("seekBar");
         assertFalse(device.hasObject(By.res(pkg, "tabSelectorMp4")));
         view("btnPlayerMore").click();
-        device.wait(Until.findObject(By.text("Eliminar canci\u00f3n")), 5000).click();
+        UiObject2 delete = device.wait(Until.findObject(By.text(Tr.t("Eliminar del dispositivo"))), 5000);
+        assertNotNull(delete); delete.click();
         UiObject2 cancel = device.wait(Until.findObject(By.res("android", "button2")), 5000);
         assertNotNull(cancel); cancel.click(); view("seekBar");
         view("btnPlayerMore").click();
-        device.wait(Until.findObject(By.text("Cola de reproducci\u00f3n")), 5000).click();
-        UiObject2 heading = device.wait(Until.findObject(By.textStartsWith("Cola ·")), 5000); assertNotNull(heading);
+        device.wait(Until.findObject(By.text(Tr.t("Cola de reproducci\u00f3n"))), 5000).click();
+        UiObject2 heading = device.wait(Until.findObject(By.textStartsWith(Tr.t("Cola · "))), 5000); assertNotNull(heading);
         // Wait for the sheet's entrance animation before taking screen coordinates.
         Thread.sleep(450);
-        List<UiObject2> handles = device.findObjects(By.desc("Arrastrar para reordenar")); assertTrue(handles.size() >= 3);
+        List<UiObject2> handles = device.findObjects(By.desc(Tr.t("Arrastrar para reordenar"))); assertTrue(handles.size() >= 3);
         String moved = main(() -> player.getQueue().get(2).getPath());
         Rect from = handles.get(2).getVisibleBounds(), to = handles.get(1).getVisibleBounds();
         long dragDown = android.os.SystemClock.uptimeMillis();
@@ -242,8 +244,10 @@ public class DeviceGestureTest {
         pointer(dragDown, android.view.MotionEvent.ACTION_UP, to.centerX(), to.centerY());
         try { waitFor(() -> main(() -> moved.equals(player.getQueue().get(1).getPath()))); }
         catch (AssertionError failure) { throw new AssertionError("Queue drag " + from + " -> " + to, failure); }
-        assertTrue(device.hasObject(By.textStartsWith("Cola ·")));
-        device.findObject(By.text("Cerrar")).click(); view("seekBar");
+        assertTrue(device.hasObject(By.textStartsWith(Tr.t("Cola · "))));
+        Rect outside = view("btnBackNowPlaying").getVisibleBounds();
+        device.click(outside.centerX(), outside.centerY());
+        Thread.sleep(450); view("seekBar");
         // Only a clear downward drag starting in the artwork dismisses.
         art = view("playerArtworkArea").getVisibleBounds();
         device.swipe(art.centerX(), art.top + art.height() / 4,

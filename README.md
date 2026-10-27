@@ -111,6 +111,13 @@ Configura estos secretos en **Settings → Secrets and variables → Actions**:
 
 Actualiza la versión (`version.py`, `build.gradle.kts`, `MusicBox.iss`) y la sección de [CHANGELOG.md](CHANGELOG.md); luego crea una etiqueta como `v2.3.0`. GitHub generará una Release con ambos instaladores y las novedades del changelog como notas.
 
+La versión avanza de una en una desde la última publicada: después de `2.3.2`
+corresponde `2.3.3`, y después `2.3.4`. Cambiar el número menor o mayor requiere
+una indicación explícita. `python scripts/check_version.py` comprueba esta regla
+y que Android, Windows y el changelog coincidan. Los workflows preparan la Release
+como borrador y solo se publica automáticamente cuando Android y Windows terminan
+correctamente y están presentes todos los paquetes y sus sumas.
+
 ## Arquitectura
 
 ```text

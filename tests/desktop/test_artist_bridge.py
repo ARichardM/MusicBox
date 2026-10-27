@@ -32,6 +32,8 @@ def make_bridge():
     bridge._artist_error = ""
     bridge._artist_gen = bridge._album_gen = 0
     bridge._online_queue, bridge._online_index = [], -1
+    bridge._online_generation = 0
+    bridge._repeat_mode = 0
     bridge._artist_directory = {}
     bridge._current = {}
     bridge._decorate_tracks = lambda tracks: tracks

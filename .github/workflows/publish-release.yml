@@ -1,0 +1,41 @@
+name: Publicar versión verificada
+
+on:
+  workflow_run:
+    workflows: ["Publicar APK Android", "Publicar instalador Windows"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Publicar solo cuando ambas compilaciones y sus descargas estén completas
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
+          runs=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$RELEASE_SHA&per_page=100")
+          for workflow in release-android.yml release-windows.yml; do
+            status=$(jq -r --arg path ".github/workflows/$workflow" '[.workflow_runs[] | select(.path == $path and .event == "push")] | sort_by(.run_number) | last | .conclusion // "pending"' <<< "$runs")
+            [[ "$status" == success ]] || { echo "Esperando $workflow: $status"; exit 0; }
+          done
+          release=$(gh release view "$RELEASE_TAG" --json assets,isDraft)
+          for asset in MusicBox-Android.apk MusicBox-Android.apk.sha256 MusicBox-Windows-Setup.exe MusicBox-Windows-Setup.exe.sha256 MusicBox-Windows-Portable.zip MusicBox-Windows-Portable.zip.sha256; do
+            jq -e --arg name "$asset" '.assets[] | select(.name == $name and .size > 0)' <<< "$release" >/dev/null || { echo "Falta $asset"; exit 1; }
+          done
+          if [[ $(jq -r .isDraft <<< "$release") == true ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi

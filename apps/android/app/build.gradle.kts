@@ -12,7 +12,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 11
-        versionName = "2.4.0"
+        versionName = "2.3.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -36,6 +36,12 @@ android {
             versionNameSuffix = "-pruebas"
             matchingFallbacks += listOf("debug")
         }
+        create("verification") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".verification"
+            versionNameSuffix = "-verification"
+            matchingFallbacks += listOf("debug")
+        }
         release {
             // R8 se mantiene desactivado: yt-dlp/Python carga clases dinámicamente.
             // La ofuscación no es una frontera de seguridad y activarla aquí rompería el runtime.
@@ -52,7 +58,7 @@ android {
     }
     packaging { jniLibs { useLegacyPackaging = true } }
     testOptions { unitTests { isIncludeAndroidResources = true } }
-    testBuildType = "preview"
+    testBuildType = "verification"
     // Se distribuye como APK. La política de target de Google Play se informa como aviso.
     lint { warning += "ExpiredTargetSdkVersion" }
 }
@@ -75,8 +81,12 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
 }
+
+// La instalación de verificación nunca recibe la configuración de la cuenta real.
+tasks.matching { it.name == "processVerificationGoogleServices" }.configureEach { enabled = false }

@@ -47,6 +47,12 @@ class BridgeTests(unittest.TestCase):
         QObject.__init__(bridge)
         bridge._settings = FakeSettings(enabled)
         bridge._online_queue, bridge._online_index = list(queue or []), index
+        bridge._online_generation = bridge._stream_generation = 0
+        bridge._online_waiting = False
+        bridge._online_original = []
+        bridge._queue, bridge._queue_index = [], -1
+        bridge._repeat_mode = 0
+        bridge._shuffle = False
         bridge._autoplay_tried, bridge._autoplay_loading = "", False
         bridge._current = {}
         bridge.requested = []
@@ -89,6 +95,74 @@ class BridgeTests(unittest.TestCase):
         self.wait(bridge)
         bridge._maybe_autoplay(bridge._current)
         self.assertEqual(bridge.requested, ["seed"])
+
+    def test_online_queue_is_exposed_and_editing_keeps_the_current_song(self):
+        bridge = self.make(queue=[track("a"), track("b"), track("c")], index=1)
+        bridge._current = track("b")
+        self.assertEqual([row["id"] for row in bridge.queue], ["a", "b", "c"])
+        bridge.moveQueueItem(1, 0)
+        self.assertEqual(bridge.queueIndex, 0)
+        bridge.removeQueueItem(0)  # La canción actual no se elimina desde ×.
+        self.assertEqual(len(bridge.queue), 3)
+        bridge.removeQueueItem(1)
+        self.assertEqual([row["id"] for row in bridge.queue], ["b", "c"])
+        bridge.clearQueue()
+        self.assertEqual([row["id"] for row in bridge.queue], ["b"])
+        self.assertEqual(bridge.queueIndex, 0)
+
+    def test_clearing_the_queue_discards_a_late_autoplay_response(self):
+        bridge = self.make(queue=[track("seed")], index=0)
+        bridge._current = track("seed")
+        generation = bridge._online_generation
+        bridge.clearQueue()
+        bridge._apply_autoplay("seed", [track("late")], generation)
+        self.assertEqual([row["id"] for row in bridge.queue], ["seed"])
+
+    def test_end_of_media_waits_for_related_songs_and_then_advances(self):
+        bridge = self.make(queue=[track("seed")], index=0)
+        bridge._current = track("seed")
+        bridge._autoplay_loading = True
+        played = []
+        bridge._play_online = lambda row: played.append(row["id"])
+        self.assertTrue(bridge._advance_online(1))
+        self.assertTrue(bridge._online_waiting)
+        bridge._apply_autoplay("seed", [track("next")], 0)
+        self.assertEqual(played, ["next"])
+
+    def test_shuffle_can_be_restored_after_autoplay_adds_new_songs(self):
+        bridge = self.make(queue=[track("a"), track("b"), track("c")], index=1)
+        bridge._current = track("b")
+        bridge.toggleShuffle()
+        self.assertEqual(bridge.queueIndex, 0)
+        bridge._online_queue.append(track("d"))
+        bridge.toggleShuffle()
+        self.assertEqual([row["id"] for row in bridge.queue], ["a", "b", "c", "d"])
+        self.assertEqual(bridge.queueIndex, 1)
+
+    def test_repeat_all_wraps_online_and_repeat_one_does_not_advance(self):
+        from types import SimpleNamespace
+        from PySide6.QtMultimedia import QMediaPlayer
+        bridge = self.make(queue=[track("a"), track("b")], index=1)
+        bridge._current = track("b")
+        bridge._repeat_mode = 1
+        played = []
+        bridge._play_online = lambda row: played.append(row["id"])
+        bridge._advance_online(1)
+        self.assertEqual(played, ["a"])
+        bridge._repeat_mode = 2
+        calls = []
+        bridge._player = SimpleNamespace(mediaStatus=lambda: QMediaPlayer.EndOfMedia,
+                                        setPosition=lambda position: calls.append(position), play=lambda: calls.append("play"))
+        bridge._media_status()
+        self.assertEqual(calls, [0, "play"])
+        self.assertEqual(played, ["a"])
+
+    def test_a_late_stream_does_not_replace_the_current_song(self):
+        bridge = self.make()
+        bridge._stream_generation = 2
+        bridge._current = track("current")
+        bridge._play_stream(dict(track("old"), _stream_generation=1), "https://audio/old")
+        self.assertEqual(bridge._current["id"], "current")
 
 
 if __name__ == "__main__":

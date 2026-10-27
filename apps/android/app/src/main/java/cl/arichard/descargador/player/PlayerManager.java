@@ -65,6 +65,7 @@ public class PlayerManager {
     private boolean noisyReceiverRegistered = false;
     private boolean autoplayLoading, advanceWhenReady;
     private String autoplayTriedFor = "";
+    private int autoplayGeneration;
 
     /** Reserved key that carries the stream length next to the headers; it is never sent over HTTP. */
     private static final String LENGTH_KEY = "X-MusicBox-Length";
@@ -500,6 +501,9 @@ public class PlayerManager {
     public void playSong(Song song, List<Song> newQueue) {
         if (song == null) return;
         if (newQueue != null && !newQueue.isEmpty()) {
+            autoplayGeneration++;
+            autoplayLoading = advanceWhenReady = false;
+            autoplayTriedFor = "";
             originalQueue = new ArrayList<>(newQueue);
             queue = new ArrayList<>(newQueue);
             if (shuffle) Collections.shuffle(queue);
@@ -810,6 +814,8 @@ public class PlayerManager {
      * Detiene todo y libera el reproductor (la app se cerró desde recientes). Recuerda la posición para retomar la próxima vez.
      */
     public void stopAndRelease() {
+        autoplayGeneration++;
+        autoplayLoading = advanceWhenReady = false;
         savePosition();
         playWhenReady = false;
         releasePlayer();
@@ -881,6 +887,7 @@ public class PlayerManager {
     private void fetchAutoplay() {
         if (autoplayLoading || !isAutoplay() || !online || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return;
         final String seed = currentOnlineVideoId;
+        final int requestGeneration = autoplayGeneration;
         if (seed.equals(autoplayTriedFor)) return;
         autoplayTriedFor = seed;
         autoplayLoading = true;
@@ -890,7 +897,9 @@ public class PlayerManager {
             catch (Exception e) { Log.w("MusicBoxPlayer", "Autoplay sin resultados", e); }
             final List<cl.arichard.descargador.model.SearchResult> found = related;
             handler.post(() -> {
+                if (requestGeneration != autoplayGeneration) return;
                 autoplayLoading = false;
+                if (!online || currentSong == null || !seed.equals(currentOnlineVideoId)) return;
                 List<String> paths = new ArrayList<>();
                 for (Song queued : queue) paths.add(queued.getPath());
                 List<Song> more = isAutoplay() ? Autoplay.pick(found, paths) : new ArrayList<>();
@@ -998,6 +1007,9 @@ public class PlayerManager {
         notifyQueue();
     }
     public void clearUpcoming() {
+        autoplayGeneration++;
+        autoplayLoading = advanceWhenReady = false;
+        autoplayTriedFor = currentOnlineVideoId;
         if (currentSong == null) { queue.clear(); originalQueue.clear(); currentIndex = -1; }
         else { queue = new ArrayList<>(Collections.singletonList(currentSong)); originalQueue = new ArrayList<>(queue); currentIndex = 0; }
         notifyQueue();

@@ -210,6 +210,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         queueBehavior.setHideable(false);
         queueBehavior.setFitToContents(false);
         queueBehavior.setExpandedOffset(Math.round(88 * density));
+        queueBehavior.setHalfExpandedRatio(.5f);
         queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
         queuePanel = cl.arichard.descargador.player.QueueSheet.embed(this, sheet, queueBehavior);
         queueBehavior.addBottomSheetCallback(new com.google.android.material.bottomsheet.BottomSheetBehavior.BottomSheetCallback() {
@@ -237,13 +238,15 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
      */
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent event) {
-        boolean expanded = queueBehavior != null
-                && queueBehavior.getState() == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED;
+        android.view.View queue = findViewById(R.id.queueSheet);
+        // También se puede cerrar mientras se está asentando o quedó a media altura.
+        boolean expanded = queueBehavior != null && queue != null
+                && queue.getTop() < nowPlayingCoordinator.getHeight() - queueBehavior.getPeekHeight() - 1;
         switch (event.getActionMasked()) {
             case android.view.MotionEvent.ACTION_DOWN:
                 if (expanded) {
                     int[] at = new int[2];
-                    findViewById(R.id.queueSheet).getLocationOnScreen(at);
+                    queue.getLocationOnScreen(at);
                     outsideQueueGesture = event.getRawY() < at[1];
                     outsideQueueTap = outsideQueueGesture;
                     outsideQueueX = event.getRawX(); outsideQueueY = event.getRawY();

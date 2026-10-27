@@ -33,6 +33,7 @@ def make_bridge():
     bridge = app_module.MusicBoxBridge.__new__(app_module.MusicBoxBridge)
     QObject.__init__(bridge)
     bridge._settings = FakeSettings()
+    bridge._online_queue, bridge._online_index = [], -1
     bridge._user = {}
     bridge._online_tracks = identity.normalize_online_tracks(ANDROID_TRACKS)
     bridge._online_favorites_meta = {}
@@ -286,10 +287,10 @@ class ManualUpdateCheckTest(unittest.TestCase):
 
     def test_new_version_opens_the_update_sheet_and_reports_available(self):
         bridge = self.make()
-        info = {"version": "2.4.0", "notes": ["Algo nuevo"], "url": "u"}
+        info = {"version": "2.3.4", "notes": ["Algo nuevo"], "url": "u"}
         bridge._handle_update_event({"event": "checked", "result": "available", "info": info})
         self.assertEqual((bridge.updateCheck, bridge.updateState), ("available", "available"))
-        self.assertEqual(bridge.update["version"], "2.4.0")
+        self.assertEqual(bridge.update["version"], "2.3.4")
 
     def test_failed_check_is_reported(self):
         bridge = self.make()
@@ -298,7 +299,7 @@ class ManualUpdateCheckTest(unittest.TestCase):
 
     def test_dismissing_the_sheet_resets_the_profile_state(self):
         bridge = self.make()
-        bridge._handle_update_event({"event": "checked", "result": "available", "info": {"version": "2.4.0"}})
+        bridge._handle_update_event({"event": "checked", "result": "available", "info": {"version": "2.3.4"}})
         bridge.dismissUpdate()
         self.assertEqual((bridge.updateCheck, bridge.updateState), ("idle", "idle"))
 

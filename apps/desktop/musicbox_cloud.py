@@ -21,6 +21,10 @@ GOOGLE_SCOPES = [
 ]
 
 
+class StateConflict(RuntimeError):
+    """El documento cambió entre la lectura y la escritura; se vuelve a mezclar."""
+
+
 def _post_json(url, payload, headers=None, method="POST"):
     data = json.dumps(payload).encode("utf-8")
     request = Request(url, data=data, headers={"Content-Type": "application/json", **(headers or {})}, method=method)
@@ -29,6 +33,8 @@ def _post_json(url, payload, headers=None, method="POST"):
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")
+        if exc.code in (409, 412):
+            raise StateConflict("El estado cambió durante la sincronización") from exc
         raise RuntimeError(json.loads(detail).get("error", {}).get("message", detail)) from exc
 
 
@@ -196,4 +202,30 @@ class FirebaseDesktopClient:
         _post_json(self._document_url() + "?updateMask.fieldPaths=payload", {
             "fields": {"payload": {"stringValue": json.dumps(state, ensure_ascii=False, separators=(",", ":"))}}
         }, {"Authorization": "Bearer " + self.id_token}, method="PATCH")
+
+    def update_state(self, transform, retries=4):
+        """Lectura y escritura condicional para no pisar un cambio simultáneo de otro dispositivo."""
+        if not self.id_token or not self.user:
+            raise RuntimeError("No hay una sesión activa.")
+        for attempt in range(retries):
+            try:
+                request = Request(self._document_url(), headers={"Authorization": "Bearer " + self.id_token})
+                try:
+                    with urlopen(request, timeout=20) as response:
+                        document = json.loads(response.read().decode("utf-8"))
+                    remote = json.loads(document.get("fields", {}).get("payload", {}).get("stringValue", "{}"))
+                    version = {"currentDocument.updateTime": document["updateTime"]}
+                except HTTPError as exc:
+                    if exc.code != 404:
+                        raise
+                    remote, version = {}, {"currentDocument.exists": "false"}
+                state = transform(remote)
+                query = urlencode({"updateMask.fieldPaths": "payload", **version})
+                _post_json(self._document_url() + "?" + query,
+                           {"fields": {"payload": {"stringValue": json.dumps(state, ensure_ascii=False, separators=(",", ":"))}}},
+                           {"Authorization": "Bearer " + self.id_token}, method="PATCH")
+                return state
+            except StateConflict:
+                if attempt + 1 == retries:
+                    raise
 

@@ -2,7 +2,17 @@
 
 Aplicación Android nativa derivada de la versión de escritorio. Permite buscar en
 YouTube, pegar o compartir un enlace, reproducirlo dentro de la aplicación y guardar
-una copia MP3 (192 kbps) o MP4 en `Descargas/Descargador`.
+una copia MP3 o MP4 en la carpeta privada de música de la app, sin solicitar acceso
+total al almacenamiento. El descargador muestra la ruta de destino.
+
+## Novedades 2.3.3
+
+Inicio con recomendaciones estables hasta actualizar, páginas de artistas y álbumes,
+reproducción automática y selección múltiple con orden de biblioteca. Las descargas
+rápidas y el descargador completo comparten una sola cola en un servicio con
+notificación: continúan al retirar la app de recientes, mientras la música se detiene.
+El importador admite capturas mediante OCR local incluido; los enlaces compartidos
+se abren en el descargador para revisarlos antes de descargar.
 
 ## Reproductor y biblioteca (2.2.0)
 
@@ -61,7 +71,7 @@ Usa JDK 17 o 21 para Gradle. Las pruebas Android se ejecutan en JVM mediante
 Robolectric, sin teléfono conectado:
 
 ```powershell
-.\gradlew.bat testDebugUnitTest lintDebug
+.\gradlew.bat testPreviewUnitTest lintPreview
 ```
 
 Para instalar una edición de pruebas junto a la app actual, sin necesitar su clave
@@ -76,12 +86,28 @@ Se genera `app/build/outputs/apk/preview/app-preview.apk`, con el nombre
 favoritos y playlists se guardan por separado. Una actualización de la aplicación
 original necesita la misma clave de firma que su APK anterior.
 
-Las pruebas de gestos del dispositivo usan exclusivamente esa variante e incluyen
+Las pruebas de gestos del dispositivo usan exclusivamente **verification** e incluyen
 carruseles, filtros, arrastre del navbar, minirreproductor, expansión interactiva,
 reordenamiento de cola, protección de botones y conservación del estado al cambiar
-el tema. Compila `assemblePreviewAndroidTest` y ejecuta la clase
+el tema. Compila `assembleVerification assembleVerificationAndroidTest` y ejecuta la clase
 `cl.arichard.descargador.DeviceGestureTest` con AndroidJUnitRunner en un teléfono
 con música local y permisos de biblioteca concedidos.
+
+`PendingFeaturesDeviceTest` verifica selección, orden persistente, enlaces compartidos,
+OCR, reproducción automática online, continuidad de descargas y cierre desde recientes.
+Ambas clases abren `PreviewMainActivity`, disponible exclusivamente en **verification**
+(`cl.arichard.descargador.verification`), sin configuración Firebase ni sincronización.
+La variante **preview** puede tener una sesión real guardada; no se utiliza para estas
+pruebas. La prueba
+de eliminación solo acepta `/storage/emulated/0/Music/zz_prueba_borrar_[123].mp3`:
+crea esas muestras desechables y guarda una copia antes de ejecutarla. Si no están,
+esa comprobación se omite; nunca se eligen canciones del usuario para borrar.
+
+```powershell
+adb install -r -g app/build/outputs/apk/verification/app-verification.apk
+adb install -r app/build/outputs/apk/androidTest/verification/app-verification-androidTest.apk
+adb shell am instrument -w -e class cl.arichard.descargador.PendingFeaturesDeviceTest cl.arichard.descargador.verification.test/androidx.test.runner.AndroidJUnitRunner
+```
 
 Desde 2.1.1 la reproducción usa MediaPlayer de Android y una fuente audiovisual
 obtenida por yt-dlp. MP3 muestra la portada y mantiene el audio; MP4 conecta una

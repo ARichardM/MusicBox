@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel;
 import cl.arichard.descargador.data.RecommendationEngine;
 import cl.arichard.descargador.model.SearchResult;
 import cl.arichard.descargador.model.Song;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,7 +24,6 @@ public class MainUiState extends ViewModel {
     /** "Para ti" ya se calculó desde que se abrió la app; volver de otra pantalla no lo recalcula. */
     boolean forYouStarted;
     int forYouGeneration;
-    final ArrayDeque<MainActivity.DownloadJob> downloads = new ArrayDeque<>();
     final Map<String, List<SearchResult>> cache = new LinkedHashMap<String, List<SearchResult>>(8, .75f, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<String, List<SearchResult>> eldest) { return size() > 8; }
     };

@@ -85,6 +85,11 @@ public class ImporterActivity extends AppCompatActivity {
     private int searchDone, searchTotal;
     private boolean folderMode;
     private Uri treeUri;
+    private boolean readingImage;
+    private final androidx.activity.result.ActivityResultLauncher<String> pickImage = registerForActivityResult(
+            new androidx.activity.result.contract.ActivityResultContracts.GetContent(), uri -> {
+                if (uri != null) readImage(uri);
+            });
 
     private EditText inputList, inputFilter;
     private TextView txtListError, txtListCount, txtTableCount, txtMatchStatus, btnStepNext, btnStepBack, btnMatchStop, btnMatchRetry;
@@ -159,6 +164,9 @@ public class ImporterActivity extends AppCompatActivity {
             List<String> tidy = TextImport.organizePlaylistText(inputList.getText().toString(), null);
             inputList.setText(TextUtils.join("\n", tidy));
         });
+        ((TextView) findViewById(R.id.btnListImage)).setText(Tr.t("Leer imagen"));
+        findViewById(R.id.btnListImage).setOnClickListener(v -> pickImage.launch("image/*"));
+        SafeTap.install(findViewById(R.id.btnListImage));
         findViewById(R.id.btnRowsAll).setOnClickListener(v -> { for (Row r : visible) r.checked = true; songAdapter.notifyDataSetChanged(); renderTableCount(); });
         findViewById(R.id.btnRowsNone).setOnClickListener(v -> { for (Row r : visible) r.checked = false; songAdapter.notifyDataSetChanged(); renderTableCount(); });
         findViewById(R.id.btnRowAdd).setOnClickListener(v -> editRow(null));
@@ -179,7 +187,7 @@ public class ImporterActivity extends AppCompatActivity {
         if (folderMode) {
             ((TextView) findViewById(R.id.txtListTitle)).setText(Tr.t("Leyendo la carpeta…"));
             ((TextView) findViewById(R.id.txtListHelp)).setText(Tr.t("Buscando archivos de audio y sus etiquetas."));
-            for (int id : new int[]{R.id.inputList, R.id.txtListCount, R.id.btnListPaste, R.id.btnListTidy}) findViewById(id).setVisibility(View.GONE);
+            for (int id : new int[]{R.id.inputList, R.id.txtListCount, R.id.btnListPaste, R.id.btnListTidy, R.id.btnListImage}) findViewById(id).setVisibility(View.GONE);
             btnStepNext.setAlpha(.4f); btnStepNext.setEnabled(false);
             scanFolder();
         }
@@ -188,6 +196,65 @@ public class ImporterActivity extends AppCompatActivity {
     @Override protected void onDestroy() {
         searchGeneration++;
         super.onDestroy();
+    }
+
+    private void readImage(Uri uri) {
+        if (readingImage) return;
+        readingImage = true;
+        findViewById(R.id.btnListImage).setEnabled(false);
+        ((TextView) findViewById(R.id.btnListImage)).setText(Tr.t("Leyendo imagen…"));
+        findViewById(R.id.progressOcr).setVisibility(View.VISIBLE);
+        renderNext();
+        // La imagen se abre fuera del hilo de interfaz. El modelo viene incluido y funciona sin conexión.
+        DescargadorApp.IO.execute(() -> {
+            try {
+                com.google.mlkit.vision.common.InputImage image = com.google.mlkit.vision.common.InputImage.fromFilePath(this, uri);
+                com.google.mlkit.vision.text.TextRecognizer recognizer = com.google.mlkit.vision.text.TextRecognition.getClient(
+                        com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS);
+                recognizer.process(image)
+                        .addOnSuccessListener(result -> {
+                            if (isDestroyed() || isFinishing()) return;
+                            String text = result.getText().trim();
+                            if (text.isEmpty()) { imageError(Tr.t("No se encontró texto. Prueba con una imagen más nítida.")); return; }
+                            EditText review = new EditText(this);
+                            review.setText(text);
+                            review.setGravity(android.view.Gravity.TOP);
+                            review.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+                            review.setMinLines(4); review.setMaxLines(10);
+                            review.setPadding(dp(20), dp(12), dp(20), dp(12));
+                            new MaterialAlertDialogBuilder(this).setTitle(Tr.t("Revisar texto de la imagen"))
+                                    .setMessage(Tr.t("Corrige los títulos y artistas antes de añadirlos a tu lista."))
+                                    .setView(review).setNegativeButton(Tr.t("Cancelar"), null)
+                                    .setPositiveButton(Tr.t("Añadir a la lista"), (dialog, which) -> {
+                                        String current = inputList.getText().toString().trim();
+                                        String edited = review.getText().toString().trim();
+                                        if (!edited.isEmpty()) inputList.setText(current.isEmpty() ? edited : current + "\n" + edited);
+                                    }).show();
+                        })
+                        .addOnFailureListener(error -> imageError(Tr.t("No se pudo leer la imagen. Prueba con otra.")))
+                        .addOnCompleteListener(task -> { recognizer.close(); finishReadingImage(); });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    imageError(Tr.t("No se pudo leer la imagen. Prueba con otra."));
+                    finishReadingImage();
+                });
+            }
+        });
+    }
+
+    private void imageError(String text) {
+        if (isDestroyed() || isFinishing()) return;
+        txtListError.setText(text);
+        txtListError.setVisibility(View.VISIBLE);
+    }
+
+    private void finishReadingImage() {
+        if (isDestroyed()) return;
+        readingImage = false;
+        findViewById(R.id.btnListImage).setEnabled(true);
+        ((TextView) findViewById(R.id.btnListImage)).setText(Tr.t("Leer imagen"));
+        findViewById(R.id.progressOcr).setVisibility(View.GONE);
+        renderNext();
     }
 
     // --- Navegación ---
@@ -220,7 +287,7 @@ public class ImporterActivity extends AppCompatActivity {
     }
 
     private void renderNext() {
-        boolean blocked = step == 2 && searching;
+        boolean blocked = readingImage || step == 2 && searching;
         btnStepNext.setAlpha(blocked ? .4f : 1f);
         btnStepNext.setEnabled(!blocked);
     }

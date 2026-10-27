@@ -1,14 +1,16 @@
 # Historial de versiones
 
-## 2.4.0 — 27 de octubre de 2026
+## 2.3.3 — 27 de octubre de 2026
 
 ### Windows y Android
 
+- **Sincronización de playlists protegida.** Los cambios se combinan con una base por dispositivo y se guardan con control de concurrencia. Una copia antigua no borra canciones nuevas de otro equipo. Se conservan diez respaldos locales y un registro de cambios con el dispositivo que los escribió.
 - **Inicio.** La pestaña Buscar pasa a llamarse **Inicio**: arriba la búsqueda de siempre y, mientras no escribes nada, tus recomendaciones.
-- **Para ti.** Canciones que se adaptan a lo que escuchas. Lo que escuchas últimamente pesa más (una reproducción de hace dos semanas vale la mitad), se toman tus canciones favoritas del momento, se piden a YouTube Music las parecidas a cada una y se mezclan: la que aparece en varias listas sube. Solo salen **canciones de audio** (no videoclips ni videos subidos por otras personas), con su artista y su álbum, y se descartan las que ya tienes. Se actualiza sola al reproducir o al sincronizar, y guarda lo último por si no hay conexión.
+- **Para ti.** Canciones que se adaptan a lo que escuchas. Lo que escuchas últimamente pesa más (una reproducción de hace dos semanas vale la mitad), se toman tus canciones favoritas del momento, se piden a YouTube Music las parecidas a cada una y se mezclan: la que aparece en varias listas sube. Solo salen **canciones de audio** (no videoclips ni videos subidos por otras personas), con su artista y su álbum, y se descartan las que ya tienes. Se calcula al abrir la app o al pulsar **Actualizar**; escuchar, sincronizar o volver de otra pantalla conserva la lista que estás viendo. La actualización manual consulta de nuevo el origen y, sin conexión, se conserva lo último disponible.
 - **Artistas para ti.** Cada artista aparece con su foto en un marco redondo y su nombre. Al abrirlo ves su página: **canciones más escuchadas**, **todas sus canciones** (con duración y portada), **álbumes** y **sencillos y EPs**. Al tocar un álbum se abren sus pistas, y al tocar una canción se reproduce la lista como cola.
 - **Canciones, no videos.** Las recomendaciones y las páginas de artista usan YouTube Music, que distingue la pista de audio oficial de los videoclips y de los videos subidos por cualquiera, así que ya no se mezclan.
 - **Reproducciones por día.** Se sincronizan entre tus dispositivos y alimentan el algoritmo; en Windows ahora también cuentan las canciones que escuchas desde YouTube.
+- **Reproducción automática.** Al llegar al final de una cola online se agregan canciones similares, sin repetir las que ya están en la cola ni añadir mezclas de más de diez minutos. Se activa o desactiva desde la cola. Las respuestas de una cola anterior se descartan al cambiar de lista o limpiarla.
 
 ### Android
 
@@ -17,6 +19,13 @@
 - **Cookies de YouTube.** Carga un `cookies.txt` para los videos que piden iniciar sesión; se valida antes de usarlo.
 - **Buscar con portadas.** Resultados con miniatura para elegir varios y añadirlos a la cola sin descargar; cada uno se puede escuchar o abrir en YouTube.
 - **Importar lista.** Pega una lista (también las copiadas de Spotify o YouTube Music), revisa la tabla, busca las coincidencias en YouTube con elección automática solo cuando es segura, y añade las elegidas a la cola con un informe que se puede copiar o compartir.
+- **Leer una imagen.** El importador reconoce el texto de capturas y fotos con un modelo incluido en la app, sin necesitar conexión. Puedes corregir el resultado antes de añadirlo a tu lista.
+- **Compartir hacia el descargador.** Desde YouTube u otra app, comparte un enlace con MusicBox para revisarlo en el descargador; la descarga comienza cuando tú la inicias.
+- **Una sola cola de descargas.** Búsqueda, biblioteca, reproductor y descargador utilizan la misma cola, con progreso, historial, cookies y cancelación. Las descargas continúan al cerrar la pantalla o retirar la app de recientes; la notificación permite cancelarlas. Forzar la detención o apagar el teléfono sí las interrumpe.
+- **Selección múltiple.** Mantén pulsada una canción para seleccionar varias, marca todas las visibles y reproduce, añade después de la actual, agrega a la cola o a una playlist y elimina del dispositivo. La barra de acciones ocupa el lugar de la navegación y el minirreproductor durante la selección.
+- **Orden de biblioteca.** Orden original, título, artista, fecha, reproducciones o duración. Tocar otra vez el criterio activo invierte su sentido; se recuerda la elección.
+- **Eliminar con permiso de Android.** Muestra cuántos archivos se eliminarán y el espacio que ocupan; cuando la música pertenece a otra app, Android pide su propia confirmación. Solo las canciones eliminadas se retiran de playlists, historial y cola.
+- **Cierre desde recientes.** Detiene la música y retira la notificación del reproductor, conservando la posición para continuar al volver a abrir.
 - **Importar carpeta.** Reconoce los archivos de una carpeta en YouTube y los enlaza a una playlist sin descargar nada.
 - **Cola del reproductor.** Un toque fuera de la hoja la cierra con animación.
 - **Tu música en cifras.** Estadísticas con el tiempo escuchado y tus canciones más escuchadas.
@@ -25,6 +34,8 @@
 
 - **Página del artista y de cada álbum**, con las mismas secciones que en Android.
 - **Listas de canciones online.** Al reproducir desde un artista o un álbum, la cola sigue sola con la siguiente canción y los botones de siguiente y anterior funcionan.
+- **Cola online visible y editable.** El panel muestra la lista que está sonando, incluida la reproducción automática. Permite saltar, arrastrar, quitar entradas y limpiar conservando la actual. Aleatorio y repetición funcionan también con la lista online, y una respuesta de audio tardía no sustituye una canción elegida después.
+- **Estadísticas de escucha.** Tiempo real escuchado y canciones y playlists más reproducidas. Las pausas, la carga y los saltos de la barra no suman tiempo; el último tramo de escucha se guarda al cerrar.
 
 ## 2.3.2 — 26 de octubre de 2026
 

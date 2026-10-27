@@ -19,6 +19,7 @@ public class PlaylistManager {
     private static PlaylistManager instance;
     private final File storageFile;
     private final android.content.SharedPreferences localIds;
+    private final android.content.SharedPreferences backups;
     /** Downloaded file on THIS device -> its YouTube video id (paths are device specific, so this is never synced). */
     private final Map<String, String> pathToId = new HashMap<>();
     private final Map<String, List<String>> playlists = new HashMap<>();
@@ -34,6 +35,7 @@ public class PlaylistManager {
     private PlaylistManager(Context context) {
         this.storageFile = new File(context.getFilesDir(), "playlists.json");
         this.localIds = context.getSharedPreferences("local_video_ids", Context.MODE_PRIVATE);
+        this.backups = context.getSharedPreferences("playlist_backups", Context.MODE_PRIVATE);
         for (Map.Entry<String, ?> entry : localIds.getAll().entrySet())
             if (entry.getValue() instanceof String) pathToId.put(entry.getKey(), (String) entry.getValue());
         load();
@@ -55,10 +57,9 @@ public class PlaylistManager {
         onlineTracks.clear();
         descriptions.clear();
         autoDownloadPlaylists.clear();
-        if (!storageFile.exists()) return;
-        try (FileInputStream fis = new FileInputStream(storageFile)) {
-            byte[] data = new byte[(int) storageFile.length()];
-            fis.read(data);
+        if (!storageFile.exists() && !new File(storageFile.getPath() + ".bak").exists()) return;
+        try {
+            byte[] data = new android.util.AtomicFile(storageFile).readFully();
             String jsonStr = new String(data, StandardCharsets.UTF_8);
             JSONObject root = new JSONObject(jsonStr);
             JSONObject listsRoot = root.optJSONObject("playlists");
@@ -104,12 +105,7 @@ public class PlaylistManager {
     }
 
     private void save() {
-        try (FileOutputStream fos = new FileOutputStream(storageFile)) {
-            JSONObject root = exportJson();
-            fos.write(root.toString().getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        if (!persist(exportJson())) return;
         if (changeListener != null) changeListener.run();
         for (Runnable observer : new ArrayList<>(observers)) MAIN.post(observer);
     }
@@ -142,11 +138,42 @@ public class PlaylistManager {
 
     public synchronized void importJson(JSONObject root) {
         if (root == null) return;
-        try (FileOutputStream fos = new FileOutputStream(storageFile)) {
-            fos.write(root.toString().getBytes(StandardCharsets.UTF_8));
-        } catch (Exception ignored) { return; }
+        if (!persist(root)) return;
         load();
         if (!playlists.containsKey("Favoritos")) playlists.put("Favoritos", new ArrayList<>());
+    }
+
+    /** Respalda la copia anterior y reemplaza el archivo de forma atómica, incluso si se cierra el proceso. */
+    private boolean persist(JSONObject root) {
+        android.util.AtomicFile atomic = new android.util.AtomicFile(storageFile);
+        FileOutputStream output = null;
+        try {
+            if (storageFile.isFile()) {
+                byte[] bytes = atomic.readFully();
+                JSONObject previous;
+                try { previous = new JSONObject(new String(bytes, StandardCharsets.UTF_8)); }
+                catch (Exception corruptedPrevious) {
+                    previous = new JSONObject().put("unparsed", new String(bytes, StandardCharsets.UTF_8));
+                }
+                if (!PlaylistSync.same(previous, root)) {
+                    JSONArray history;
+                    try { history = new JSONArray(backups.getString("snapshots", "[]")); }
+                    catch (Exception corruptedHistory) { history = new JSONArray(); }
+                    JSONArray bounded = new JSONArray();
+                    for (int i = Math.max(0, history.length() - 9); i < history.length(); i++) bounded.put(history.get(i));
+                    bounded.put(new JSONObject().put("at", System.currentTimeMillis()).put("state", previous));
+                    backups.edit().putString("snapshots", bounded.toString()).commit();
+                }
+            }
+            output = atomic.startWrite();
+            output.write(root.toString().getBytes(StandardCharsets.UTF_8));
+            atomic.finishWrite(output);
+            return true;
+        } catch (Exception error) {
+            if (output != null) atomic.failWrite(output);
+            android.util.Log.e("MusicBoxPlaylists", "No se pudo guardar la playlist; se conserva la copia anterior", error);
+            return false;
+        }
     }
 
     public synchronized void resetForAccount() {

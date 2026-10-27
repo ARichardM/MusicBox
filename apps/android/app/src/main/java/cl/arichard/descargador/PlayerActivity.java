@@ -220,71 +220,51 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void startDownload() {
-        if (isDownloading) {
-            Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Descarga en curso"), Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         String downloadUrl = targetUrl;
-        if ((downloadUrl == null || downloadUrl.isEmpty()) && videoId != null) {
+        if ((downloadUrl == null || downloadUrl.isEmpty()) && videoId != null)
             downloadUrl = "https://www.youtube.com/watch?v=" + videoId;
+        if (downloadUrl == null || downloadUrl.isEmpty()) return;
+        cl.arichard.descargador.download.DownloadManager manager = cl.arichard.descargador.download.DownloadManager.get(this);
+        manager.enqueue(java.util.Collections.singletonList(downloadUrl),
+                new cl.arichard.descargador.download.DownloadOptions(isMp3Mode, isMp3Mode ? "192 kbps" : "1080p",
+                        false, "", cl.arichard.descargador.download.DownloadManager.cookiesPath(this),
+                        StorageUtil.getDownloadDir(this).getAbsolutePath()));
+        renderDownload();
+    }
+
+    private final Runnable downloadObserver = () -> runOnUiThread(this::renderDownload);
+
+    private void renderDownload() {
+        if (isDestroyed() || txtDownloadStatus == null) return;
+        cl.arichard.descargador.download.DownloadJob latest = null;
+        for (cl.arichard.descargador.download.DownloadJob job :
+                cl.arichard.descargador.download.DownloadManager.get(this).jobs()) {
+            if ((job.url.equals(targetUrl) || (videoId != null && job.url.contains(videoId))) && job.options.mp3 == isMp3Mode)
+                latest = job;
         }
-        if (downloadUrl == null) return;
-
-        File dir = StorageUtil.getDownloadDir(this);
-
-        YoutubeDLRequest request = new YoutubeDLRequest(downloadUrl);
-        request.addOption("--no-playlist");
-        request.addOption("--no-update");
-        request.addOption("--extractor-args", "youtube:player_client=android,web");
-        request.addOption("--no-mtime");
-        request.addOption("--restrict-filenames");
-        request.addOption("-o", new File(dir, "%(title).160s.%(ext)s").getAbsolutePath());
-
-        if (isMp3Mode) {
-            request.addOption("-x");
-            request.addOption("--audio-format", "mp3");
-            request.addOption("--audio-quality", "192K");
-            request.addOption("--embed-thumbnail");
-            request.addOption("--add-metadata");
-        } else {
-            request.addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best");
-            request.addOption("--merge-output-format", "mp4");
-        }
-
-        isDownloading = true;
+        if (latest == null) { layoutDownloadStatus.setVisibility(View.GONE); return; }
         layoutDownloadStatus.setVisibility(View.VISIBLE);
-        downloadProgress.setProgress(0);
-        txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("Iniciando descarga (") + (isMp3Mode ? "MP3" : "MP4") + ")...");
-        txtDownloadEta.setText(cl.arichard.descargador.util.Tr.t("Conectando..."));
+        downloadProgress.setProgress(Math.round(latest.progress * 100));
+        String state = latest.status == cl.arichard.descargador.download.DownloadJob.Status.DONE
+                ? "¡Descarga completada con éxito!" : latest.status == cl.arichard.descargador.download.DownloadJob.Status.WAITING
+                ? "Descarga en cola" : latest.status == cl.arichard.descargador.download.DownloadJob.Status.CANCELLED
+                ? "Descarga cancelada" : latest.status.isFinished() ? "Error en la descarga" : "Descarga en curso";
+        txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t(state));
+        txtDownloadEta.setText(!latest.error.isEmpty() ? latest.error : latest.etaSeconds >= 0
+                ? cl.arichard.descargador.util.Tr.f("Faltan aprox. %d s", latest.etaSeconds)
+                : latest.status == cl.arichard.descargador.download.DownloadJob.Status.DONE
+                ? cl.arichard.descargador.util.Tr.t("Guardado en tu biblioteca") : "");
+    }
 
-        DescargadorApp.IO.execute(() -> {
-            try {
-                YoutubeDL.getInstance().execute(request, "mobile-dl-player", (percent, eta, line) -> {
-                    runOnUiThread(() -> {
-                        int p = Math.round(percent);
-                        downloadProgress.setProgress(p);
-                        txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("Descargando ") + p + "%");
-                        txtDownloadEta.setText(cl.arichard.descargador.util.Tr.f("Faltan aprox. %d s", (long) eta));
-                    });
-                    return kotlin.Unit.INSTANCE;
-                });
+    @Override protected void onStart() {
+        super.onStart();
+        cl.arichard.descargador.download.DownloadManager.get(this).addObserver(downloadObserver);
+        renderDownload();
+    }
 
-                runOnUiThread(() -> {
-                    downloadProgress.setProgress(100);
-                    txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("¡Descarga completada con éxito!"));
-                    txtDownloadEta.setText(cl.arichard.descargador.util.Tr.t("Guardado en tu biblioteca"));
-                    StorageUtil.scanFile(PlayerActivity.this, dir);
-                    isDownloading = false;
-                });
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    txtDownloadStatus.setText(cl.arichard.descargador.util.Tr.t("Error en la descarga"));
-                    txtDownloadEta.setText(e.getLocalizedMessage() != null ? e.getLocalizedMessage() : cl.arichard.descargador.util.Tr.t("Fallo"));
-                    isDownloading = false;
-                });
-            }
-        });
+    @Override protected void onStop() {
+        cl.arichard.descargador.download.DownloadManager.get(this).removeObserver(downloadObserver);
+        super.onStop();
     }
 
     @Override

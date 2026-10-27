@@ -58,6 +58,12 @@ public final class DownloadService extends Service {
         super.onDestroy();
     }
 
+    @Override public void onTimeout(int startId, int foregroundServiceType) {
+        manager.cancelAll();
+        stopForeground(true);
+        stopSelf();
+    }
+
     @Override public IBinder onBind(Intent intent) { return null; }
 
     private void refresh() {

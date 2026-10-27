@@ -169,6 +169,7 @@ public class DownloaderActivity extends AppCompatActivity {
         setupHistory();
         inputRange.setText(prefs.getString("range", ""));
         if (state == null) inputLinks.setText(prefs.getString("links", ""));
+        if (state == null) receiveSharedText(getIntent());
         txtDestination.setText(DownloadManager.defaultDestination(this).getAbsolutePath());
         renderCookies();
         selectTab(0, false);
@@ -190,6 +191,22 @@ public class DownloaderActivity extends AppCompatActivity {
         super.onStart();
         manager.addObserver(observer);
         renderState();
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        receiveSharedText(intent);
+    }
+
+    private void receiveSharedText(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction()) || !"text/plain".equals(intent.getType())) return;
+        CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (shared == null || shared.toString().trim().isEmpty()) return;
+        // El usuario revisa formato y enlaces antes de iniciar la descarga.
+        inputLinks.setText(shared.toString().trim());
+        inputLinks.setSelection(inputLinks.length());
+        selectTab(0, false);
     }
 
     @Override protected void onStop() {

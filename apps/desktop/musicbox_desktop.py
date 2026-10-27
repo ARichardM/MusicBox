@@ -18,6 +18,7 @@ import random
 import platform
 import time
 import uuid
+from copy import deepcopy
 
 from PySide6.QtCore import QFile, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QIcon
@@ -37,6 +38,7 @@ from click_stats import ClickStats, song_key
 import ytmusic
 from recommendations import PER_SEED, Recommender, pick_autoplay
 import track_identity as identity
+import playlist_sync
 from version import __version__
 from downloads_controller import DownloadsController
 from importer_controller import ImporterImageProvider
@@ -127,14 +129,14 @@ class MusicBoxBridge(QObject):
     _searchFinished = Signal(object, str)
     _downloadEvent = Signal(object)
     _streamReady = Signal(object, str)
-    _autoplayReady = Signal(str, list)
+    _autoplayReady = Signal(str, list, int)
     autoplayChanged = Signal()
     _authResult = Signal(object, str)
     _remotePlaylists = Signal(object)
     _devicesPolled = Signal(object, bool)
     _deviceRevoked = Signal(str, bool)
 
-    def __init__(self):
+    def __init__(self, settings=None, load_startup=True):
         super().__init__()
         self._search_results = []
         self._library = []
@@ -145,7 +147,7 @@ class MusicBoxBridge(QObject):
         self._library_folder = ""
         self._history = []
         self._busy = False
-        self._settings = QSettings("MusicBox", "Desktop")
+        self._settings = settings if settings is not None else QSettings("MusicBox", "Desktop")
         self._language_setting = self._settings.value("language", "auto", str)
         if self._language_setting not in i18n.LANGUAGES: self._language_setting = "auto"
         i18n.set_language(self._language_setting)
@@ -259,6 +261,10 @@ class MusicBoxBridge(QObject):
         self._artist_error = ""
         self._artist_gen = self._album_gen = 0
         self._online_queue, self._online_index = [], -1
+        self._online_original = []
+        self._online_generation = 0
+        self._stream_generation = 0
+        self._online_waiting = False
         try:
             self._artist_directory = dict(json.loads(self._settings.value("artistDirectory", "{}", str) or "{}"))
         except (TypeError, ValueError):
@@ -286,17 +292,21 @@ class MusicBoxBridge(QObject):
         self._authResult.connect(self._apply_auth_result)
         self._remotePlaylists.connect(self._apply_remote_playlists)
         self._sync_base = {}
+        self._sync_base_section = {}
+        self._cloud_sync_generation = 0
+        self._cloud_sync_lock = threading.Lock()
         self._devicesPolled.connect(self._apply_polled_devices)
         self._deviceRevoked.connect(self._device_revoked)
         self._device_timer = QTimer(self)
         self._device_timer.setInterval(45000)
         self._device_timer.timeout.connect(self._poll_devices)
         self._device_timer.start()
-        self.refresh()
-        if self._cloud.refresh_token:
-            threading.Thread(target=self._restore_session, daemon=True).start()
-        QTimer.singleShot(4000, self.checkForUpdate)
-        QTimer.singleShot(2500, self.refreshForYou)
+        if load_startup:
+            self.refresh()
+            if self._cloud.refresh_token:
+                threading.Thread(target=self._restore_session, daemon=True).start()
+            QTimer.singleShot(4000, self.checkForUpdate)
+            QTimer.singleShot(2500, self.refreshForYou)
 
     @Property("QVariantList", notify=searchResultsChanged)
     def searchResults(self):
@@ -304,6 +314,12 @@ class MusicBoxBridge(QObject):
 
     def _save_clicks(self):
         self._settings.setValue("clickStats", json.dumps(self._clicks_stats.export(), ensure_ascii=False, separators=(",", ":")))
+
+    @Slot()
+    def flushListening(self):
+        self._sample_listening()
+        self._save_clicks()
+        self._settings.sync()
 
     # --- Artistas: foto, canciones más escuchadas, todas sus canciones y discografía ---
 
@@ -503,22 +519,37 @@ class MusicBoxBridge(QObject):
         if not queue or not 0 <= self._online_index < len(queue) or queue[self._online_index].get("id") != video_id:
             self._online_queue, self._online_index = [dict(item)], 0
         self._autoplay_tried, self._autoplay_loading = video_id, True
+        generation = self._online_generation
 
         def work():
             try:
                 tracks = self._related_songs(video_id)
             except Exception:
                 tracks = []
-            self._autoplayReady.emit(video_id, tracks or [])
+            self._autoplayReady.emit(video_id, tracks or [], generation)
         threading.Thread(target=work, daemon=True).start()
 
-    @Slot(str, list)
-    def _apply_autoplay(self, video_id, tracks):
+    @Slot(str, list, int)
+    def _apply_autoplay(self, video_id, tracks, generation):
+        if generation != self._online_generation:
+            return
         self._autoplay_loading = False
         queue = self._online_queue
         if not self.autoplay or not queue or self._current.get("id") != video_id and queue[-1].get("id") != video_id:
             return
         queue.extend(pick_autoplay(tracks, [track.get("id") for track in queue]))
+        self.playerChanged.emit()
+        if self._online_waiting:
+            self._online_waiting = False
+            self._advance_online(1)
+
+    def _reset_online_queue(self):
+        self._online_generation += 1
+        self._online_queue, self._online_index, self._online_original = [], -1, []
+        self._autoplay_tried, self._autoplay_loading, self._online_waiting = "", False, False
+
+    def _online_queue_active(self):
+        return bool(self._online_queue and self._current.get("url") and not self._current.get("path"))
 
     def _advance_online(self, step):
         """Pasa a la siguiente (o anterior) canción de la lista online en curso. True si había una."""
@@ -526,9 +557,13 @@ class MusicBoxBridge(QObject):
         if not queue or not 0 <= self._online_index < len(queue) or self._current.get("id") != queue[self._online_index].get("id"):
             return False
         target = self._online_index + step
+        if self._repeat_mode == 1:
+            target %= len(queue)
         if 0 <= target < len(queue):
             self._online_index = target
             self._play_online(queue[target])
+        elif step > 0 and self._autoplay_loading:
+            self._online_waiting = True
         return True
 
     @Slot("QVariantList", int)
@@ -537,6 +572,7 @@ class MusicBoxBridge(QObject):
         queue = [dict(track) for track in (tracks or []) if track.get("url")]
         if not queue or not 0 <= index < len(queue):
             return
+        self._reset_online_queue()
         self._online_queue, self._online_index = queue, index
         self._play_online(queue[index])
 
@@ -847,10 +883,10 @@ class MusicBoxBridge(QObject):
     def currentTrack(self): return self._current
 
     @Property("QVariantList", notify=playerChanged)
-    def queue(self): return self._queue
+    def queue(self): return self._online_queue if self._online_queue_active() else self._queue
 
     @Property(int, notify=playerChanged)
-    def queueIndex(self): return self._queue_index
+    def queueIndex(self): return self._online_index if self._online_queue_active() else self._queue_index
 
     @Property(int, notify=playerChanged)
     def repeatMode(self): return self._repeat_mode
@@ -969,6 +1005,16 @@ class MusicBoxBridge(QObject):
     def _save_playlists(self):
         ordered = [key for key in self._playlists.get("Favoritos", []) if key in self._favorites]
         self._playlists["Favoritos"] = ordered + [key for key in sorted(self._favorites) if key not in ordered]
+        previous = self._settings.value("playlistsData", "{}", str)
+        try:
+            before = json.loads(previous or "{}")
+            if before and before != self._playlists:
+                backups = json.loads(self._settings.value("playlistBackups", "[]", str) or "[]")
+                backups.append({"at": int(time.time() * 1000), "playlists": before,
+                                "onlineTracks": json.loads(self._settings.value("onlineTracksData", "{}", str) or "{}")})
+                self._settings.setValue("playlistBackups", json.dumps(backups[-10:]))
+        except (TypeError, ValueError, AttributeError):
+            pass
         self._settings.setValue("playlistsData", json.dumps(self._playlists))
         self._settings.setValue("onlineTracksData", json.dumps(self._online_tracks))
         self._settings.setValue("autoDownloadPlaylists", list(self._auto_download_playlists))
@@ -1356,6 +1402,16 @@ class MusicBoxBridge(QObject):
             state = result.get("state") or {}
             self._cloud_snapshot = dict(state)
             self._sync_base = {"remote": self._section_hash(state.get("playlists")), "local": None}
+            self._sync_base_section = deepcopy(state.get("playlists") or {})
+            if self._settings.value("lastFirebaseUid", "", str) == uid:
+                try:
+                    saved_base = json.loads(self._settings.value("playlistSyncBase/" + uid, "null", str) or "null")
+                    if isinstance(saved_base, dict) and isinstance(state.get("playlists"), dict):
+                        state = dict(state, playlists=playlist_sync.merge_playlists(
+                            saved_base, self._cloud_state().get("playlists"), state["playlists"]))
+                except (TypeError, ValueError):
+                    pass
+            self._settings.setValue("playlistSyncBase/" + uid, json.dumps(self._sync_base_section))
             devices = self._cloud_snapshot.get("devices")
             if not isinstance(devices, dict): devices = {}
             devices[self._device_id] = {"name": platform.node() or "Este PC", "platform": "Windows", "lastSeen": int(time.time() * 1000)}
@@ -1509,34 +1565,56 @@ class MusicBoxBridge(QObject):
     def _schedule_cloud_save(self):
         if not self._user:
             return
-        state = self._cloud_state()
-        local_hash = self._section_hash(state.get("playlists"))
+        self._cloud_sync_generation += 1
+        generation = self._cloud_sync_generation
+        uid = self._user.get("uid")
+        state = deepcopy(self._cloud_state())
+        baseline = deepcopy(self._sync_base_section)
+
         def worker():
-            try:
-                remote = self._cloud.load_state() or {}
-                # Los clics de los demás dispositivos se mezclan antes de guardar para no pisarlos.
-                if self._clicks_stats.merge(remote.get("clicks")):
-                    self._save_clicks()
-                state["clicks"] = self._clicks_stats.export()
-                base = self._sync_base
-                remote_hash = self._section_hash(remote.get("playlists"))
-                if (base.get("local") is not None and remote.get("playlists") is not None
-                        and remote_hash != base.get("remote") and local_hash == base.get("local")):
-                    # Otro dispositivo cambió las playlists y aquí no hubo cambios: se adoptan en vez de pisarlas.
-                    state["playlists"] = remote["playlists"]
-                    self._remotePlaylists.emit(remote["playlists"])
-                    base["remote"], base["local"] = remote_hash, None
-                else:
-                    self._cloud.save_state(state)
-                    base["remote"], base["local"] = self._section_hash(state.get("playlists")), local_hash
-            except Exception:
-                pass
+            with self._cloud_sync_lock:
+                if generation != self._cloud_sync_generation or self._user.get("uid") != uid:
+                    return
+                try:
+                    def update(remote):
+                        if self._user.get("uid") != uid:
+                            raise RuntimeError("La sesión cambió durante la sincronización")
+                        merged = dict(remote)
+                        for key in ("schema", "darkMode", "library", "recentPlayed", "recentQueries"):
+                            merged[key] = state[key]
+                        merged["playlists"] = playlist_sync.merge_playlists(
+                            baseline, state.get("playlists"), remote.get("playlists"))
+                        merged["favorites"] = merged["playlists"].get("playlists", {}).get("Favoritos", [])
+                        self._clicks_stats.merge(remote.get("clicks"))
+                        merged["clicks"] = self._clicks_stats.export()
+                        devices = dict(remote.get("devices") or {})
+                        devices[self._device_id] = state["devices"][self._device_id]
+                        merged["devices"] = devices
+                        playlist_sync.append_audit(merged, remote.get("playlists"), merged["playlists"],
+                                                   self._device_id, "Windows", int(time.time() * 1000))
+                        return merged
+
+                    synced = self._cloud.update_state(update)
+                    self._remotePlaylists.emit({"syncedPlaylists": synced["playlists"],
+                                               "localSnapshot": state["playlists"], "uid": uid})
+                except Exception:
+                    # Se conserva la copia local. La siguiente interacción vuelve a intentar sincronizar.
+                    pass
         threading.Thread(target=worker, daemon=True).start()
 
     @Slot(object)
     def _apply_remote_playlists(self, data):
         if not isinstance(data, dict):
             return
+        incoming = data.get("syncedPlaylists", data)
+        if "uid" in data and data["uid"] != self._user.get("uid"):
+            return
+        current = self._cloud_state().get("playlists", {})
+        baseline = data.get("localSnapshot", self._sync_base_section)
+        self._sync_base_section = deepcopy(incoming)
+        if self._user.get("uid"):
+            self._settings.setValue("playlistSyncBase/" + self._user["uid"], json.dumps(incoming))
+        data = playlist_sync.merge_playlists(baseline, current, incoming)
         if isinstance(data.get("playlists"), dict):
             self._playlists = dict(data["playlists"])
             self._playlists.setdefault("Favoritos", [])
@@ -1550,12 +1628,15 @@ class MusicBoxBridge(QObject):
         self._save_playlists()
         self._settings.setValue("favorites", list(self._favorites))
         self._sync_base["local"] = self._section_hash(self._cloud_state().get("playlists"))
+        self._save_clicks()
         self._unify_playlists()
         self.playlistsChanged.emit()
         self._apply_library_view()
         self.discoveryChanged.emit()
         self.playerChanged.emit()
         self._reconcile_auto_downloads()
+        if data != incoming:
+            self._schedule_cloud_save()
 
     @Slot()
     def toggleTheme(self):
@@ -2248,7 +2329,8 @@ class MusicBoxBridge(QObject):
         self._sample_listening()
         self._listening_sample = None
         self._listening_started = False
-        self._online_queue = []
+        self._reset_online_queue()
+        self._stream_generation += 1
         path = item.get("path", "")
         self._current = item
         self._recorded_source = ""
@@ -2285,8 +2367,7 @@ class MusicBoxBridge(QObject):
 
     @Slot("QVariantMap")
     def playOnline(self, track):
-        self._online_queue = []
-        self._play_online(track)
+        self.playOnlineList([track], 0)
 
     def _play_online(self, track):
         self._sample_listening()
@@ -2295,6 +2376,10 @@ class MusicBoxBridge(QObject):
         item = dict(track or {})
         url = item.get("url", "")
         if not url: return
+        self._stream_generation += 1
+        item["_stream_generation"] = self._stream_generation
+        self._online_waiting = False
+        self._player.stop()
         self._current = item
         self._recorded_source = ""
         self._current.setdefault("artist", item.get("subtitle", "YouTube"))
@@ -2308,12 +2393,12 @@ class MusicBoxBridge(QObject):
             try:
                 info = youtube_streams.resolve_stream(url, self._extract_info)
                 stream = info.get("url", "")
-                self._current.update(title=info.get("track") or info.get("title") or self._current.get("title"),
-                                     artist=info.get("artist") or info.get("uploader") or self._current.get("artist"),
+                item.update(title=info.get("track") or info.get("title") or item.get("title"),
+                                     artist=info.get("artist") or info.get("uploader") or item.get("artist"),
                                      album=info.get("album") or "Streaming")
             except Exception as exc:
                 error = str(exc).splitlines()[-1]
-            self._streamReady.emit(dict(self._current), stream or error)
+            self._streamReady.emit(item, stream or error)
         threading.Thread(target=resolve, daemon=True).start()
 
     @staticmethod
@@ -2344,6 +2429,8 @@ class MusicBoxBridge(QObject):
 
     @Slot(object, str)
     def _play_stream(self, track, source):
+        if track.get("_stream_generation") != self._stream_generation:
+            return
         if Path(source).is_file():
             self._current = dict(track)
             self._player.setSource(QUrl.fromLocalFile(source))
@@ -2424,7 +2511,21 @@ class MusicBoxBridge(QObject):
     def toggleShuffle(self):
         self._shuffle = not self._shuffle
         self._settings.setValue("shuffleOn", "true" if self._shuffle else "false")
-        if self._queue:
+        if self._online_queue_active():
+            current_id = self._current.get("id")
+            if self._shuffle:
+                self._online_original = list(self._online_queue)
+                current = self._online_queue[self._online_index]
+                rest = self._online_queue[:self._online_index] + self._online_queue[self._online_index + 1:]
+                random.shuffle(rest)
+                self._online_queue = [current] + rest
+            else:
+                by_id = {row.get("id"): row for row in self._online_queue}
+                ordered = [by_id.pop(row.get("id")) for row in self._online_original if row.get("id") in by_id]
+                self._online_queue = ordered + list(by_id.values())
+                self._online_original = []
+            self._online_index = next(i for i, row in enumerate(self._online_queue) if row.get("id") == current_id)
+        elif self._queue:
             self._shuffle_queue() if self._shuffle else self._restore_queue_order()
         self.playerChanged.emit()
 
@@ -2440,6 +2541,13 @@ class MusicBoxBridge(QObject):
 
     @Slot(int, int)
     def moveQueueItem(self, source, target):
+        if self._online_queue_active():
+            if 0 <= source < len(self._online_queue) and 0 <= target < len(self._online_queue):
+                current = self._online_queue[self._online_index]
+                self._online_queue.insert(target, self._online_queue.pop(source))
+                self._online_index = self._online_queue.index(current)
+                self.playerChanged.emit()
+            return
         count = len(self._queue)
         if not (0 <= source < count and 0 <= target < count) or source == target:
             return
@@ -2449,6 +2557,13 @@ class MusicBoxBridge(QObject):
 
     @Slot(int)
     def removeQueueItem(self, index):
+        if self._online_queue_active():
+            if 0 <= index < len(self._online_queue) and index != self._online_index:
+                current = self._online_queue[self._online_index]
+                del self._online_queue[index]
+                self._online_index = self._online_queue.index(current)
+                self.playerChanged.emit()
+            return
         if not (0 <= index < len(self._queue)) or index == self._queue_index:
             return
         del self._queue[index]
@@ -2457,6 +2572,13 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def clearQueue(self):
+        if self._online_queue_active():
+            current = self._online_queue[self._online_index]
+            self._reset_online_queue()
+            self._online_queue, self._online_index = [current], 0
+            self._autoplay_tried = current.get("id", "")
+            self.playerChanged.emit()
+            return
         if 0 <= self._queue_index < len(self._queue):
             self._queue = [self._queue[self._queue_index]]
             self._queue_index = 0
@@ -2492,6 +2614,11 @@ class MusicBoxBridge(QObject):
 
     @Slot(int)
     def playQueueIndex(self, index):
+        if self._online_queue_active():
+            if 0 <= index < len(self._online_queue):
+                self._online_index = index
+                self._play_online(self._online_queue[index])
+            return
         if 0 <= index < len(self._queue):
             self._queue_index = index
             self._start_local_track(dict(self._queue[index]))
@@ -2544,9 +2671,10 @@ class MusicBoxBridge(QObject):
     @Slot()
     def _media_status(self):
         if self._player.mediaStatus() != QMediaPlayer.EndOfMedia: return
-        if self._advance_online(1): return
         if self._repeat_mode == 2 and self._current:
             self._player.setPosition(0); self._player.play()
+        elif self._advance_online(1):
+            return
         elif self._repeat_mode == 1 or self._queue_index + 1 < len(self._queue):
             self.skip(1)
 
@@ -2586,7 +2714,15 @@ def main():
     if icon.is_file():
         app.setWindowIcon(QIcon(str(icon)))
     engine = QQmlApplicationEngine()
-    bridge = MusicBoxBridge()
+    smoke_directory = None
+    if "--smoke-test" in sys.argv:
+        import tempfile
+        smoke_directory = tempfile.TemporaryDirectory(prefix="musicbox-smoke-")
+        smoke_settings = QSettings(str(Path(smoke_directory.name) / "settings.ini"), QSettings.IniFormat)
+        bridge = MusicBoxBridge(settings=smoke_settings, load_startup=False)
+    else:
+        bridge = MusicBoxBridge()
+    app.aboutToQuit.connect(bridge.flushListening)
     translator = i18n.Translator(app)
     app.installTranslator(translator)
     bridge.attach_engine(engine)
@@ -2598,7 +2734,18 @@ def main():
     engine.load(QUrl.fromLocalFile(str(CODE_DIR / "ui" / "Main.qml")))
     if not engine.rootObjects():
         return 1
-    return app.exec()
+    if smoke_directory is not None:
+        QTimer.singleShot(1200, app.quit)
+    result = app.exec()
+    if smoke_directory is not None:
+        bridge._listening_timer.stop()
+        bridge._device_timer.stop()
+        engine.deleteLater()
+        from PySide6.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        bridge._settings.sync()
+        smoke_directory.cleanup()
+    return result
 
 
 if __name__ == "__main__":

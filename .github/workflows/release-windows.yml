@@ -13,10 +13,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+      - name: Validar versión consecutiva
+        run: python scripts/check_version.py
       - name: Validar secretos de compilación
         shell: pwsh
         env:
@@ -46,13 +50,25 @@ jobs:
           $ffmpeg = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Filter ffmpeg.exe -Recurse -File | Select-Object -First 1
           if (-not $ffmpeg) { throw "WinGet instaló FFmpeg, pero no se encontró ffmpeg.exe" }
           Copy-Item $ffmpeg.FullName ffmpeg.exe
+      - name: Probar escritorio antes de empaquetar
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = (Resolve-Path "apps/desktop").Path
+          $env:PYTHONIOENCODING = "utf-8"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          python -m unittest discover -s tests/desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compilar ejecutable
         run: pyinstaller --noconfirm --clean packaging/windows/musicbox.spec
       - name: Probar ejecutable
         shell: pwsh
         run: |
-          $process = Start-Process -FilePath "dist/MusicBox/MusicBox.exe" -ArgumentList "--version" -PassThru -Wait
+          $process = Start-Process -FilePath "dist/MusicBox/MusicBox.exe" -ArgumentList "--version" -WindowStyle Hidden -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "MusicBox.exe no superó la prueba" }
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $process = Start-Process -FilePath "dist/MusicBox/MusicBox.exe" -ArgumentList "--smoke-test" -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw "La prueba aislada de interfaz no terminó" }
+          if ($process.ExitCode -ne 0) { throw "MusicBox.exe no pudo cargar su interfaz QML" }
       - name: Compilar instalador
         shell: pwsh
         run: |
@@ -87,3 +103,4 @@ jobs:
             dist/installer/MusicBox-Windows-Portable.zip.sha256
           body_path: release-notes.md
           fail_on_unmatched_files: true
+          draft: true

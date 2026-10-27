@@ -464,6 +464,14 @@ public final class Tr {
         m.put("%d resultados", "%d results");
         m.put("%d a\u00f1adidos a la cola \u00b7 %d ya estaban", "%d added to the queue \u00b7 %d were already there");
         m.put("1 ya existía", "1 already existed");
+        m.put("Leer imagen", "Read image");
+        m.put("Leyendo imagen…", "Reading image…");
+        m.put("No se encontró texto. Prueba con una imagen más nítida.", "No text found. Try a clearer image.");
+        m.put("No se pudo leer la imagen. Prueba con otra.", "Couldn't read the image. Try another one.");
+        m.put("Revisar texto de la imagen", "Review image text");
+        m.put("Corrige los títulos y artistas antes de añadirlos a tu lista.", "Correct titles and artists before adding them to your list.");
+        m.put("Añadir a la lista", "Add to list");
+        m.put("Descarga en cola", "Download queued");
         m.put("%d\u2013%d de %d", "%d\u2013%d of %d");
     }
 

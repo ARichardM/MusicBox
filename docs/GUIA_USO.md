@@ -1,4 +1,4 @@
-# Guía completa de Descargador
+# Guía de MusicBox y Descargador
 
 [Volver al README](../README.md)
 
@@ -327,4 +327,47 @@ Se abre desde tu **perfil → Descargador** y tiene tres pestañas.
 
 En **Inicio**, sin escribir en la búsqueda, ves **Para ti**. Se calcula con lo que escuchas últimamente: se toman tus canciones favoritas del momento, se piden a YouTube Music las parecidas y se mezclan; una canción que aparece en varias listas sube. Son siempre **canciones de audio**, nunca videoclips ni videos subidos por otras personas. El botón de actualizar vuelve a calcularla.
 
+La lista se calcula al abrir la app y al pulsar **Actualizar**. Reproducir canciones, sincronizar o volver desde otra pantalla no la cambia. Actualizar solicita recomendaciones nuevas incluso si hay resultados recientes en caché; si no hay conexión, se conserva la última lista disponible.
+
 **Artistas para ti** muestra a cada artista con su foto. Al tocarlo se abre su página con sus **canciones más escuchadas**, el botón **Ver todas sus canciones**, sus **álbumes** y sus **sencillos y EPs**. Tocar un álbum abre sus pistas, y tocar una canción reproduce la lista como cola.
+
+## Cola y reproducción automática
+
+Abre la **Cola** desde el reproductor. En Windows muestra la lista local u online que está sonando; en Android admite ambas fuentes en la misma cola. Pulsa una canción para saltar a ella, arrastra el asa para cambiar el orden o usa **×** para quitar una entrada. **Limpiar cola** conserva la canción actual. Aleatorio mezcla la lista sin cortar la reproducción y, al desactivarlo, recupera su orden; repetición permite repetir la cola o la canción actual.
+
+El interruptor **Reproducción automática** busca canciones parecidas al llegar al final de una cola online. Excluye las que ya están en la cola y las mezclas de más de diez minutos. Necesita conexión; sin resultados, la reproducción termina. Si no quieres que la cola crezca, desactiva el interruptor. **Repetir canción** conserva la canción actual.
+
+## Seleccionar, ordenar y eliminar en Android
+
+En **Mi música → Canciones**, o dentro de una carpeta o playlist, mantén pulsada una canción. Toca otras filas para agregarlas a la selección. **Todas** selecciona las canciones visibles según el filtro; volver a pulsarlo las desmarca. La barra permite reproducirlas, ponerlas después de la actual, agregarlas al final de la cola o a una playlist y eliminarlas del dispositivo. Pulsa **×** o Atrás para salir de la selección. Durante la selección, la barra ocupa el espacio de la navegación y del minirreproductor.
+
+El botón de orden permite elegir **Orden original**, **Título**, **Artista**, **Más recientes**, **Más escuchadas** o **Más cortas**. Toca otra vez el criterio activo para invertirlo. La app recuerda el criterio y el sentido al abrirla de nuevo.
+
+**Eliminar del dispositivo** muestra una confirmación con la cantidad de canciones y el espacio que ocupan. Para los archivos que no pertenecen a MusicBox, Android puede mostrar un segundo diálogo de permiso. Cancelarlo conserva los archivos. Solo lo que se eliminó correctamente se retira de las playlists, el historial de escucha y la cola. Las canciones online no ocupan espacio local y no se borran con esta acción.
+
+Al retirar MusicBox de **Recientes**, la música se detiene y desaparece la notificación del reproductor. La app recuerda la posición para retomarla. Las descargas tienen su propio servicio y continúan con su notificación; usa **Cancelar** si quieres detenerlas. Forzar la detención desde Ajustes, reiniciar o apagar el teléfono interrumpe el trabajo. La cola pendiente no se recupera automáticamente después de una detención del proceso; los archivos ya terminados y su historial se conservan.
+
+## Capturas y enlaces compartidos en Android
+
+En el importador, pulsa **Leer imagen** y elige una captura o foto con tu lista. MusicBox reconoce el texto en el dispositivo con el modelo incluido, sin enviar la imagen para reconocimiento ni necesitar conexión. Revisa títulos y artistas, corrige lo necesario y pulsa **Añadir a la lista**. El texto anterior se conserva; **Cancelar** descarta el resultado. La búsqueda posterior de coincidencias en YouTube sí requiere conexión.
+
+Desde YouTube u otra aplicación, usa **Compartir → MusicBox**. Se abre el descargador con el texto recibido, donde puedes revisar enlaces, formato y calidad antes de iniciar. Las descargas rápidas de búsqueda, biblioteca y reproductor usan la misma cola que el descargador y aparecen en su historial y registro.
+
+## Estadísticas de escucha
+
+En el perfil, abre **Tu música en cifras**. Muestra las reproducciones, el tiempo escuchado y las canciones y playlists más escuchadas. El tiempo solo aumenta mientras la reproducción avanza: las pausas, la espera de carga y los saltos de posición no se cuentan. Las reproducciones antiguas se conservan, pero su tiempo anterior a esta función no puede reconstruirse. La actividad de una playlist corresponde a escuchar desde ella, no simplemente a tener allí una canción.
+
+## Sincronización y respaldos de playlists
+
+Las playlists se guardan como datos de MusicBox; no se reconstruyen automáticamente
+desde las carpetas del equipo. Desde 2.3.3, los cambios locales se combinan con los
+de la cuenta usando la última versión conocida por cada dispositivo. Una copia
+antigua no borra las canciones añadidas desde otro equipo. Las eliminaciones que
+hiciste expresamente sí se sincronizan. Si dos dispositivos editan al mismo tiempo,
+la escritura vuelve a leer el estado actual antes de guardar.
+
+Se conservan diez instantáneas locales anteriores y un registro reciente de cambios
+de playlists con el dispositivo y los contadores de canciones afectadas. Estos
+respaldos no se restauran automáticamente ni pueden recuperar un historial que no
+existía antes de esta versión. Conviene actualizar todos los dispositivos para
+que todos usen las nuevas protecciones.

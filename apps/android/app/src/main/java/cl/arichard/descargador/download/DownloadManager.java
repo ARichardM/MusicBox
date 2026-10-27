@@ -116,8 +116,9 @@ public final class DownloadManager {
             int position = 0;
             List<String> fresh = new ArrayList<>();
             for (String url : urls) {
-                boolean duplicate = false;
-                for (DownloadJob job : jobs) if (!job.status.isFinished() && job.url.equals(url)) duplicate = true;
+                boolean duplicate = fresh.contains(url);
+                for (DownloadJob job : jobs) if (!job.status.isFinished() && job.url.equals(url)
+                        && job.options.mp3 == options.mp3 && job.options.destination.equals(options.destination)) duplicate = true;
                 if (!duplicate) fresh.add(url);
             }
             for (String url : fresh) {
@@ -229,15 +230,20 @@ public final class DownloadManager {
     private void process(DownloadJob job) throws Exception {
         OutputParser parser = new OutputParser(job.options.mp3);
         DownloadProgress stages = new DownloadProgress();
-        job.status = DownloadJob.Status.PREPARING;
+        synchronized (this) {
+            if (job.status != DownloadJob.Status.WAITING) return;
+            job.status = DownloadJob.Status.PREPARING;
+        }
         job.progress = stages.current();
         changed(true);
 
         DescargadorApp app = (DescargadorApp) context.getApplicationContext();
         if (!app.awaitReady(120)) {
+            if (job.cancelRequested) { job.status = DownloadJob.Status.CANCELLED; changed(true); return; }
             fail(job, app.getInitError() == null ? "yt-dlp no está listo" : app.getInitError());
             return;
         }
+        if (job.cancelRequested) { job.status = DownloadJob.Status.CANCELLED; changed(true); return; }
         File destination = new File(job.options.destination);
         if (!destination.isDirectory() && !destination.mkdirs()) { fail(job, "No se pudo crear la carpeta de destino"); return; }
 
