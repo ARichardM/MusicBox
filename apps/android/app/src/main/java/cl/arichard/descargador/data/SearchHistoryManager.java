@@ -19,6 +19,8 @@ public class SearchHistoryManager {
     private static final String KEY_PLAY_COUNTS = "play_counts";
 
     private static SearchHistoryManager instance;
+    private static final java.util.regex.Pattern FILE_VIDEO_ID =
+            java.util.regex.Pattern.compile("\\[([A-Za-z0-9_-]{11})\\]\\.[^.]+$");
     private final SharedPreferences prefs;
     private Runnable changeListener;
 
@@ -153,10 +155,19 @@ public class SearchHistoryManager {
 
     // 3. Top Most Played Songs from library
     public List<Song> getTopPlayed(List<Song> allSongs, int limit) {
-        if (allSongs == null || allSongs.isEmpty()) return new ArrayList<>();
-        List<Song> copy = new ArrayList<>(allSongs);
+        if (allSongs == null || allSongs.isEmpty() || limit <= 0) return new ArrayList<>();
         ClickStats stats = ClickStats.getInstance(appContext);
-        copy.removeIf(song -> stats.count(song) <= 0);
+        PlaylistManager playlists = PlaylistManager.getInstance(appContext);
+        java.util.Map<String, Song> unique = new java.util.LinkedHashMap<>();
+        for (Song song : allSongs) {
+            if (song == null || stats.count(song) <= 0) continue;
+            String key = libraryIdentity(song, playlists);
+            Song previous = unique.get(key);
+            if (previous == null || metadataQuality(song) > metadataQuality(previous)
+                    || (metadataQuality(song) == metadataQuality(previous) && stats.count(song) > stats.count(previous)))
+                unique.put(key, song);
+        }
+        List<Song> copy = new ArrayList<>(unique.values());
 
         // Sort by play count descending; if tie, sort by dateAdded descending
         Collections.sort(copy, (a, b) -> {
@@ -172,5 +183,33 @@ public class SearchHistoryManager {
             return new ArrayList<>(copy.subList(0, limit));
         }
         return copy;
+    }
+
+    /** Display-only identity: never changes files, playlists or the stored play counters. */
+    private static String libraryIdentity(Song song, PlaylistManager playlists) {
+        if (song.isOnline()) return song.getPath();
+        String id = playlists.videoIdFor(song.getPath());
+        if (id == null && song.getPath() != null) {
+            java.util.regex.Matcher match = FILE_VIDEO_ID.matcher(song.getPath());
+            if (match.find()) id = match.group(1);
+        }
+        // An explicit video id keeps different recordings with the same title separate.
+        if (id != null && !id.isEmpty()) return "youtube:" + id;
+        if (!knownArtist(song) || song.getDuration() <= 0) return "path:" + song.getPath();
+        return "metadata:" + ClickStats.normalizeLoose(song.getTitle()) + "\u0000"
+                + ClickStats.normalize(song.getArtist()) + "\u0000" + song.getDuration() / 1000;
+    }
+
+    private static boolean knownArtist(Song song) {
+        return song.getArtist() != null && !song.getArtist().trim().isEmpty()
+                && !"<unknown>".equals(song.getArtist())
+                && !cl.arichard.descargador.util.Tr.t("Artista desconocido").equals(song.getArtist());
+    }
+
+    private static int metadataQuality(Song song) {
+        int score = knownArtist(song) ? 4 : 0;
+        if (!song.getTitle().matches(".*\\[[A-Za-z0-9_-]{11}\\].*")) score += 2;
+        if (song.getDuration() > 0) score++;
+        return score;
     }
 }

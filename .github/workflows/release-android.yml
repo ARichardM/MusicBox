@@ -47,7 +47,7 @@ jobs:
           MUSICBOX_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           MUSICBOX_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           MUSICBOX_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew testPreviewUnitTest lintRelease assembleRelease --stacktrace
+        run: ./gradlew testVerificationUnitTest lintRelease assembleRelease --stacktrace
       - name: Preparar descarga
         shell: bash
         run: cp app/build/outputs/apk/release/app-release.apk ../../MusicBox-Android.apk

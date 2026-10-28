@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from app_paths import CODE_DIR, DATA_ROOT, RESOURCE_ROOT, worker_command
 
 APP_DIR = DATA_ROOT
-APP_VERSION = "2.3.3"
+APP_VERSION = "2.3.4"
 AUDIO_QUALITY = ("192 kbps", "128 kbps", "256 kbps", "320 kbps")
 VIDEO_QUALITY = ("1080p", "720p", "480p", "360p", "Mejor disponible")
 

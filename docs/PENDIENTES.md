@@ -1,9 +1,13 @@
 # Pendientes y estado del trabajo
 
-Actualizado el 28 de octubre de 2026. Cambios sin publicar sobre la base 2.3.3.
+Actualizado el 28 de octubre de 2026. Preparación de 2.3.4 sobre la última Release 2.3.3.
 
 ## Cierre de la revisión y trabajo entre equipos
 
+- Se corrige además la repetición de copias de la misma canción en «Más escuchadas»
+  sin borrar archivos, alterar playlists ni sumar los contadores de cada copia.
+  Suite ampliada: 176 unitarias Android y 13 escenarios físicos de regresión
+  correctos; ver `DUPLICADOS_MAS_ESCUCHADAS.md`.
 - Autoplay de «Thunder»: se confirmó que la radio del videoclip devuelve solo
   OMV y el filtro descartaba todas las entradas. Android y Windows resuelven ahora
   la versión de audio de la misma canción/artista y consultan su radio una vez.

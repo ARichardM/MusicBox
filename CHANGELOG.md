@@ -1,6 +1,6 @@
 # Historial de versiones
 
-## Sin publicar
+## 2.3.4 — 28 de octubre de 2026
 
 ### Windows
 
@@ -9,6 +9,7 @@
 
 ### Android
 
+- «Más escuchadas en tu biblioteca» muestra una sola entrada por canción aunque existan varias copias del mismo video en carpetas distintas. Se elige la copia con mejores metadatos, sin borrar archivos, modificar playlists ni multiplicar contadores.
 - Autoplay recupera radios de videoclips como «Thunder»: busca la misma canción y artista en el catálogo de audio antes de generar otra radio, sin aceptar covers ajenos ni repetir ambas versiones de la semilla. La misma corrección se aplica a Windows.
 - Mi música corrige el espacio vacío antes del shimmer y carga su biblioteca sin esperar actualizaciones de red del extractor. Reutiliza metadatos de archivos sin cambios y agrupa escaneos repetidos. Los avisos de descargas muestran un motivo breve, con el detalle técnico conservado en el registro.
 - Dispositivos conectados conserva las tarjetas al actualizar su actividad. Estadísticas actualiza cifras y filas sin reconstruir la pantalla ni perder desplazamiento o pestaña. Las portadas ya cargadas no repiten brillo o fundido, y los avisos de tiempo escuchado no fuerzan escaneos de biblioteca.

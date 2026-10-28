@@ -101,6 +101,31 @@ public class HomePolishDeviceTest {
 
     @After public void stopAudio() { action(player::stopAndRelease); }
 
+    @Test public void topLibraryShowsOneRowForThreeCopiesWithoutMutatingTheLibrary() throws Exception {
+        MainActivity activity = (MainActivity) launch(PreviewMainActivity.class);
+        waitFor(() -> main(() -> new androidx.lifecycle.ViewModelProvider(activity).get(MainUiState.class).libraryLoaded));
+        Field libraryField = MainActivity.class.getDeclaredField("allSongs"); libraryField.setAccessible(true);
+        Method render = MainActivity.class.getDeclaredMethod("populateTopLibrary"); render.setAccessible(true);
+        @SuppressWarnings("unchecked") List<Song> library = (List<Song>) libraryField.get(activity);
+        List<Song> original = main(() -> new ArrayList<>(library));
+        Song raw = new Song(1, "Muestra duplicada [dupFixture1]", null, "", 9000, "/fixture/a [dupFixture1].mp3", "A", 3);
+        Song tagged = new Song(2, "Muestra duplicada", "Artista de prueba", "", 9000, "/fixture/b [dupFixture1].mp3", "B", 2);
+        Song third = new Song(3, tagged.getTitle(), tagged.getArtist(), "", 9000, "/fixture/c [dupFixture1].mp3", "C", 1);
+        ClickStats stats = ClickStats.getInstance(context);
+        stats.record(tagged);
+        String before = stats.exportJson().toString();
+        try {
+            action(() -> { library.clear(); library.addAll(java.util.Arrays.asList(raw, tagged, third));
+                try { render.invoke(activity); } catch (Exception e) { throw new AssertionError(e); } });
+            Field listField = MainActivity.class.getDeclaredField("layoutTopLibraryList"); listField.setAccessible(true);
+            LinearLayout list = (LinearLayout) listField.get(activity);
+            assertEquals(1, (int) main(list::getChildCount));
+            assertEquals("Muestra duplicada", main(() -> ((TextView) list.getChildAt(0).findViewById(R.id.txtSongTitle)).getText().toString()));
+            assertEquals(3, (int) main(library::size));
+            assertEquals(before, stats.exportJson().toString());
+        } finally { action(() -> { library.clear(); library.addAll(original); activity.finish(); }); }
+    }
+
     @Test public void topCollectionsOpenCorrectSongsAndKeepEqualCardHeights() throws Exception {
         PlaylistManager manager = PlaylistManager.getInstance(context);
         for (String name : new String[]{SHORT, LONG}) {

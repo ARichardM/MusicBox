@@ -59,6 +59,61 @@ public class ClickStatsTest {
         return new Song(1, title, "Artista", "Album", 1000, "/music/" + title + ".mp3", "/music", 0);
     }
 
+    @Test public void topLibraryGroupsThreeCopiesWithoutChangingFilesOrCounters() throws Exception {
+        Application context = RuntimeEnvironment.getApplication();
+        ClickStats stats = ClickStats.getInstance(context); stats.resetForAccount();
+        Song raw = new Song(1, "Anly - Karanokokoro [K8kjo96CJmg]", null, "", 273072,
+                "/Music/MiMusica/Anly - Karanokokoro [K8kjo96CJmg].mp3", "MiMusica", 3);
+        Song tagged = new Song(2, "Anly - Karanokokoro", "Anly Official YouTube Channel", "", 273072,
+                "/Music/Chillv2/013 - Anly - Karanokokoro [K8kjo96CJmg].mp3", "Chillv2", 2);
+        Song privateCopy = new Song(3, tagged.getTitle(), tagged.getArtist(), "", 273072,
+                "/Android/data/verification/files/Music/Anly - Karanokokoro [K8kjo96CJmg].mp3", "Music", 1);
+        stats.record(tagged);
+        java.util.List<Song> library = java.util.Arrays.asList(raw, tagged, privateCopy);
+        String before = stats.exportJson().toString();
+        java.util.List<Song> top = cl.arichard.descargador.data.SearchHistoryManager.getInstance(context).getTopPlayed(library, 5);
+        assertEquals(1, top.size());
+        assertSame(tagged, top.get(0));
+        assertEquals(3, library.size());
+        assertEquals(before, stats.exportJson().toString());
+        assertEquals(1, stats.count(tagged));
+    }
+
+    @Test public void topLibraryDoesNotMergeDifferentArtistsOrExplicitVideoIds() {
+        Application context = RuntimeEnvironment.getApplication();
+        ClickStats stats = ClickStats.getInstance(context); stats.resetForAccount();
+        Song a = new Song(1, "Tema", "Artista", "", 1000, "/a [abcdefghijk].mp3", "", 0);
+        Song b = new Song(2, "Tema", "Artista", "", 1000, "/b [12345678901].mp3", "", 0);
+        Song c = new Song(3, "Tema", "Otro artista", "", 1000, "/c.mp3", "", 0);
+        stats.record(a); stats.record(b); stats.record(c);
+        assertEquals(3, cl.arichard.descargador.data.SearchHistoryManager.getInstance(context)
+                .getTopPlayed(java.util.Arrays.asList(a, b, c), 5).size());
+    }
+
+    @Test public void topLibraryGroupsLinkedCopiesAndAppliesLimitAfterGrouping() {
+        Application context = RuntimeEnvironment.getApplication();
+        ClickStats stats = ClickStats.getInstance(context); stats.resetForAccount();
+        Song a = song("Linked"), b = new Song(2, "Linked", "Artista", "", 1000, "/copies/linked.mp3", "", 0);
+        cl.arichard.descargador.data.PlaylistManager manager = cl.arichard.descargador.data.PlaylistManager.getInstance(context);
+        manager.linkLocalFile(a.getPath(), "linked-test"); manager.linkLocalFile(b.getPath(), "linked-test");
+        Song other = song("Other"); stats.record(a); stats.record(a); stats.record(other);
+        cl.arichard.descargador.data.SearchHistoryManager history = cl.arichard.descargador.data.SearchHistoryManager.getInstance(context);
+        assertEquals(2, history.getTopPlayed(java.util.Arrays.asList(a, b, other), 2).size());
+        assertTrue(history.getTopPlayed(java.util.Arrays.asList(a, b), 0).isEmpty());
+    }
+
+    @Test public void topLibraryKeepsUnknownFilesAndDifferentVersionsSeparate() {
+        Application context = RuntimeEnvironment.getApplication();
+        ClickStats stats = ClickStats.getInstance(context); stats.resetForAccount();
+        Song studio = new Song(1, "Tema", "Artista", "", 10000, "/studio.mp3", "", 0);
+        Song live = new Song(2, "Tema [Live]", "Artista", "", 10000, "/live.mp3", "", 0);
+        Song unknownA = new Song(3, "Tema", null, "", 10000, "/unknown-a.mp3", "", 0);
+        Song unknownB = new Song(4, "Tema", null, "", 10000, "/unknown-b.mp3", "", 0);
+        stats.record(studio);
+        assertEquals(4, cl.arichard.descargador.data.SearchHistoryManager.getInstance(context)
+                .getTopPlayed(java.util.Arrays.asList(studio, live, unknownA, unknownB), 5).size());
+    }
+
     @Test public void titleKeyMatchesDesktopNormalization() {
         assertEquals("cancion nandu", ClickStats.normalize("Canción  Ñandú [HD]"));
         assertEquals(ClickStats.keyOf(song("Post Malone - Circles")), ClickStats.keyOf(song("post malone – CIRCLES (Official Video)")));
