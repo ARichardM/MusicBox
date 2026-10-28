@@ -1,6 +1,9 @@
 # Pendientes y estado del trabajo
 
-Actualizado el 28 de octubre de 2026. Preparación de 2.3.4 sobre la última Release 2.3.3.
+Actualizado el 28 de octubre de 2026. Versión 2.3.4 publicada para Android y Windows.
+
+Informe de compilaciones, pruebas, firmas y descargas verificadas:
+[`PUBLICACION_2.3.4.md`](PUBLICACION_2.3.4.md).
 
 ## Cierre de la revisión y trabajo entre equipos
 
@@ -106,11 +109,12 @@ La clave ya fue transferida y validada en el PC. Procedimiento entre equipos:
 - [ ] Conservar y respaldar fuera de Git la clave de firma de pruebas que se
   quiera reutilizar entre equipos. Una firma nueva exige reinstalar esa variante
   o disponer de la clave anterior para actualizarla conservando su instalación.
-- [ ] Preparar la siguiente publicación solo cuando se solicite: consultar la
-  última versión publicada, incrementar el parche una unidad, alinear Android,
-  Windows, instalador, metadatos y changelog, y repetir las comprobaciones y
-  compilaciones de distribución necesarias. No se creó una etiqueta ni una
-  Release para estos cambios; el changelog permanece en **Sin publicar**.
+- [x] Publicar 2.3.4 tras confirmar la base pública 2.3.3, alinear versiones y
+  comprobar compilaciones y pruebas. Etiqueta `v2.3.4`, APK firmado, instalador
+  y portable públicos con sumas SHA-256 verificadas. Se comprobó la continuidad
+  del certificado Android. No se publica la clave privada.
+- [ ] Preparar futuras publicaciones solo cuando se soliciten; la siguiente
+  después de 2.3.4 es 2.3.5 salvo indicación explícita distinta.
 
 ## Cambios realizados fuera del código
 

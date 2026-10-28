@@ -26,4 +26,5 @@ conserven sus tres entradas y los contadores originales.
 Resultado: suite Android de 176 pruebas unitarias correcta. Trece escenarios
 físicos de interfaz, estabilidad y carga correctos juntos (41,845 s), sin casos
 omitidos ni reintentos. Registro local: `build/duplicates-device-20261028.txt`.
-La publicación espera además las compilaciones de distribución y sus controles.
+Las compilaciones y controles de distribución posteriores terminaron correctamente;
+2.3.4 ya está publicada. Detalles en `PUBLICACION_2.3.4.md`.
