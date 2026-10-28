@@ -26,6 +26,51 @@ def fake_api(**responses):
 
 
 class RelatedTest(unittest.TestCase):
+    @staticmethod
+    def panel(video_id, kind="ATV"):
+        return {"playlistPanelVideoRenderer": {
+            "videoId": video_id, "title": {"runs": [{"text": "Thunder"}]},
+            "longBylineText": {"runs": [{"text": "Imagine Dragons"}]},
+            "lengthText": {"simpleText": "3:00"},
+            "musicVideoType": "MUSIC_VIDEO_TYPE_" + kind}}
+
+    def test_video_radio_uses_audio_counterpart_without_duplicates_or_seed(self):
+        calls = []
+        def api(endpoint, body):
+            calls.append((endpoint, body))
+            if endpoint == "search":
+                data = load("search_songs")
+                # Reuse the actual search renderer shape, with our controlled identity.
+                row = next(ytmusic.walk(data, "musicResponsiveListItemRenderer"))
+                row["playlistItemData"]["videoId"] = "audio"
+                row["flexColumns"][0]["musicResponsiveListItemFlexColumnRenderer"]["text"]["runs"] = [{"text": "Thunder"}]
+                row["flexColumns"][1]["musicResponsiveListItemFlexColumnRenderer"]["text"]["runs"] = [{"text": "Imagine Dragons"}]
+                return {"musicResponsiveListItemRenderer": row}
+            if body["videoId"] == "audio":
+                return {"contents": [self.panel("audio"), self.panel("video"), self.panel("related"),
+                                     self.panel("related"), self.panel("clip", "OMV")]}
+            return {"contents": [self.panel("video", "OMV")]}
+        tracks = ytmusic.related("video", api=api)
+        self.assertEqual([t["id"] for t in tracks], ["related"])
+        self.assertEqual([c[0] for c in calls], ["next", "search", "next"])
+        self.assertEqual(calls[-1][1]["videoId"], "audio")
+
+    def test_fallback_rejects_wrong_artist_or_remix(self):
+        seed = {"title": "Imagine Dragons - Thunder", "artist": "Imagine Dragons"}
+        self.assertTrue(ytmusic._same_recording(seed, {"title": "Thunder", "artist": "Imagine Dragons"}))
+        self.assertFalse(ytmusic._same_recording(seed, {"title": "Thunder", "artist": "Other"}))
+        self.assertFalse(ytmusic._same_recording(seed, {"title": "Thunder Remix", "artist": "Imagine Dragons"}))
+
+    def test_empty_radio_does_not_search_without_seed_identity(self):
+        api = fake_api(next={})
+        self.assertEqual(ytmusic.related("missing", api=api), [])
+        self.assertEqual(len(api.calls), 1)
+
+    def test_zero_count_makes_no_requests(self):
+        api = fake_api()
+        self.assertEqual(ytmusic.related("seed", 0, api), [])
+        self.assertEqual(api.calls, [])
+
     def test_radio_returns_only_songs_with_artist_and_album(self):
         api = fake_api(next=load("next"))
         tracks = ytmusic.related("NgEJ9gMxP90", api=api)

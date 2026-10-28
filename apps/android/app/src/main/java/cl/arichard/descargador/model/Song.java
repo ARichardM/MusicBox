@@ -51,7 +51,7 @@ public class Song implements Serializable {
         long totalSecs = duration / 1000;
         long mins = totalSecs / 60;
         long secs = totalSecs % 60;
-        return String.format("%02d:%02d", mins, secs);
+        return String.format(java.util.Locale.ROOT, "%02d:%02d", mins, secs);
     }
 
     public JSONObject toJson() {

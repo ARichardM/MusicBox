@@ -56,9 +56,23 @@ public class PendingFeaturesDeviceTest {
         waitFor(condition, 20000);
     }
     private void waitFor(Supplier<Boolean> condition, long timeout) throws Exception {
-        long end = System.currentTimeMillis() + timeout;
-        while (!condition.get() && System.currentTimeMillis() < end) Thread.sleep(100);
-        assertTrue("Expected device state", condition.get());
+        waitFor(condition, timeout, "Expected device state", () -> "");
+    }
+    private void waitFor(Supplier<Boolean> condition, long timeout, String stage,
+                         Supplier<String> details) throws Exception {
+        long started = android.os.SystemClock.elapsedRealtime();
+        while (!condition.get()) {
+            if (android.os.SystemClock.elapsedRealtime() - started >= timeout) {
+                fail(stage + " timed out after " + timeout + " ms; " + details.get());
+            }
+            Thread.sleep(100);
+        }
+    }
+    private String playbackDiagnostics(List<String> errors) {
+        return main(() -> "video=" + player.getCurrentOnlineVideoId()
+                + "; playing=" + player.isPlaying() + "; loading=" + player.isLoading()
+                + "; queue=" + player.getQueue().size() + "; position=" + player.getCurrentPosition()
+                + "; duration=" + player.getDuration() + "; errors=" + errors);
     }
     private UiObject2 view(String id) {
         UiObject2 result = device.wait(Until.findObject(By.res(pkg, id)), 15000);
@@ -80,9 +94,16 @@ public class PendingFeaturesDeviceTest {
 
     private MainActivity library() throws Exception {
         MainActivity activity = (MainActivity) launch(PreviewMainActivity.class);
-        view("navTabLibrary").click(); view("chipSongs").click();
+        view("navTabLibrary");
+        MainUiState state = main(() -> new androidx.lifecycle.ViewModelProvider(activity).get(MainUiState.class));
+        waitFor(() -> main(() -> state.libraryLoaded));
+        action(() -> {
+            activity.findViewById(R.id.navTabLibrary).performClick();
+            activity.findViewById(R.id.chipSongs).performClick();
+        });
         action(() -> ((EditText) activity.findViewById(R.id.inputSearchLibrary)).setText(""));
-        waitFor(() -> main(() -> adapter(activity).getItemCount() >= 3));
+        waitFor(() -> main(() -> ((RecyclerView) activity.findViewById(R.id.recyclerLibrary)).getAdapter() instanceof SongAdapter
+                && adapter(activity).getItemCount() >= 3));
         return activity;
     }
     private SongAdapter adapter(MainActivity activity) {
@@ -256,7 +277,16 @@ public class PendingFeaturesDeviceTest {
     }
 
     @Test public void onlineAutoplayAddsRelatedSongsAndAdvancesAfterCompletion() throws Exception {
-        library();
+        verifyOnlineAutoplay("n0vo-mLGe6I", "No sabía", "Luis Jara");
+    }
+
+    @Test public void thunderVideoAutoplayFindsAudioSongsAndAdvances() throws Exception {
+        verifyOnlineAutoplay("fKopy74weus", "Thunder", "Imagine Dragons");
+    }
+
+    private void verifyOnlineAutoplay(String seed, String title, String artist) throws Exception {
+        MainActivity activity = (MainActivity) launch(PreviewMainActivity.class);
+        waitFor(() -> main(activity::hasWindowFocus));
         List<String> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
         PlayerManager.PlaybackListener listener = new PlayerManager.PlaybackListener() {
             @Override public void onTrackChanged(Song song) {}
@@ -268,10 +298,11 @@ public class PendingFeaturesDeviceTest {
             player.addListener(listener);
             while (player.getRepeatMode() != PlayerManager.REPEAT_OFF) player.toggleRepeat();
             player.setAutoplay(true);
-            player.playOnline("n0vo-mLGe6I", "No sabía", "Luis Jara", "", "https://www.youtube.com/watch?v=n0vo-mLGe6I");
+            player.playOnline(seed, title, artist, "", "https://www.youtube.com/watch?v=" + seed);
         });
         try {
-            waitFor(() -> main(() -> player.getQueue().size() > 1 && player.isPlaying()), 90000);
+            waitFor(() -> main(() -> player.getQueue().size() > 1 && player.isPlaying()), 90000,
+                    "Initial online playback and related queue", () -> playbackDiagnostics(errors));
             assertTrue("No playback errors: " + errors, errors.isEmpty());
             List<Song> queue = main(() -> new ArrayList<>(player.getQueue()));
             java.util.Set<String> seen = new java.util.HashSet<>();
@@ -280,7 +311,8 @@ public class PendingFeaturesDeviceTest {
                 assertTrue("No long mixes", song.getDuration() <= 600000);
             }
             action(() -> player.seekTo(Math.max(0, player.getDuration() - 1200)));
-            waitFor(() -> main(() -> !"n0vo-mLGe6I".equals(player.getCurrentOnlineVideoId()) && player.isPlaying()), 90000);
+            waitFor(() -> main(() -> !seed.equals(player.getCurrentOnlineVideoId()) && player.isPlaying()), 90000,
+                    "Autoplay after completion", () -> playbackDiagnostics(errors));
             assertTrue("No playback errors: " + errors, errors.isEmpty());
         } finally { action(() -> { player.removeListener(listener); player.stopAndRelease(); }); }
     }

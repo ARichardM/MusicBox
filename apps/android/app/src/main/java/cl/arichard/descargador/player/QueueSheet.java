@@ -47,7 +47,7 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
     private final QueueAdapter adapter = new QueueAdapter();
     private BottomSheetDialog dialog;
     private BottomSheetBehavior<?> behavior;
-    private TextView heading, subheading, empty;
+    private TextView heading, subheading, empty, autoplayStatus;
     private RecyclerView recycler;
     private ItemTouchHelper touchHelper;
     private boolean dragging;
@@ -142,6 +142,11 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         TextView hint = text(Tr.t("Mantén pulsado y arrastra para cambiar el orden"), 12);
         hint.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary)); root.addView(hint);
         root.addView(autoplayRow());
+        autoplayStatus = text("", 12);
+        autoplayStatus.setPadding(dp(4), dp(4), dp(4), dp(8));
+        autoplayStatus.setTextColor(ContextCompat.getColor(activity, R.color.accent));
+        autoplayStatus.setOnClickListener(v -> player.retryAutoplay());
+        root.addView(autoplayStatus);
         empty = text(Tr.t("Tu cola está vacía. Agrega tus canciones favoritas."), 15);
         empty.setPadding(0, dp(24), 0, dp(24)); root.addView(empty);
         recycler = new RecyclerView(activity); recycler.setLayoutManager(new LinearLayoutManager(activity));
@@ -195,6 +200,11 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
             adapter.notifyDataSetChanged();
             List<Song> queue = player.getQueue();
             int count = queue.size();
+            boolean searching = player.isAutoplay() && player.isAutoplayLoading();
+            String error = player.isAutoplay() ? player.getAutoplayError() : "";
+            autoplayStatus.setVisibility(searching || !error.isEmpty() ? View.VISIBLE : View.GONE);
+            autoplayStatus.setText(searching ? Tr.t("Buscando canciones similares…") : error);
+            autoplayStatus.setEnabled(!searching);
             heading.setText(Tr.t("Cola · ") + count);
             empty.setVisibility(count == 0 ? View.VISIBLE : View.GONE);
             int next = player.getCurrentIndex() + 1;
@@ -263,8 +273,15 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         @Override public QueueHolder onCreateViewHolder(ViewGroup parent, int type) {
             LinearLayout row = new LinearLayout(activity); row.setGravity(Gravity.CENTER_VERTICAL);
             row.setLayoutParams(new RecyclerView.LayoutParams(-1, -2));
-            row.setPadding(0, dp(6), 0, dp(6));
+            row.setPadding(dp(10), dp(6), dp(6), dp(6));
             ImageView cover = new ImageView(activity); cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            cover.setBackgroundResource(R.drawable.bg_cover_fallback);
+            cover.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(6));
+                }
+            });
+            cover.setClipToOutline(true);
             row.addView(cover, new LinearLayout.LayoutParams(dp(44), dp(44)));
             TextView title = text("", 14); title.setMaxLines(2); title.setPadding(dp(10), 0, dp(4), 0);
             row.addView(title, new LinearLayout.LayoutParams(0, dp(54), 1));

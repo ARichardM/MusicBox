@@ -22,6 +22,15 @@ public final class ErrorReason {
         return prefix(error) + " Detalle: " + (error == null ? "" : error);
     }
 
+    /** Older persisted jobs included the entire extractor log in their error field. */
+    public static String notice(String error) {
+        if (error == null) return "";
+        int spanish = error.indexOf(" Detalle: ");
+        int english = error.indexOf(" Details: ");
+        int end = spanish < 0 ? english : english < 0 ? spanish : Math.min(spanish, english);
+        return end < 0 ? error : error.substring(0, end).trim();
+    }
+
     /** True si el error se arregla probablemente con cookies de una sesión de YouTube. */
     public static boolean needsCookies(String error) {
         String lowered = (error == null ? "" : error).toLowerCase(Locale.ROOT);

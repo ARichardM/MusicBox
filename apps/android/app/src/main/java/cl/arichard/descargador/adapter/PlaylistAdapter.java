@@ -20,7 +20,7 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
  public PlaylistAdapter(Context c,List<String> names,OnPlaylistClickListener l){context=c;listener=l;updatePlaylists(names);}
  public void setLibrary(List<cl.arichard.descargador.model.Song> songs){library.clear();library.addAll(songs);notifyDataSetChanged();}
  public void updatePlaylists(List<String> names){original.clear();if(names!=null)original.addAll(names);filter("");}
- public void filter(String query){displayed.clear();String q=query==null?"":query.trim().toLowerCase();for(String n:original)if(q.isEmpty()||n.toLowerCase().contains(q))displayed.add(n);notifyDataSetChanged();}
+ public void filter(String query){displayed.clear();String q=query==null?"":query.trim().toLowerCase(java.util.Locale.ROOT);for(String n:original)if(q.isEmpty()||n.toLowerCase(java.util.Locale.ROOT).contains(q))displayed.add(n);notifyDataSetChanged();}
  public int getDisplayedCount(){return displayed.size();}
  @NonNull @Override public Holder onCreateViewHolder(@NonNull ViewGroup p,int t){return new Holder(LayoutInflater.from(context).inflate(R.layout.item_playlist,p,false));}
  @Override public void onBindViewHolder(@NonNull Holder h,int position){

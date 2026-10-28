@@ -58,8 +58,11 @@ public class CoverArtLoader {
 
     public void loadSongCover(String songPath, ImageView imageView) {
         if (imageView == null) return;
-        imageView.setImageDrawable(new ShimmerDrawable(imageView.getContext()));
-        if (songPath == null) { imageView.setTag(null); imageView.setImageResource(R.drawable.bg_cover_fallback); return; }
+        if (songPath != null && songPath.equals(imageView.getTag())) return;
+        imageView.clearAnimation();
+        if (songPath == null || songPath.isEmpty()) {
+            imageView.setTag(songPath); imageView.setImageResource(R.drawable.bg_cover_fallback); return;
+        }
 
         // If online YouTube thumbnail url, delegate to ImageLoader
         if (songPath.startsWith("http://") || songPath.startsWith("https://")) {
@@ -74,6 +77,7 @@ public class CoverArtLoader {
             imageView.setImageBitmap(cached);
             return;
         }
+        imageView.setImageDrawable(new ShimmerDrawable(imageView.getContext()));
 
         executor.execute(() -> {
             Bitmap bmp = null;

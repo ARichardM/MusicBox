@@ -131,6 +131,28 @@ public class HomePolishDeviceTest {
         return null;
     }
 
+    @Test public void queueArtworkHasAnInsetAndRoundedClipping() throws Exception {
+        action(() -> player.playSong(samples.get(0), Collections.singletonList(samples.get(0))));
+        waitFor(() -> main(() -> !player.isLoading()));
+        action(player::pause);
+        NowPlayingActivity activity = (NowPlayingActivity) launch(NowPlayingActivity.class);
+        Field panelField = NowPlayingActivity.class.getDeclaredField("queuePanel");
+        panelField.setAccessible(true);
+        Object panel = panelField.get(activity);
+        Field recyclerField = panel.getClass().getDeclaredField("recycler");
+        recyclerField.setAccessible(true);
+        RecyclerView list = (RecyclerView) recyclerField.get(panel);
+        action(() -> com.google.android.material.bottomsheet.BottomSheetBehavior.from(
+                activity.findViewById(R.id.queueSheet)).setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED));
+        waitFor(() -> main(() -> list.findViewHolderForAdapterPosition(0) != null));
+        action(() -> {
+            android.view.ViewGroup row = (android.view.ViewGroup) list.findViewHolderForAdapterPosition(0).itemView;
+            ImageView cover = (ImageView) row.getChildAt(0);
+            assertTrue("Cover is inset from the highlighted card", cover.getLeft() >= row.getPaddingLeft() && row.getPaddingLeft() > 0);
+            assertTrue("Artwork is clipped to rounded outline", cover.getClipToOutline());
+        });
+    }
+
     @Test public void recentQueriesStayBelowTheSearchFieldWithKeyboardVisible() throws Exception {
         SearchHistoryManager history = SearchHistoryManager.getInstance(context);
         for (int index = 0; index < 12; index++) history.addSearchQuery("Verificación reciente " + index);

@@ -31,7 +31,7 @@
                 <LinearLayout android:id="@+id/searchField" android:layout_width="match_parent" android:layout_height="52dp"
                     android:layout_marginTop="12dp" android:background="@drawable/bg_search_field"
                     android:gravity="center_vertical" android:paddingStart="16dp" android:paddingEnd="16dp">
-                    <ImageView android:layout_width="20dp" android:layout_height="20dp"
+                    <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:layout_width="20dp" android:layout_height="20dp"
                         android:src="@drawable/ic_search"/>
                     <androidx.appcompat.widget.AppCompatAutoCompleteTextView android:id="@+id/inputSearch"
                         android:dropDownAnchor="@id/searchField"
@@ -46,7 +46,7 @@
                         android:src="@drawable/ic_close" app:tint="@color/text_secondary"
                         android:contentDescription="@string/limpiar_busqueda" android:visibility="gone"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
-                    <ImageView android:id="@+id/btnPaste"
+                    <ImageView android:contentDescription="@string/pegar" android:id="@+id/btnPaste"
                         android:layout_width="36dp" android:layout_height="36dp" android:padding="8dp"
                         android:src="@drawable/ic_paste"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
@@ -385,7 +385,7 @@
                 android:paddingTop="12dp">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:gravity="center_vertical">
-                    <ImageView android:id="@+id/btnBackLibrary"
+                    <ImageView android:contentDescription="@string/volver" android:id="@+id/btnBackLibrary"
                         android:layout_width="36dp" android:layout_height="36dp" android:padding="6dp"
                         android:src="@drawable/ic_arrow_back" app:tint="@color/text_primary"
                         android:visibility="gone" android:background="?attr/selectableItemBackgroundBorderless"/>
@@ -410,7 +410,7 @@
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
                         android:src="@drawable/ic_locate_playing" app:tint="@color/accent"
                         android:contentDescription="@string/ir_a_la_cancion_actual" android:background="?attr/selectableItemBackgroundBorderless"/>
-                    <ImageView android:id="@+id/btnShuffleAll"
+                    <ImageView android:contentDescription="@string/reproduccion_aleatoria" android:id="@+id/btnShuffleAll"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
                         android:src="@drawable/ic_shuffle" app:tint="@color/accent"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
@@ -423,16 +423,17 @@
                 <LinearLayout android:layout_width="match_parent" android:layout_height="44dp"
                     android:layout_marginTop="16dp" android:background="@drawable/bg_search_field"
                     android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="14dp">
-                    <ImageView android:layout_width="18dp" android:layout_height="18dp"
+                    <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:layout_width="18dp" android:layout_height="18dp"
                         android:src="@drawable/ic_search"/>
                     <EditText android:id="@+id/inputSearchLibrary"
+                        android:inputType="text"
                         android:layout_width="0dp" android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:background="@null" android:layout_marginStart="10dp"
                         android:hint="@string/filtrar_canciones_artistas_carpetas" android:textColorHint="@color/text_muted"
                         android:textColor="@color/text_primary" android:textSize="15sp"
                         android:singleLine="true"/>
-                    <ImageView android:id="@+id/btnClearLibraryFilter"
+                    <ImageView android:contentDescription="@string/limpiar_busqueda" android:id="@+id/btnClearLibraryFilter"
                         android:layout_width="28dp" android:layout_height="28dp"
                         android:padding="6dp" android:src="@drawable/ic_close"
                         app:tint="@color/text_secondary"
@@ -480,7 +481,7 @@
                         android:gravity="center_vertical"
                         android:paddingStart="8dp" android:paddingEnd="2dp"
                         android:background="@drawable/bg_auto_dl_pill">
-                        <ImageView android:layout_width="13dp" android:layout_height="13dp"
+                        <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:layout_width="13dp" android:layout_height="13dp"
                             android:src="@drawable/ic_download" app:tint="@color/accent"/>
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_marginStart="4dp" android:text="@string/auto"
@@ -505,12 +506,10 @@
                     android:layout_width="36dp" android:layout_height="match_parent"
                     android:layout_gravity="end"
                     android:layout_marginBottom="130dp"/>
+                <cl.arichard.descargador.util.SkeletonLoadingView android:id="@+id/libraryLoading"
+                    android:layout_width="match_parent" android:layout_height="match_parent"
+                    android:visibility="gone"/>
             </FrameLayout>
-
-            <cl.arichard.descargador.util.SkeletonLoadingView android:id="@+id/libraryLoading"
-                android:layout_width="match_parent" android:layout_height="0dp"
-                android:layout_weight="1" android:layout_marginTop="8dp"
-                android:visibility="gone"/>
 
         </LinearLayout>
     </FrameLayout>
@@ -531,7 +530,7 @@
                 android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
                 android:layout_marginStart="8dp" android:layout_marginEnd="4dp"
                 android:gravity="center" android:background="@drawable/bg_nav_tab_indicator">
-                <ImageView android:id="@+id/navIconSearch"
+                <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:id="@+id/navIconSearch"
                     android:layout_width="20dp" android:layout_height="20dp"
                     android:src="@drawable/ic_search" app:tint="@color/text_primary"/>
                 <TextView android:id="@+id/navLabelSearch"
@@ -544,7 +543,7 @@
                 android:layout_width="0dp" android:layout_height="40dp" android:layout_weight="1"
                 android:layout_marginStart="4dp" android:layout_marginEnd="8dp"
                 android:gravity="center" android:background="@null">
-                <ImageView android:id="@+id/navIconLibrary"
+                <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:id="@+id/navIconLibrary"
                     android:layout_width="20dp" android:layout_height="20dp"
                     android:src="@drawable/ic_music_library" app:tint="@color/text_muted"/>
                 <TextView android:id="@+id/navLabelLibrary"
@@ -574,7 +573,7 @@
                     app:cardCornerRadius="10dp"
                     app:cardElevation="2dp"
                     app:cardBackgroundColor="@color/bg_elevated">
-                    <ImageView
+                    <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
                         android:id="@+id/imgMiniCover"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
@@ -596,7 +595,7 @@
                 </LinearLayout>
                 </FrameLayout>
                 <FrameLayout android:layout_width="42dp" android:layout_height="42dp">
-                    <ImageView android:id="@+id/btnMiniPlayPause"
+                    <ImageView android:contentDescription="@string/reproducir" android:id="@+id/btnMiniPlayPause"
                         android:layout_width="match_parent" android:layout_height="match_parent" android:padding="9dp"
                         android:src="@drawable/ic_play_arrow" app:tint="@color/text_primary"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
@@ -607,7 +606,7 @@
                     android:layout_width="38dp" android:layout_height="42dp" android:padding="8dp"
                     android:src="@drawable/ic_queue" app:tint="@color/text_primary"
                     android:contentDescription="@string/abrir_cola" android:background="?attr/selectableItemBackgroundBorderless"/>
-                <ImageView android:id="@+id/btnMiniNext"
+                <ImageView android:contentDescription="@string/siguiente" android:id="@+id/btnMiniNext"
                     android:layout_width="38dp" android:layout_height="38dp" android:padding="8dp"
                     android:src="@drawable/ic_skip_next" app:tint="@color/text_secondary"
                     android:background="?attr/selectableItemBackgroundBorderless"/>

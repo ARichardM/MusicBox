@@ -17,16 +17,21 @@ import java.util.Map;
 import java.util.Set;
 
 public class MusicScanner {
+    private static final String CACHE = "music_metadata_v1";
 
-    public static List<Song> scanAllMusic(Context context) {
+    public static synchronized List<Song> scanAllMusic(Context context) {
         List<Song> songs = new ArrayList<>();
         Set<String> seenPaths = new HashSet<>();
+        android.content.SharedPreferences metadata = context.getSharedPreferences(CACHE, Context.MODE_PRIVATE);
+        android.content.SharedPreferences.Editor edits = metadata.edit();
 
         // 1. Scan App external Music directory (always writable and accessible)
         try {
             File appMusicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC);
-            scanDirectory(appMusicDir, songs, seenPaths);
+            scanDirectory(appMusicDir, songs, seenPaths, metadata, edits);
         } catch (Exception ignored) {}
+        for (String path : metadata.getAll().keySet()) if (!seenPaths.contains(path)) edits.remove(path);
+        edits.apply();
 
         java.util.List<String> chosenFolders = LibraryFolders.get(context);
 
@@ -82,26 +87,31 @@ public class MusicScanner {
         return songs;
     }
 
-    private static void scanDirectory(File dir, List<Song> songs, Set<String> seenPaths) {
+    private static void scanDirectory(File dir, List<Song> songs, Set<String> seenPaths,
+            android.content.SharedPreferences metadata, android.content.SharedPreferences.Editor edits) {
         if (dir == null || !dir.exists() || !dir.isDirectory()) return;
         File[] files = dir.listFiles();
         if (files == null) return;
 
         for (File file : files) {
             if (file.isDirectory()) {
-                scanDirectory(file, songs, seenPaths);
+                scanDirectory(file, songs, seenPaths, metadata, edits);
             } else if (file.isFile() && isAudioFile(file.getName())) {
                 String path = file.getAbsolutePath();
                 if (seenPaths.contains(path)) continue;
                 seenPaths.add(path);
+                Song cached = cachedSong(file, metadata.getString(path, null));
+                if (cached != null) { songs.add(cached); continue; }
 
                 long duration = 0;
                 String title = file.getName();
                 String artist = cl.arichard.descargador.util.Tr.t("Artista desconocido");
                 String album = "";
+                boolean metadataRead = false;
 
+                MediaMetadataRetriever mmr = null;
                 try {
-                    MediaMetadataRetriever mmr = new MediaMetadataRetriever();
+                    mmr = new MediaMetadataRetriever();
                     mmr.setDataSource(path);
                     String t = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE);
                     String a = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
@@ -111,18 +121,39 @@ public class MusicScanner {
                     if (a != null && !a.trim().isEmpty()) artist = a.trim();
                     if (al != null && !al.trim().isEmpty()) album = al.trim();
                     if (d != null) duration = Long.parseLong(d);
-                    mmr.release();
+                    metadataRead = true;
                 } catch (Exception ignored) {}
+                finally { if (mmr != null) try { mmr.release(); } catch (Exception ignored) {} }
 
                 String folder = dir.getName();
-                songs.add(new Song(System.currentTimeMillis(), cleanTitle(title, file.getName()), artist, album, duration, path, folder, file.lastModified()));
+                Song song = new Song(path.hashCode(), cleanTitle(title, file.getName()), artist, album, duration, path, folder, file.lastModified());
+                songs.add(song);
+                if (metadataRead) try {
+                    org.json.JSONObject entry = song.toJson();
+                    entry.put("fileSize", file.length()).put("fileModified", file.lastModified())
+                            .put("locale", java.util.Locale.getDefault().toLanguageTag());
+                    edits.putString(path, entry.toString());
+                } catch (Exception ignored) {}
             }
         }
     }
 
+    /** Reuse metadata only while the actual file and language are unchanged. */
+    static Song cachedSong(File file, String serialized) {
+        if (serialized == null) return null;
+        try {
+            org.json.JSONObject entry = new org.json.JSONObject(serialized);
+            if (!file.isFile() || entry.optLong("fileSize", -1) != file.length()
+                    || entry.optLong("fileModified", -1) != file.lastModified()
+                    || !file.getAbsolutePath().equals(entry.optString("path"))
+                    || !java.util.Locale.getDefault().toLanguageTag().equals(entry.optString("locale"))) return null;
+            return Song.fromJson(entry);
+        } catch (Exception ignored) { return null; }
+    }
+
     private static boolean isAudioFile(String name) {
         if (name == null) return false;
-        String lower = name.toLowerCase();
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
         return lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".flac") || lower.endsWith(".ogg");
     }
 

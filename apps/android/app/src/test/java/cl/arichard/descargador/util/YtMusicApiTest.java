@@ -87,6 +87,50 @@ public class YtMusicApiTest {
                         new JSONObject().put("watchEndpointMusicConfig", new JSONObject().put("musicVideoType", type))))));
     }
 
+    private JSONObject audioSearch(String title, String artist) throws Exception {
+        JSONObject song = row("audio-seed", title).getJSONObject("musicResponsiveListItemRenderer");
+        song.getJSONArray("flexColumns").put(new JSONObject().put("musicResponsiveListItemFlexColumnRenderer",
+                new JSONObject().put("text", new JSONObject().put("runs", new JSONArray().put(new JSONObject().put("text", artist))))));
+        return new JSONObject().put("contents", new JSONArray().put(new JSONObject().put("musicResponsiveListItemRenderer", song)));
+    }
+
+    @Test public void videoOnlyRadioResolvesTheSameSongsAudioRadio() throws Exception {
+        List<String> requests = new ArrayList<>();
+        YtMusicApi.transport = (endpoint, body) -> {
+            requests.add(endpoint + ":" + body.optString("videoId"));
+            if (endpoint.equals("search")) return audioSearch("Thunder", "Artista");
+            if (body.optString("videoId").equals("audio-seed")) return new JSONObject().put("contents", new JSONArray()
+                    .put(panel("audio-seed", "MUSIC_VIDEO_TYPE_ATV"))
+                    .put(panel("Thunder", "MUSIC_VIDEO_TYPE_ATV"))
+                    .put(panel("related", "MUSIC_VIDEO_TYPE_ATV"))
+                    .put(panel("related", "MUSIC_VIDEO_TYPE_ATV"))
+                    .put(panel("clip", "MUSIC_VIDEO_TYPE_OMV")));
+            return new JSONObject().put("contents", new JSONArray().put(panel("Thunder", "MUSIC_VIDEO_TYPE_OMV")));
+        };
+        List<SearchResult> songs = YtMusicApi.related("Thunder", 25);
+        assertEquals(1, songs.size());
+        assertEquals("related", songs.get(0).getId());
+        assertEquals(java.util.Arrays.asList("next:Thunder", "search:", "next:audio-seed"), requests);
+    }
+
+    @Test public void videoFallbackDoesNotUseAnUnrelatedCover() throws Exception {
+        responses.put("next", new JSONObject().put("contents", new JSONArray().put(panel("Thunder", "MUSIC_VIDEO_TYPE_OMV"))));
+        responses.put("search", audioSearch("Thunder", "Otro artista"));
+        assertTrue(YtMusicApi.related("Thunder", 25).isEmpty());
+        assertEquals(2, calls.size());
+    }
+
+    @Test public void emptyRadioWithoutSeedMetadataDoesNotSearchRandomMusic() throws Exception {
+        responses.put("next", new JSONObject());
+        assertTrue(YtMusicApi.related("missing", 25).isEmpty());
+        assertEquals(1, calls.size());
+    }
+
+    @Test public void zeroLimitMakesNoRequests() throws Exception {
+        assertTrue(YtMusicApi.related("seed", 0).isEmpty());
+        assertTrue(calls.isEmpty());
+    }
+
     @Test public void artistSearchGivesAPhotoAndAnId() throws Exception {
         responses.put("search", fixture("search_artists"));
         List<YtMusicApi.Artist> artists = YtMusicApi.searchArtists("Los Prisioneros");

@@ -2,6 +2,20 @@
 
 27 de octubre de 2026. Cambios sin publicar sobre 2.3.3.
 
+## Repetición posterior al pull
+
+Con los cambios de `REVISION_POST_PULL.md`, los 21 escenarios pasaron juntos en
+142,077 segundos, sin reintentos ni omisiones, en el Samsung SM-G985F con Android
+13 conectado por ADB inalámbrico. Se incluyen gestos, OCR, selección, eliminación
+de las tres muestras sintéticas, reproducción automática online y los cinco
+escenarios de esta revisión. El resultado histórico de veinte más una repetición
+aislada que aparece abajo corresponde a la ejecución anterior.
+
+Se reemplazó únicamente verification por incompatibilidad de firma, conservando
+un respaldo local de sus datos privados y sus nueve muestras externas. Las
+muestras se restauraron en verification. La app principal y preview conservaron
+sus instalaciones y datos; no se inició sesión ni se modificaron playlists reales.
+
 ## Cambios
 
 - Minirreproductor fijo en artista y álbum, separado del contenido desplazable.

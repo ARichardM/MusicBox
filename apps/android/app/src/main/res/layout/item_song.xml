@@ -20,7 +20,7 @@
         app:cardElevation="2dp"
         app:cardBackgroundColor="@color/bg_elevated">
 
-        <ImageView
+        <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
             android:id="@+id/imgSongCover"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
@@ -34,7 +34,7 @@
             android:background="#60000000"
             android:visibility="gone"/>
 
-        <ImageView
+        <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
             android:id="@+id/imgPlayingIndicator"
             android:layout_width="26dp"
             android:layout_height="26dp"
@@ -120,7 +120,7 @@
         android:id="@+id/songActionZone"
         android:layout_width="78dp" android:layout_height="match_parent"
         android:orientation="horizontal" android:gravity="center">
-    <ImageView
+    <ImageView android:contentDescription="@string/agregar_a_favoritos"
         android:id="@+id/btnFavorite"
         android:layout_width="40dp"
         android:layout_height="40dp"
@@ -128,7 +128,7 @@
         android:src="@drawable/ic_favorite"
         android:background="?attr/selectableItemBackgroundBorderless"/>
 
-    <ImageView
+    <ImageView android:contentDescription="@string/mas_opciones_de_la_cancion"
         android:id="@+id/btnSongMenu"
         android:layout_width="36dp"
         android:layout_height="40dp"

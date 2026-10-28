@@ -9,6 +9,15 @@
 
 ### Android
 
+- Autoplay recupera radios de videoclips como «Thunder»: busca la misma canción y artista en el catálogo de audio antes de generar otra radio, sin aceptar covers ajenos ni repetir ambas versiones de la semilla. La misma corrección se aplica a Windows.
+- Mi música corrige el espacio vacío antes del shimmer y carga su biblioteca sin esperar actualizaciones de red del extractor. Reutiliza metadatos de archivos sin cambios y agrupa escaneos repetidos. Los avisos de descargas muestran un motivo breve, con el detalle técnico conservado en el registro.
+- Dispositivos conectados conserva las tarjetas al actualizar su actividad. Estadísticas actualiza cifras y filas sin reconstruir la pantalla ni perder desplazamiento o pestaña. Las portadas ya cargadas no repiten brillo o fundido, y los avisos de tiempo escuchado no fuerzan escaneos de biblioteca.
+- Autoplay reintenta consultas fallidas hasta tres veces y permite reintentar desde la cola con un estado visible de búsqueda o error. Limpiar la cola o reabrir el reproductor ya no bloquea la búsqueda para la canción actual. Las portadas de la cola quedan separadas del borde y recortadas con esquinas redondeadas.
+- La variante de pruebas preview admite una clave compartida fuera de Git para compilar desde dos equipos con la misma firma. Comprueba la identidad antes de empaquetar y el instalador no abre una versión antigua si falla la compilación o instalación.
+- Las búsquedas y los tiempos de reproducción se mantienen consistentes al cambiar el idioma del teléfono.
+- Los controles de reproducción y favoritos tienen etiquetas accesibles; las imágenes decorativas no repiten el texto de las canciones.
+- Las animaciones de inicio y carga reutilizan sus objetos gráficos; detener el inicio cancela también su cierre programado.
+- Se actualiza el analizador lint para leer los metadatos de Firebase y se añaden diagnósticos de estado a las esperas de reproducción online. CI compila y comprueba la variante aislada verification y conserva sus informes.
 - El minirreproductor permanece visible al abrir artistas y álbumes, con pausa, siguiente, cola, progreso y acceso al reproductor completo.
 - Las búsquedas recientes aparecen debajo del buscador, con altura limitada al espacio disponible sobre el teclado.
 - Los selectores de playlists muestran portadas y cantidad de canciones. También se muestran portadas de canciones que todavía no se han reproducido.

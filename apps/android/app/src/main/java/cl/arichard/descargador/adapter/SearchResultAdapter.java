@@ -96,7 +96,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
     private String normalize(String value) {
         return value == null ? "" : java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "").replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+                .replaceAll("\\p{M}", "").replaceAll("[^a-zA-Z0-9]", "").toLowerCase(java.util.Locale.ROOT);
     }
 
     public void setResults(List<SearchResult> newResults) {

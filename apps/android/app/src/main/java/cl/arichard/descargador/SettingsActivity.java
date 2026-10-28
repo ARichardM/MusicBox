@@ -38,6 +38,8 @@ import java.util.List;
 public final class SettingsActivity extends AppCompatActivity {
     private static final String DEVICES_KEY = "devices_json";
     private SharedPreferences cloudPrefs;
+    private final java.util.Map<String, View> deviceRows = new java.util.HashMap<>();
+    private final long fallbackSeen = System.currentTimeMillis();
     private final SharedPreferences.OnSharedPreferenceChangeListener devicesListener = (prefs, key) -> {
         if (DEVICES_KEY.equals(key)) runOnUiThread(this::renderDevices);
     };
@@ -71,18 +73,20 @@ public final class SettingsActivity extends AppCompatActivity {
         cl.arichard.descargador.util.SafeTap.installRowTap(findViewById(R.id.cardStats));
         setupAbout();
 
-        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        FirebaseUser user = com.google.firebase.FirebaseApp.getApps(this).isEmpty()
+                ? null : FirebaseAuth.getInstance().getCurrentUser();
         String name = user != null && user.getDisplayName() != null ? user.getDisplayName() : Tr.t("Cuenta de Google");
         String email = user != null && user.getEmail() != null ? user.getEmail() : "";
         ((TextView) findViewById(R.id.txtSettingsName)).setText(name);
         ((TextView) findViewById(R.id.txtSettingsEmail)).setText(email);
-        String initial = (name.isEmpty() ? "U" : name.substring(0, 1)).toUpperCase();
+        String initial = (name.isEmpty() ? "U" : name.substring(0, 1)).toUpperCase(java.util.Locale.ROOT);
         ((TextView) findViewById(R.id.txtSettingsAvatar)).setText(initial);
 
         cloudPrefs = getSharedPreferences("musicbox_cloud", MODE_PRIVATE);
         cloudPrefs.registerOnSharedPreferenceChangeListener(devicesListener);
         renderDevices();
 
+        findViewById(R.id.btnSettingsLogout).setVisibility(user == null ? View.GONE : View.VISIBLE);
         findViewById(R.id.btnSettingsLogout).setOnClickListener(v -> new MaterialAlertDialogBuilder(this)
                 .setTitle(Tr.t("Cerrar sesión"))
                 .setMessage(Tr.t("Tus descargas permanecerán en este dispositivo."))
@@ -318,8 +322,8 @@ public final class SettingsActivity extends AppCompatActivity {
     }
 
     private void renderDevices() {
+        if (isFinishing() || isDestroyed()) return;
         LinearLayout container = findViewById(R.id.layoutConnectedDevices);
-        container.removeAllViews();
         String raw = cloudPrefs.getString(DEVICES_KEY, "{}");
         String currentId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         List<JSONObject> devices = new ArrayList<>();
@@ -327,26 +331,64 @@ public final class SettingsActivity extends AppCompatActivity {
         try {
             JSONObject root = new JSONObject(raw);
             Iterator<String> keys = root.keys();
-            while (keys.hasNext()) { String key = keys.next(); ids.add(key); devices.add(root.optJSONObject(key)); }
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (root.optJSONObject(key) != null) ids.add(key);
+            }
+            java.util.Collections.sort(ids);
+            for (String key : ids) devices.add(root.optJSONObject(key));
         } catch (Exception ignored) {}
         if (devices.isEmpty()) {
             JSONObject current = new JSONObject();
             try {
                 current.put("name", android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL);
                 current.put("platform", "Android");
-                current.put("lastSeen", System.currentTimeMillis());
+                current.put("lastSeen", fallbackSeen);
             } catch (Exception ignored) {}
             devices.add(current); ids.add(currentId);
         }
+        java.util.Set<String> retained = new java.util.HashSet<>();
         int index = 0;
         for (int pass = 0; pass < 2; pass++) {              // this device first, then the others
             for (int i = 0; i < devices.size(); i++) {
                 boolean current = ids.get(i) != null && ids.get(i).equals(currentId);
                 if (current != (pass == 0)) continue;
-                View row = addDeviceRow(container, ids.get(i), devices.get(i), currentId);
-                if (row != null) animateIn(row, 120L + 60L * index++);
+                JSONObject data = devices.get(i);
+                if (data == null) continue;
+                String id = ids.get(i);
+                View row = deviceRows.get(id);
+                if (row == null) {
+                    row = addDeviceRow(container, id, data, currentId);
+                    deviceRows.put(id, row);
+                }
+                retained.add(id);
+                bindDeviceRow((LinearLayout) row, id, data, current);
+                if (container.indexOfChild(row) != index) {
+                    container.removeView(row);
+                    container.addView(row, index);
+                }
+                index++;
             }
         }
+        for (String id : new ArrayList<>(deviceRows.keySet())) if (!retained.contains(id)) {
+            container.removeView(deviceRows.remove(id));
+        }
+    }
+
+    private void bindDeviceRow(LinearLayout row, String id, JSONObject device, boolean current) {
+        LinearLayout top = (LinearLayout) row.getChildAt(0);
+        setTextIfChanged((TextView) top.getChildAt(0), device.optString("name", Tr.t("Dispositivo")));
+        String platform = device.optString("platform", "");
+        setTextIfChanged((TextView) top.getChildAt(1), platform.isEmpty() ? "?" : platform);
+        long seen = device.optLong("lastSeen", 0);
+        String date = seen > 0 ? DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(seen)) : Tr.t("Sin actividad reciente");
+        setTextIfChanged((TextView) row.getChildAt(1), current ? Tr.t("Este dispositivo") + " · " + date : date);
+        if (!current && row.getChildCount() > 2) row.getChildAt(2).setOnClickListener(
+                v -> confirmDisconnect(id, device.optString("name", Tr.t("Dispositivo")), row));
+    }
+
+    private static void setTextIfChanged(TextView view, String text) {
+        if (!text.contentEquals(view.getText())) view.setText(text);
     }
 
     private View addDeviceRow(LinearLayout container, String id, JSONObject device, String currentId) {

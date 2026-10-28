@@ -43,8 +43,16 @@ public class ImageLoader {
     }
 
     public void load(String url, ImageView imageView) {
-        if (url == null || url.isEmpty() || imageView == null) return;
+        if (imageView == null) return;
+        if (url == null || url.isEmpty()) {
+            imageView.setTag(null);
+            imageView.clearAnimation();
+            imageView.setImageResource(cl.arichard.descargador.R.drawable.bg_cover_fallback);
+            return;
+        }
+        if (url.equals(imageView.getTag())) return;
 
+        imageView.clearAnimation();
         imageView.setTag(url);
         Bitmap cached = memoryCache.get(url);
         if (cached != null) {
@@ -65,7 +73,12 @@ public class ImageLoader {
                         imageView.startAnimation(fadeIn);
                     }
                 });
-            }
+            } else mainHandler.post(() -> {
+                if (url.equals(imageView.getTag())) {
+                    imageView.setTag(null);
+                    imageView.setImageResource(cl.arichard.descargador.R.drawable.bg_cover_fallback);
+                }
+            });
         });
     }
 

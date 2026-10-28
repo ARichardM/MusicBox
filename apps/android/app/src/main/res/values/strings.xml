@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="lista_canciones_pista">Artist - Song\nAnother song</string>
+    <string name="buscar_en_lista">Search in list</string>
+    <string name="siguiente">Next</string>
+    <string name="anterior">Previous</string>
+    <string name="reproduccion_aleatoria">Shuffle</string>
     <string name="app_name">MusicBox</string>
     <string name="tab_search">Search</string>
     <string name="tab_library">My Music</string>

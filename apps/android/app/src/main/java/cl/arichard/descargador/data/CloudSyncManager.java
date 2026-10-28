@@ -31,6 +31,7 @@ public final class CloudSyncManager {
     private static volatile CloudSyncManager active;
     private boolean applying, stateLoaded, uploading;
     private JSONObject playlistBase;
+    private JSONObject lastUiState;
     private final Runnable pendingUpload = this::uploadNow;
 
     public CloudSyncManager(Context context, Runnable uiChanged) {
@@ -39,6 +40,18 @@ public final class CloudSyncManager {
         playlists = PlaylistManager.getInstance(context);
         history = SearchHistoryManager.getInstance(context);
         clicks = ClickStats.getInstance(context);
+        lastUiState = libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson());
+    }
+
+    /** Listening milliseconds and device heartbeats have their own live views, not a library rescan. */
+    static JSONObject libraryUiState(JSONObject playlists, JSONObject history, JSONObject clicks) {
+        JSONObject state = new JSONObject();
+        try {
+            state.put("playlists", playlists).put("history", history)
+                    .put("plays", clicks.optJSONObject("devices"))
+                    .put("titles", clicks.optJSONObject("titles"));
+            return new JSONObject(state.toString());
+        } catch (Exception exception) { return state; }
     }
 
     public void start() {
@@ -93,7 +106,11 @@ public final class CloudSyncManager {
                 boolean first = !stateLoaded;
                 stateLoaded = true;
                 if (needsUpload || first) scheduleUpload();
-                if (uiChanged != null) uiChanged.run();
+                JSONObject visible = libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson());
+                if (!PlaylistSync.same(lastUiState, visible)) {
+                    lastUiState = visible;
+                    if (uiChanged != null) uiChanged.run();
+                }
             } catch (Exception errorParsing) {
                 applying = false;
                 android.util.Log.w("MusicBoxSync", "No se pudo leer el estado remoto; se conserva la copia local", errorParsing);

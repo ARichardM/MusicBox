@@ -39,6 +39,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.IOException;
 import java.io.InputStream;
+import cl.arichard.descargador.util.Tr;
 
 /** Single native player shared by the full screen and mini player. */
 public class PlayerManager {
@@ -66,6 +67,8 @@ public class PlayerManager {
     private boolean autoplayLoading, advanceWhenReady;
     private String autoplayTriedFor = "";
     private int autoplayGeneration;
+    private int autoplayAttempts;
+    private String autoplayError = "";
 
     /** Reserved key that carries the stream length next to the headers; it is never sent over HTTP. */
     private static final String LENGTH_KEY = "X-MusicBox-Length";
@@ -504,6 +507,7 @@ public class PlayerManager {
             autoplayGeneration++;
             autoplayLoading = advanceWhenReady = false;
             autoplayTriedFor = "";
+            autoplayError = "";
             originalQueue = new ArrayList<>(newQueue);
             queue = new ArrayList<>(newQueue);
             if (shuffle) Collections.shuffle(queue);
@@ -526,7 +530,7 @@ public class PlayerManager {
         if (currentSong == null) return;
         lastSavedSecond = -1;
         if (currentSong.isOnline()) startOnline(currentSong);
-        else { online = false; startLocal(); }
+        else { online = false; autoplayError = ""; startLocal(); }
     }
 
     private void startLocal() {
@@ -816,6 +820,8 @@ public class PlayerManager {
     public void stopAndRelease() {
         autoplayGeneration++;
         autoplayLoading = advanceWhenReady = false;
+        autoplayTriedFor = "";
+        autoplayError = "";
         savePosition();
         playWhenReady = false;
         releasePlayer();
@@ -867,17 +873,31 @@ public class PlayerManager {
         startCurrent();
     }
     public boolean isAutoplay() { return context != null && context.getSharedPreferences("player", 0).getBoolean("autoplay", true); }
+    public boolean isAutoplayLoading() { return autoplayLoading && online; }
+    public String getAutoplayError() { return online ? autoplayError : ""; }
+    public void retryAutoplay() {
+        if (autoplayLoading || currentIndex < queue.size() - 1) return;
+        autoplayTriedFor = "";
+        fetchAutoplay();
+    }
 
     public void setAutoplay(boolean enabled) {
         if (context != null) context.getSharedPreferences("player", 0).edit().putBoolean("autoplay", enabled).apply();
-        if (enabled) fetchAutoplay(); else advanceWhenReady = false;
+        if (enabled) retryAutoplay();
+        else {
+            autoplayGeneration++;
+            autoplayLoading = advanceWhenReady = false;
+            autoplayTriedFor = "";
+            autoplayError = "";
+            notifyQueue();
+        }
     }
 
     /** Hay que buscar canciones relacionadas: sonando una de YouTube, al final de la cola y sin haberlo intentado ya. */
     private boolean autoplayNeeded(boolean atEnd) {
         if (!isAutoplay() || !online || currentSong == null || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return false;
         if (autoplayLoading) return true;
-        if (currentOnlineVideoId.equals(autoplayTriedFor)) return false;
+        if (currentOnlineVideoId.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return false;
         if (!atEnd && currentIndex < queue.size() - 1) return false;
         fetchAutoplay();
         return autoplayLoading;
@@ -888,32 +908,52 @@ public class PlayerManager {
         if (autoplayLoading || !isAutoplay() || !online || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return;
         final String seed = currentOnlineVideoId;
         final int requestGeneration = autoplayGeneration;
-        if (seed.equals(autoplayTriedFor)) return;
+        if (seed.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return;
+        if (!seed.equals(autoplayTriedFor)) autoplayAttempts = 0;
+        autoplayAttempts++;
         autoplayTriedFor = seed;
+        autoplayError = "";
         autoplayLoading = true;
+        notifyQueue();
         PLAYBACK_IO.execute(() -> {
             List<cl.arichard.descargador.model.SearchResult> related = null;
             try { related = cl.arichard.descargador.util.YtMusicApi.related(seed, 25); }
             catch (Exception e) { Log.w("MusicBoxPlayer", "Autoplay sin resultados", e); }
             final List<cl.arichard.descargador.model.SearchResult> found = related;
-            handler.post(() -> {
-                if (requestGeneration != autoplayGeneration) return;
-                autoplayLoading = false;
-                if (!online || currentSong == null || !seed.equals(currentOnlineVideoId)) return;
-                List<String> paths = new ArrayList<>();
-                for (Song queued : queue) paths.add(queued.getPath());
-                List<Song> more = isAutoplay() ? Autoplay.pick(found, paths) : new ArrayList<>();
-                if (!more.isEmpty()) {
-                    queue.addAll(more); originalQueue.addAll(more);
-                    notifyQueue();
-                }
-                if (advanceWhenReady) {
-                    advanceWhenReady = false;
-                    if (!more.isEmpty() && currentIndex == queue.size() - more.size() - 1) playNext();
-                    else { playWhenReady = false; releasePlayer(); loading(false); notifyState(); }
-                }
-            });
+            Log.i("MusicBoxAutoplay", "Radio result: seed=" + seed + ", attempt=" + autoplayAttempts
+                    + ", tracks=" + (found == null ? -1 : found.size()));
+            handler.post(() -> completeAutoplay(seed, requestGeneration, found));
         });
+    }
+
+    void completeAutoplay(String seed, int requestGeneration, List<cl.arichard.descargador.model.SearchResult> found) {
+        if (requestGeneration != autoplayGeneration) return;
+        autoplayLoading = false;
+        if (!online || currentSong == null) return;
+        if (!seed.equals(currentOnlineVideoId)) {
+            if (currentIndex >= queue.size() - 1) fetchAutoplay();
+            return;
+        }
+        List<String> paths = new ArrayList<>();
+        for (Song queued : queue) paths.add(queued.getPath());
+        List<Song> more = isAutoplay() ? Autoplay.pick(found, paths) : new ArrayList<>();
+        if (!more.isEmpty()) {
+            queue.addAll(more); originalQueue.addAll(more);
+            autoplayError = "";
+        } else if (isAutoplay()) {
+            autoplayError = Tr.t("No se pudieron agregar canciones similares. Toca para reintentar.");
+            if (autoplayAttempts < 3) handler.postDelayed(() -> {
+                if (requestGeneration == autoplayGeneration && seed.equals(currentOnlineVideoId)
+                        && !autoplayLoading && !autoplayError.isEmpty()) fetchAutoplay();
+            }, 3000);
+        }
+        notifyQueue();
+        if (more.isEmpty() && isAutoplay() && autoplayAttempts < 3) return;
+        if (advanceWhenReady) {
+            advanceWhenReady = false;
+            if (!more.isEmpty() && currentIndex == queue.size() - more.size() - 1) playNext();
+            else { playWhenReady = false; releasePlayer(); loading(false); notifyState(); }
+        }
     }
 
     public void playPrevious() {
@@ -1009,7 +1049,8 @@ public class PlayerManager {
     public void clearUpcoming() {
         autoplayGeneration++;
         autoplayLoading = advanceWhenReady = false;
-        autoplayTriedFor = currentOnlineVideoId;
+        autoplayTriedFor = "";
+        autoplayError = "";
         if (currentSong == null) { queue.clear(); originalQueue.clear(); currentIndex = -1; }
         else { queue = new ArrayList<>(Collections.singletonList(currentSong)); originalQueue = new ArrayList<>(queue); currentIndex = 0; }
         notifyQueue();

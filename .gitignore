@@ -36,6 +36,8 @@ build/
 *.pem
 *.key
 *.pfx
+*.keystore
+*.jks
 google-services.json
 desktop_oauth_client.json
 desktop_firebase_config.json

@@ -2,8 +2,8 @@
 
 YouTube Music separa lo que YouTube mezcla. Cada elemento trae un ``musicVideoType``:
 ``ATV`` es la pista de audio oficial (una *canción*), ``OMV`` el videoclip oficial y ``UGC`` un video
-subido por cualquiera. Con el filtro de canciones y con la lista de "siguientes" (``RDAMVM<id>``) solo
-llegan canciones, ya con su artista y su álbum, que es lo que usa "Para ti".
+subido por cualquiera. La lista de "siguientes" (``RDAMVM<id>``) también puede contener videoclips:
+se filtran y, si no queda audio, se busca la misma grabación en el catálogo de canciones.
 """
 from __future__ import annotations
 
@@ -153,11 +153,44 @@ def track_from_panel(item: dict) -> dict | None:
 
 def related(video_id: str, count: int = 25, api=post) -> list[dict]:
     """Canciones parecidas a una (la radio de YouTube Music); solo pistas de audio, sin la propia semilla."""
+    if count <= 0:
+        return []
     data = api("next", {"videoId": video_id, "playlistId": "RDAMVM" + video_id})
-    tracks = []
+    tracks = _radio_tracks(data, {video_id}, count)
+    if tracks:
+        return tracks
+    # A videoclip seed may return nothing but videoclips. Resolve its audio
+    # counterpart once instead of retrying the identical, unusable radio.
+    for item in walk(data, "playlistPanelVideoRenderer"):
+        seed = track_from_panel(item)
+        if not seed or seed["id"] != video_id or not seed["artist"]:
+            continue
+        for candidate in search_songs(seed["artist"] + " " + seed["title"], api=api):
+            if candidate["id"] == video_id or not _same_recording(seed, candidate):
+                continue
+            audio_id = candidate["id"]
+            radio = api("next", {"videoId": audio_id, "playlistId": "RDAMVM" + audio_id})
+            return _radio_tracks(radio, {video_id, audio_id}, count)
+        break
+    return []
+
+
+def _same_recording(seed: dict, candidate: dict) -> bool:
+    def normalize(value):
+        return re.sub(r"[^\w]+", " ", value.casefold()).strip()
+    for field in ("title", "artist"):
+        wanted, actual = normalize(seed[field]), normalize(candidate[field])
+        if not actual or f" {actual} " not in f" {wanted} ":
+            return False
+    return True
+
+
+def _radio_tracks(data: dict, excluded: set[str], count: int) -> list[dict]:
+    tracks, seen = [], set(excluded)
     for item in walk(data, "playlistPanelVideoRenderer"):
         track = track_from_panel(item)
-        if track and track["id"] != video_id and track["kind"] in ("song", ""):
+        if track and track["id"] not in seen and track["kind"] in ("song", ""):
+            seen.add(track["id"])
             tracks.append(track)
     return tracks[:count]
 

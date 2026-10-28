@@ -105,7 +105,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     }
 
     public void filter(String query) {
-        this.currentQuery = query != null ? query.trim().toLowerCase() : "";
+        this.currentQuery = query != null ? query.trim().toLowerCase(java.util.Locale.ROOT) : "";
         applyFiltersAndSort();
     }
 
@@ -115,9 +115,9 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         for (Song s : originalList) {
             // Check text query filter
             if (!currentQuery.isEmpty()) {
-                boolean matchTitle = s.getTitle().toLowerCase().contains(currentQuery);
-                boolean matchArtist = s.getArtist().toLowerCase().contains(currentQuery);
-                boolean matchAlbum = s.getAlbum() != null && s.getAlbum().toLowerCase().contains(currentQuery);
+                boolean matchTitle = s.getTitle().toLowerCase(java.util.Locale.ROOT).contains(currentQuery);
+                boolean matchArtist = s.getArtist().toLowerCase(java.util.Locale.ROOT).contains(currentQuery);
+                boolean matchAlbum = s.getAlbum() != null && s.getAlbum().toLowerCase(java.util.Locale.ROOT).contains(currentQuery);
                 if (!matchTitle && !matchArtist && !matchAlbum) {
                     continue;
                 }
@@ -299,6 +299,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
         boolean fav = PlaylistManager.getInstance(context).isFavorite(song.getPath());
         holder.btnFavorite.setImageResource(fav ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
+        holder.btnFavorite.setContentDescription(cl.arichard.descargador.util.Tr.t(fav ? "Quitar de favoritos" : "Agregar a favoritos"));
 
         holder.itemView.setOnClickListener(v -> {
             if (selectionMode) {
@@ -319,6 +320,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         holder.btnFavorite.setOnClickListener(v -> {
             boolean nowFav = PlaylistManager.getInstance(context).toggleFavoriteSong(song);
             holder.btnFavorite.setImageResource(nowFav ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
+            holder.btnFavorite.setContentDescription(cl.arichard.descargador.util.Tr.t(nowFav ? "Quitar de favoritos" : "Agregar a favoritos"));
             cl.arichard.descargador.util.SafeTap.pop(holder.btnFavorite, nowFav);
             if (listener != null) listener.onFavoriteClick(song, position);
         });

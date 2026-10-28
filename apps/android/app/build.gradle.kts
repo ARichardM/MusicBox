@@ -1,3 +1,7 @@
+import java.io.File
+import java.security.KeyStore
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("com.google.gms.google-services")
@@ -18,6 +22,14 @@ android {
     }
 
     signingConfigs {
+        create("sharedPreview") {
+            // La misma clave privada debe copiarse fuera de Git en ambos equipos.
+            storeFile = file(System.getenv("MUSICBOX_PREVIEW_KEYSTORE_PATH")
+                ?: File(gradle.gradleUserHomeDir, "musicbox/preview.keystore").absolutePath)
+            storePassword = System.getenv("MUSICBOX_PREVIEW_STORE_PASSWORD") ?: "android"
+            keyAlias = System.getenv("MUSICBOX_PREVIEW_KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword = System.getenv("MUSICBOX_PREVIEW_KEY_PASSWORD") ?: "android"
+        }
         create("releaseFromEnvironment") {
             val keyStorePath = System.getenv("MUSICBOX_KEYSTORE_PATH")
             if (!keyStorePath.isNullOrBlank()) {
@@ -32,6 +44,7 @@ android {
     buildTypes {
         create("preview") {
             initWith(getByName("debug"))
+            signingConfig = signingConfigs.getByName("sharedPreview")
             applicationIdSuffix = ".pruebas"
             versionNameSuffix = "-pruebas"
             matchingFallbacks += listOf("debug")
@@ -90,3 +103,26 @@ tasks.withType<JavaCompile>().configureEach {
 
 // La instalación de verificación nunca recibe la configuración de la cuenta real.
 tasks.matching { it.name == "processVerificationGoogleServices" }.configureEach { enabled = false }
+
+val verifyPreviewSigningIdentity = tasks.register("verifyPreviewSigningIdentity") {
+    group = "verification"
+    description = "Comprueba la firma compartida de MusicBox pruebas antes de empaquetar."
+    doLast {
+        val signing = android.signingConfigs.getByName("sharedPreview")
+        val keyFile = signing.storeFile
+        if (keyFile == null || !keyFile.isFile) {
+            throw GradleException("Falta la clave compartida de pruebas. Ejecuta scripts/windows/configurar_firma_pruebas.ps1 con la clave del Asus; consulta apps/android/README.md.")
+        }
+        val keyStore = KeyStore.getInstance(keyFile, signing.storePassword!!.toCharArray())
+        val certificate = keyStore.getCertificate(signing.keyAlias)
+            ?: throw GradleException("No se encontró el certificado de la firma de pruebas.")
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        if (fingerprint != "f6016b5ea4f16f199746f8ac3d5740b5170d76fcb7ff7988229445698b819456") {
+            throw GradleException("La clave de pruebas no coincide con la app instalada. Usa la misma clave del Asus en ambos equipos.")
+        }
+    }
+}
+tasks.matching { it.name == "validateSigningPreview" }.configureEach {
+    dependsOn(verifyPreviewSigningIdentity)
+}

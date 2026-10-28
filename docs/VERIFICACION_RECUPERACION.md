@@ -2,6 +2,18 @@
 
 Fecha: 27 de octubre de 2026. Cambios sin publicar sobre 2.3.3.
 
+## Repetición inalámbrica posterior al pull
+
+Las seis fases volvieron a pasar con los APK actuales en el Samsung SM-G985F
+con Android 13. Esta vez se ejecutó `--reboot` con autorización explícita: se
+reinició físicamente el teléfono entre preparar los pendientes y abrir Inicio.
+Se comprobó un identificador de arranque nuevo, la misma serie física, el
+desbloqueo y la reconexión inalámbrica aunque cambiaron la IP y el puerto.
+El parcial se reanudó por HTTP Range y se conservaron orden, numeración y
+cancelación. Otra apertura no duplicó archivos ni historial. Después se probaron
+las tres fases desde el descargador con interrupción de proceso. `adb reverse`
+quedó retirado al terminar. Las cifras de las secciones siguientes son históricas.
+
 ## Cambios funcionales
 
 - Android guarda los enlaces pendientes en un archivo privado con escritura atómica antes de comenzar a descargarlos. Si no puede guardarlos, no acepta el lote y registra el error.
@@ -48,6 +60,13 @@ Con los dos APK de verification instalados y el dispositivo conectado por ADB:
 ```powershell
 python scripts/verify_download_recovery.py --adb RUTA/AL/adb.exe
 ```
+
+Para incluir un reinicio físico, solo tras autorizarlo y pudiendo desbloquear
+el teléfono, añadir `--reboot`. El script reinicia una sola vez, antes de recuperar
+desde Inicio, comprueba el cambio de identificador de arranque y la identidad
+física del teléfono, espera al desbloqueo y restablece `adb reverse`. La segunda
+pantalla conserva el ensayo de interrupción de proceso. Sin esa opción no se
+reinicia el dispositivo.
 
 Si hay varios dispositivos, añadir `--serial IDENTIFICADOR`.
 

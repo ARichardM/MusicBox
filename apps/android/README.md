@@ -86,6 +86,35 @@ Se genera `app/build/outputs/apk/preview/app-preview.apk`, con el nombre
 favoritos y playlists se guardan por separado. Una actualización de la aplicación
 original necesita la misma clave de firma que su APK anterior.
 
+### Una firma de pruebas para el Asus y el PC
+
+El estado pendiente y los pasos para retomarlo están en
+[Firma de pruebas entre dos equipos](../../docs/FIRMA_PRUEBAS_DOS_EQUIPOS.md).
+
+`preview` usa una clave compartida, no la clave debug que cada máquina genera
+por separado. Se guarda fuera del repositorio en
+`%USERPROFILE%\.gradle\musicbox\preview.keystore` (o dentro de `GRADLE_USER_HOME`).
+Si falta, compilar/instalar preview falla antes de generar un APK con otra firma.
+Debug, verification y release mantienen sus configuraciones anteriores.
+
+Para conservar la instalación actual de MusicBox pruebas, copia de forma privada
+el archivo `%USERPROFILE%\.android\debug.keystore` del Asus y ejecuta, desde la
+raíz del proyecto, en **ambos equipos**:
+
+```powershell
+.\scripts\windows\configurar_firma_pruebas.ps1 -ClaveDelNotebook 'RUTA\debug.keystore'
+.\scripts\windows\install_android_preview.bat
+```
+
+El script verifica que la huella coincida con la app instalada y no sobrescribe
+otra clave existente. No cambia el `debug.keystore` general de otras aplicaciones.
+Guarda una copia privada de esa clave: el APK contiene el certificado público,
+pero no permite recuperar la clave privada. No basta con hacer pull del código.
+
+Para una ubicación personalizada se puede usar `MUSICBOX_PREVIEW_KEYSTORE_PATH`.
+Una clave con credenciales distintas admite `MUSICBOX_PREVIEW_STORE_PASSWORD`,
+`MUSICBOX_PREVIEW_KEY_ALIAS` y `MUSICBOX_PREVIEW_KEY_PASSWORD`.
+
 Las pruebas de gestos del dispositivo usan exclusivamente **verification** e incluyen
 carruseles, filtros, arrastre del navbar, minirreproductor, expansión interactiva,
 reordenamiento de cola, protección de botones y conservación del estado al cambiar

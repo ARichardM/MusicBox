@@ -158,6 +158,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private String currentSubListName = "";
     private boolean libraryReady, changingLibrary;
     private int scanGeneration;
+    private boolean libraryScanRunning, libraryScanPending;
+    // Local music must not wait behind the extractor's network update at startup.
+    private static final java.util.concurrent.ExecutorService LIBRARY_IO =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
 
     private SharedPreferences libraryPrefs() { return getSharedPreferences("library_navigation", MODE_PRIVATE); }
     private String libraryPositionKey() {
@@ -1271,7 +1275,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     uiState.completedDownloads++;
                     completed = true;
                 } else if (!job.error.isEmpty()) {
-                    cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.bottomBarArea), job.error);
+                    cl.arichard.descargador.util.AppNotice.error(findViewById(R.id.bottomBarArea),
+                            cl.arichard.descargador.download.ErrorReason.notice(job.error));
                 }
             }
         }
@@ -2029,14 +2034,19 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private void refreshMusicLibrary() {
+        // Cloud/download callbacks can arrive together: never queue redundant full scans.
+        if (libraryScanRunning) { libraryScanPending = true; return; }
+        libraryScanRunning = true;
         final int request = ++scanGeneration;
         if (allSongs.isEmpty() && libraryLoading != null) {
             libraryLoading.setVisibility(View.VISIBLE);
             recyclerLibrary.setVisibility(View.GONE);
+            txtSongCount.setText(cl.arichard.descargador.util.Tr.t("Cargando…"));
         }
-        DescargadorApp.IO.execute(() -> {
+        LIBRARY_IO.execute(() -> {
             List<Song> songs = MusicScanner.scanAllMusic(this);
             runOnUiThread(() -> {
+                libraryScanRunning = false;
                 if (request != scanGeneration || isFinishing() || isDestroyed()) return;
                 if (libraryLoading != null) libraryLoading.setVisibility(View.GONE);
                 recyclerLibrary.setVisibility(View.VISIBLE);
@@ -2050,6 +2060,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 PlaylistManager.getInstance(this).linkLocalSongs(allSongs);
                 cl.arichard.descargador.data.ClickStats.getInstance(this).migrateLegacy(SearchHistoryManager.getInstance(this), allSongs);
                 reconcileAutoDownloads();
+                if (libraryScanPending) {
+                    libraryScanPending = false;
+                    refreshMusicLibrary();
+                }
             });
         });
     }
@@ -2074,7 +2088,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private static String titleKey(String title) {
         return java.text.Normalizer.normalize(title == null ? "" : title, java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "").replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+                .replaceAll("\\p{M}", "").replaceAll("[^a-zA-Z0-9]", "").toLowerCase(java.util.Locale.ROOT);
     }
 
     /** Tracks that are neither saved on this device nor being fetched right now. */

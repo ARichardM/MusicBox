@@ -9,6 +9,8 @@ public final class Tr {
     private static final Map<String, String> EN = new HashMap<>();
     static {
         Map<String, String> m = EN;
+        m.put("Buscando canciones similares…", "Finding similar songs…");
+        m.put("No se pudieron agregar canciones similares. Toca para reintentar.", "Could not add similar songs. Tap to retry.");
         m.put("Elegidas", "Chosen");
         m.put("Por revisar", "Needs review");
         m.put("Pendientes", "Pending");

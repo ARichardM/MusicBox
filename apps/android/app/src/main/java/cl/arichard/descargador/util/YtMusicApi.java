@@ -351,12 +351,50 @@ public final class YtMusicApi {
 
     /** Radio de YouTube Music: solo pistas de audio (ATV), nunca videoclips OMV ni videos UGC, sin la propia semilla. */
     public static List<SearchResult> related(String videoId, int limit) throws Exception {
+        if (limit <= 0) return new ArrayList<>();
         JSONObject data = post("next", new JSONObject().put("videoId", videoId).put("playlistId", "RDAMVM" + videoId));
+        List<SearchResult> songs = radioTracks(data, videoId, "", limit);
+        if (!songs.isEmpty()) return songs;
+        // A music video can produce an OMV-only radio. Repeating that request cannot
+        // recover audio tracks: find the same recording in Music's songs catalogue.
+        for (JSONObject seed : all(data, "playlistPanelVideoRenderer")) {
+            if (!videoId.equals(seed.optString("videoId"))) continue;
+            String title = text(seed.optJSONObject("title"));
+            List<List<JSONObject>> parts = segments(seed.optJSONObject("longBylineText"));
+            String artist = parts.isEmpty() ? "" : join(parts.get(0));
+            if (title.isEmpty() || artist.isEmpty()) break;
+            JSONObject search = post("search", new JSONObject().put("query", artist + " " + title)
+                    .put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"));
+            for (JSONObject row : all(search, "musicResponsiveListItemRenderer")) {
+                SearchResult candidate = trackFromRow(row, "", "");
+                if (candidate == null || candidate.getId().equals(videoId)
+                        || !sameRecording(title, artist, candidate)) continue;
+                String audioId = candidate.getId();
+                JSONObject radio = post("next", new JSONObject().put("videoId", audioId).put("playlistId", "RDAMVM" + audioId));
+                songs = radioTracks(radio, videoId, audioId, limit);
+                android.util.Log.i("MusicBoxAutoplay", "Audio radio fallback: " + videoId + " -> " + audioId + ", tracks=" + songs.size());
+                return songs; // Bounded: one search and one alternate radio, never a query per result.
+            }
+            break;
+        }
+        android.util.Log.w("MusicBoxAutoplay", "No audio radio tracks for " + videoId);
+        return songs;
+    }
+
+    private static boolean sameRecording(String title, String artist, SearchResult candidate) {
+        String wantedTitle = normalize(title), actualTitle = normalize(candidate.getTitle());
+        String wantedArtist = normalize(artist), actualArtist = normalize(candidate.getChannel());
+        return !actualTitle.isEmpty() && !actualArtist.isEmpty()
+                && (wantedTitle.equals(actualTitle) || (" " + wantedTitle + " ").contains(" " + actualTitle + " "))
+                && (wantedArtist.equals(actualArtist) || (" " + wantedArtist + " ").contains(" " + actualArtist + " "));
+    }
+
+    private static List<SearchResult> radioTracks(JSONObject data, String videoId, String audioId, int limit) {
         List<SearchResult> songs = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (JSONObject item : all(data, "playlistPanelVideoRenderer")) {
             String id = item.optString("videoId");
-            if (id.isEmpty() || id.equals(videoId) || !isSong(item) || !seen.add(id)) continue;
+            if (id.isEmpty() || id.equals(videoId) || id.equals(audioId) || !isSong(item) || !seen.add(id)) continue;
             List<List<JSONObject>> parts = segments(item.optJSONObject("longBylineText"));
             String artist = parts.isEmpty() ? "" : join(parts.get(0));
             songs.add(new SearchResult(id, text(item.optJSONObject("title")), artist, seconds(text(item.optJSONObject("lengthText"))),

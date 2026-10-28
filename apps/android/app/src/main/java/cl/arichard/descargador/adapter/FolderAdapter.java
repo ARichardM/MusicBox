@@ -41,9 +41,9 @@ public class FolderAdapter extends RecyclerView.Adapter<FolderAdapter.FolderView
 
     public void filter(String query) {
         displayedFolderNames.clear();
-        String q = query != null ? query.trim().toLowerCase() : "";
+        String q = query != null ? query.trim().toLowerCase(java.util.Locale.ROOT) : "";
         for (String name : allFolders.keySet()) {
-            if (q.isEmpty() || name.toLowerCase().contains(q)) {
+            if (q.isEmpty() || name.toLowerCase(java.util.Locale.ROOT).contains(q)) {
                 displayedFolderNames.add(name);
             }
         }

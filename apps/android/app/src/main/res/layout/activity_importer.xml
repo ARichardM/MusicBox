@@ -42,6 +42,7 @@
                     <TextView android:id="@+id/txtListHelp" android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:layout_marginTop="4dp" android:textColor="@color/text_secondary" android:textSize="13sp"/>
                     <EditText android:id="@+id/inputList" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:hint="@string/lista_canciones_pista"
                         android:layout_marginTop="12dp" android:background="@drawable/bg_input_field" android:gravity="top|start"
                         android:inputType="textMultiLine" android:minLines="10" android:maxLines="18" android:padding="14dp"
                         android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary" android:textSize="14sp"/>
@@ -79,6 +80,7 @@
                 <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_search"
                     android:importantForAccessibility="no"/>
                 <EditText android:id="@+id/inputFilter" android:layout_width="0dp" android:layout_height="match_parent"
+                    android:hint="@string/buscar_en_lista"
                     android:layout_weight="1" android:layout_marginStart="10dp" android:background="@null"
                     android:inputType="text" android:maxLines="1" android:textColor="@color/text_primary"
                     android:textColorHint="@color/text_secondary" android:textSize="15sp"/>

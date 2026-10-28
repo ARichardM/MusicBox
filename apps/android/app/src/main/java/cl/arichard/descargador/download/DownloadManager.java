@@ -239,9 +239,9 @@ public final class DownloadManager {
         changed(true);
     }
 
-    /** El motivo en el idioma de la app, con el detalle técnico de yt-dlp al final. */
+    /** Aviso breve; el diagnóstico completo se conserva en el registro de descargas. */
     private static String describe(String error) {
-        return Tr.t(ErrorReason.prefix(error)) + " " + Tr.t("Detalle:") + " " + (error == null ? "" : error);
+        return Tr.t(ErrorReason.prefix(error));
     }
 
     private void fail(DownloadJob job, String message) {

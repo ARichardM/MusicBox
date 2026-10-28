@@ -382,6 +382,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     private void updatePlaybackState(boolean isPlaying) {
         btnPlayPauseIcon.setImageResource(isPlaying ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
+        btnPlayPauseCircle.setContentDescription(cl.arichard.descargador.util.Tr.t(isPlaying ? "Pausar" : "Reproducir"));
     }
 
     private void updateProgress(int pos, int dur) {
@@ -398,6 +399,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     }
 
     private void updateShuffleButton(boolean active) {
+        btnShuffle.setSelected(active);
         btnShuffle.setAlpha(active ? 1.0f : 0.45f);
         btnShuffle.setColorFilter(active ? ContextCompat.getColor(this, R.color.accent) : ContextCompat.getColor(this, R.color.text_primary));
     }
@@ -429,7 +431,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         int totalSec = ms / 1000;
         int m = totalSec / 60;
         int s = totalSec % 60;
-        return String.format("%02d:%02d", m, s);
+        return String.format(java.util.Locale.ROOT, "%02d:%02d", m, s);
     }
 
     @Override

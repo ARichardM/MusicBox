@@ -151,7 +151,7 @@ public final class UpdateChecker {
         for (String raw : String.valueOf(body).split("\\r?\\n")) {
             String line = raw.trim();
             if (line.startsWith("#")) {
-                String heading = line.replaceFirst("^#+\\s*", "").toLowerCase();
+                String heading = line.replaceFirst("^#+\\s*", "").toLowerCase(java.util.Locale.ROOT);
                 include = !(heading.contains("windows") && !heading.contains("android"));
                 continue;
             }

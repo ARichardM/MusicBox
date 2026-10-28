@@ -30,6 +30,6 @@ public class SearchResult implements Serializable {
         if (durationSeconds <= 0) return "--:--";
         long mins = durationSeconds / 60;
         long secs = durationSeconds % 60;
-        return String.format("%02d:%02d", mins, secs);
+        return String.format(java.util.Locale.ROOT, "%02d:%02d", mins, secs);
     }
 }

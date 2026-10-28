@@ -15,7 +15,7 @@
         android:paddingEnd="16dp"
         android:background="@color/bg_primary">
 
-        <ImageView
+        <ImageView android:contentDescription="@string/volver"
             android:id="@+id/btnClosePlayer"
             android:layout_width="40dp"
             android:layout_height="40dp"
@@ -99,7 +99,7 @@
                 app:cardElevation="10dp"
                 app:cardBackgroundColor="#1C1C1E">
 
-                <ImageView
+                <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
                     android:id="@+id/imgPlayerCoverArt"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
@@ -173,7 +173,7 @@
                     android:layout_gravity="center"
                     android:gravity="center_vertical">
 
-                    <ImageView
+                    <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
                         android:layout_width="20dp"
                         android:layout_height="20dp"
                         android:src="@drawable/ic_download"
