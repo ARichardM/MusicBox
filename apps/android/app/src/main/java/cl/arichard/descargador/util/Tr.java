@@ -9,6 +9,11 @@ public final class Tr {
     private static final Map<String, String> EN = new HashMap<>();
     static {
         Map<String, String> m = EN;
+        m.put("Todos los artistas", "All artists");
+        m.put("Artistas", "Artists");
+        m.put("Quitar filtro de artista", "Clear artist filter");
+        m.put("Filtrar por artista", "Filter by artist");
+        m.put("Artista", "Artist");
         m.put("Buscando canciones similares…", "Finding similar songs…");
         m.put("No se pudieron agregar canciones similares. Toca para reintentar.", "Could not add similar songs. Tap to retry.");
         m.put("Elegidas", "Chosen");

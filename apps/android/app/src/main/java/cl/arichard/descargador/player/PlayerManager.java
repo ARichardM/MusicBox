@@ -429,6 +429,7 @@ public class PlayerManager {
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         android.content.SharedPreferences prefs = context.getSharedPreferences("player", 0);
         repeatMode = prefs.getInt("repeat", REPEAT_ALL);
+        queueAllowsAutoplay = prefs.getBoolean("queue_allows_autoplay", true);
         sourceType = prefs.getString("source_type", "songs");
         sourceName = prefs.getString("source_name", "");
         try {
@@ -461,6 +462,7 @@ public class PlayerManager {
         org.json.JSONArray songs = new org.json.JSONArray();
         for (Song song : queue) songs.put(song.toJson());
         context.getSharedPreferences("player", 0).edit().putString("queue", songs.toString())
+                .putBoolean("queue_allows_autoplay", queueAllowsAutoplay)
                 .putString("current", currentSong == null ? "" : currentSong.getPath()).apply();
         savePosition();
     }
@@ -502,8 +504,15 @@ public class PlayerManager {
     }
 
     public void playSong(Song song, List<Song> newQueue) {
+        playSong(song, newQueue, true);
+    }
+
+    private boolean queueAllowsAutoplay = true;
+
+    public void playSong(Song song, List<Song> newQueue, boolean allowAutoplay) {
         if (song == null) return;
         if (newQueue != null && !newQueue.isEmpty()) {
+            queueAllowsAutoplay = allowAutoplay;
             autoplayGeneration++;
             autoplayLoading = advanceWhenReady = false;
             autoplayTriedFor = "";
@@ -895,7 +904,7 @@ public class PlayerManager {
 
     /** Hay que buscar canciones relacionadas: sonando una de YouTube, al final de la cola y sin haberlo intentado ya. */
     private boolean autoplayNeeded(boolean atEnd) {
-        if (!isAutoplay() || !online || currentSong == null || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return false;
+        if (!queueAllowsAutoplay || !isAutoplay() || !online || currentSong == null || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return false;
         if (autoplayLoading) return true;
         if (currentOnlineVideoId.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return false;
         if (!atEnd && currentIndex < queue.size() - 1) return false;
@@ -905,7 +914,7 @@ public class PlayerManager {
 
     /** Agrega al final de la cola canciones parecidas a la actual (radio de YouTube Music, solo canciones). */
     private void fetchAutoplay() {
-        if (autoplayLoading || !isAutoplay() || !online || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return;
+        if (!queueAllowsAutoplay || autoplayLoading || !isAutoplay() || !online || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return;
         final String seed = currentOnlineVideoId;
         final int requestGeneration = autoplayGeneration;
         if (seed.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return;
@@ -927,7 +936,7 @@ public class PlayerManager {
     }
 
     void completeAutoplay(String seed, int requestGeneration, List<cl.arichard.descargador.model.SearchResult> found) {
-        if (requestGeneration != autoplayGeneration) return;
+        if (requestGeneration != autoplayGeneration || !queueAllowsAutoplay) return;
         autoplayLoading = false;
         if (!online || currentSong == null) return;
         if (!seed.equals(currentOnlineVideoId)) {

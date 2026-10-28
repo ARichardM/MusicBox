@@ -39,6 +39,26 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     private boolean selectionMode = false;
 
     private String currentQuery = "";
+    private String artistFilter = "";
+
+    public String getArtistFilter() { return artistFilter; }
+
+    private static String artistName(Song song) {
+        String artist = song.getArtist();
+        // Las playlists antiguas de Windows guardaban «artista · álbum» como canal.
+        return (song.isOnline() ? artist.split(" · ", 2)[0] : artist).trim();
+    }
+
+    public List<String> getArtists() {
+        java.util.Set<String> artists = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (Song song : originalList) artists.add(artistName(song));
+        return new ArrayList<>(artists);
+    }
+
+    public void setArtistFilter(String artist) {
+        artistFilter = artist == null ? "" : artist.trim();
+        applyFiltersAndSort();
+    }
 
     /** Cómo se ordena la lista. DEFAULT respeta el orden recibido (el de la playlist o el del escáner). */
     public enum Sort { DEFAULT, TITLE, ARTIST, RECENT, PLAYS, DURATION }
@@ -113,6 +133,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         List<Song> before = new ArrayList<>(displayedList);
         displayedList.clear();
         for (Song s : originalList) {
+            if (!artistFilter.isEmpty() && !artistFilter.equalsIgnoreCase(artistName(s))) continue;
             // Check text query filter
             if (!currentQuery.isEmpty()) {
                 boolean matchTitle = s.getTitle().toLowerCase(java.util.Locale.ROOT).contains(currentQuery);

@@ -131,6 +131,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private View layoutAutoDownloadPill;
     private androidx.appcompat.widget.SwitchCompat switchLibraryAutoDownload;
     private TextView txtLibraryTitle, txtSongCount;
+    private TextView btnPlaylistArtist;
     private EditText inputSearchLibrary;
     private ImageView btnClearLibraryFilter;
 
@@ -165,7 +166,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private SharedPreferences libraryPrefs() { return getSharedPreferences("library_navigation", MODE_PRIVATE); }
     private String libraryPositionKey() {
-        return currentLibraryMode + ":" + currentSubListName + ":" + inputSearchLibrary.getText();
+        return currentLibraryMode + ":" + currentSubListName + ":" + inputSearchLibrary.getText()
+                + ":" + (songAdapter == null ? "" : songAdapter.getArtistFilter());
     }
     private void saveLibraryPosition() {
         if (!libraryReady || changingLibrary) return;
@@ -200,12 +202,14 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         saveLibraryPosition();
         libraryPrefs().edit().putInt("mode", currentLibraryMode).remove("filter")
                 .putString("sublist", currentSubListName).putString("query", inputSearchLibrary.getText().toString())
+                .putString("artist", songAdapter == null ? "" : songAdapter.getArtistFilter())
                 .putBoolean("search_tab", currentTabIsSearch).apply();
     }
     private void restoreLibraryNavigation() {
         SharedPreferences prefs = libraryPrefs();
         int mode = prefs.getInt("mode", 0);
         String name = prefs.getString("sublist", ""), query = prefs.getString("query", "");
+        String artist = prefs.getString("artist", "");
         if (mode == 1) { mode = 3; name = "Favoritos"; }
         boolean search = prefs.getBoolean("search_tab", true);
         setLibraryMode(mode);
@@ -215,6 +219,11 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (songs != null) showFolderSongs(name, songs);
         }
         inputSearchLibrary.setText(query);
+        if (isViewingSubList && currentLibraryMode == 3) {
+            songAdapter.setArtistFilter(artist);
+            updatePlaylistArtistFilter();
+            updateLibraryCounter();
+        }
         restoreLibraryPosition();
         if (!search) switchTab(false);
     }
@@ -1374,7 +1383,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 rememberPlaybackSource();
                 List<Song> local = preferLocalCopies(queue);
                 int index = queue.indexOf(song);
-                PlayerManager.getInstance().playSong(index >= 0 ? local.get(index) : song, local);
+                PlayerManager.getInstance().playSong(index >= 0 ? local.get(index) : song, local,
+                        songAdapter.getArtistFilter().isEmpty());
                 Intent intent = new Intent(MainActivity.this, NowPlayingActivity.class);
                 startActivity(intent);
             }
@@ -1432,6 +1442,13 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
         recyclerLibrary.setAdapter(songAdapter);
         songAdapter.setSort(savedSort, savedAscending);
+        btnPlaylistArtist = findViewById(R.id.btnPlaylistArtist);
+        btnPlaylistArtist.setOnClickListener(v -> showPlaylistArtistPicker());
+        cl.arichard.descargador.util.SafeTap.install(btnPlaylistArtist);
+        View clearArtist = findViewById(R.id.btnClearPlaylistArtist);
+        clearArtist.setContentDescription(cl.arichard.descargador.util.Tr.t("Quitar filtro de artista"));
+        clearArtist.setOnClickListener(v -> applyPlaylistArtistFilter(""));
+        cl.arichard.descargador.util.SafeTap.install(clearArtist);
 
         chipSongs.setOnClickListener(v -> setLibraryMode(0));
         chipFolders.setOnClickListener(v -> setLibraryMode(2));
@@ -1451,7 +1468,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 List<Song> shuffled = new ArrayList<>(collection);
                 Collections.shuffle(shuffled);
                 rememberPlaybackSource();
-                PlayerManager.getInstance().playSong(shuffled.get(0), shuffled);
+                List<Song> local = preferLocalCopies(shuffled);
+                PlayerManager.getInstance().playSong(local.get(0), local,
+                        songAdapter.getArtistFilter().isEmpty());
             } else {
                 Toast.makeText(this, cl.arichard.descargador.util.Tr.t("No hay canciones para reproducir"), Toast.LENGTH_SHORT).show();
             }
@@ -1502,15 +1521,66 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
     }
 
+    private void showPlaylistArtistPicker() {
+        List<String> artists = songAdapter.getArtists();
+        String[] choices = new String[artists.size() + 1];
+        choices[0] = cl.arichard.descargador.util.Tr.t("Todos los artistas");
+        int selected = 0;
+        for (int i = 0; i < artists.size(); i++) {
+            choices[i + 1] = artists.get(i);
+            if (artists.get(i).equalsIgnoreCase(songAdapter.getArtistFilter())) selected = i + 1;
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(cl.arichard.descargador.util.Tr.t("Filtrar por artista"))
+                .setSingleChoiceItems(choices, selected, (dialog, which) -> {
+                    applyPlaylistArtistFilter(which == 0 ? "" : artists.get(which - 1));
+                    dialog.dismiss();
+                })
+                .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null).show();
+    }
+
+    private void applyPlaylistArtistFilter(String artist) {
+        saveLibraryPosition();
+        songAdapter.setArtistFilter(artist);
+        updatePlaylistArtistFilter(); updateLibraryCounter(); restoreLibraryPosition();
+        saveLibraryNavigation();
+    }
+
+    private void updatePlaylistArtistFilter() {
+        if (btnPlaylistArtist == null) return;
+        boolean visible = isViewingSubList && currentLibraryMode == 3;
+        btnPlaylistArtist.setVisibility(visible ? View.VISIBLE : View.GONE);
+        String artist = songAdapter.getArtistFilter();
+        boolean selected = !artist.isEmpty();
+        btnPlaylistArtist.setSelected(selected);
+        btnPlaylistArtist.setText(selected ? artist : cl.arichard.descargador.util.Tr.t("Artistas"));
+        btnPlaylistArtist.setTextColor(ContextCompat.getColor(this, selected ? R.color.accent : R.color.text_primary));
+        cl.arichard.descargador.util.ArtistAvatarLoader.getInstance(this)
+                .load(visible && selected ? artist : "", btnPlaylistArtist, dp(20));
+        btnPlaylistArtist.setContentDescription(cl.arichard.descargador.util.Tr.t("Filtrar por artista")
+                + ": " + (selected ? artist : cl.arichard.descargador.util.Tr.t("Todos los artistas")));
+        androidx.core.view.ViewCompat.setTooltipText(btnPlaylistArtist, btnPlaylistArtist.getContentDescription());
+        findViewById(R.id.btnClearPlaylistArtist).setVisibility(visible && selected ? View.VISIBLE : View.GONE);
+        findViewById(R.id.libraryToolsSpacer).setVisibility(visible ? View.GONE : View.VISIBLE);
+        // Ambos controles comparten el espacio disponible; los nombres largos se recortan.
+        View sort = findViewById(R.id.btnLibrarySort);
+        LinearLayout.LayoutParams size = (LinearLayout.LayoutParams) sort.getLayoutParams();
+        size.width = visible ? 0 : LinearLayout.LayoutParams.WRAP_CONTENT;
+        size.weight = visible ? 1 : 0;
+        sort.setLayoutParams(size);
+    }
+
     private void setLibraryMode(int mode) {
         saveLibraryPosition(); changingLibrary = true;
         currentLibraryMode = mode == 1 ? 3 : Math.max(0, Math.min(3, mode));
         currentSubListName = ""; isViewingSubList = false; heldFavorites.clear();
+        songAdapter.setArtistFilter("");
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
     }
 
     private void updateLibraryHeader() {
+        updatePlaylistArtistFilter();
         btnBackLibrary.setVisibility(isViewingSubList ? View.VISIBLE : View.GONE);
         String headerTitle = cl.arichard.descargador.util.Tr.t("Mi Música");
         if (isViewingSubList) {
@@ -1570,6 +1640,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (recyclerLibrary.getAdapter() != playlistAdapter) recyclerLibrary.setAdapter(playlistAdapter);
         }
         applyLibraryFilter(inputSearchLibrary.getText().toString());
+        updatePlaylistArtistFilter();
     }
 
     private void refreshPlaylistsView() {
@@ -1580,6 +1651,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         saveLibraryPosition(); changingLibrary = true;
         currentLibraryMode = 3;
         currentSubListName = playlistName; isViewingSubList = true; heldFavorites.clear();
+        songAdapter.setArtistFilter("");
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
     }
@@ -1588,6 +1660,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         saveLibraryPosition(); changingLibrary = true;
         currentLibraryMode = 2;
         currentSubListName = name; isViewingSubList = true; heldFavorites.clear();
+        songAdapter.setArtistFilter("");
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
     }

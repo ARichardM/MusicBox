@@ -366,6 +366,25 @@ En el importador, pulsa **Leer imagen** y elige una captura o foto con tu lista.
 
 Desde YouTube u otra aplicación, usa **Compartir → MusicBox**. Se abre el descargador con el texto recibido, donde puedes revisar enlaces, formato y calidad antes de iniciar. Las descargas rápidas de búsqueda, biblioteca y reproductor usan la misma cola que el descargador y aparecen en su historial y registro.
 
+## Escuchar solo un artista de una playlist
+
+En Android y Windows, abre una playlist y pulsa **Artistas** en la barra de opciones
+(a la derecha del orden en Android). Elige un
+artista para ver únicamente sus canciones dentro de esa playlist. Puedes combinar
+el filtro con la búsqueda y comenzar tocando una canción o usando **Aleatorio**.
+La cola conserva esa selección y la reproducción automática no añade temas de
+otros artistas. Para volver a ver la playlist completa, elige **Todos los artistas**.
+
+El filtro utiliza el artista registrado en cada canción, o el canal disponible en
+los temas online. No agrega ni elimina canciones de la playlist. Cambiar el filtro
+no cambia una cola que ya está sonando: inicia otra canción para reproducir la
+nueva selección. El nombre del artista queda resaltado mientras el filtro está
+activo; la **×** permite quitarlo con un toque. El control comparte fila con las
+otras opciones y recorta los nombres largos sin ocultar los botones vecinos.
+La píldora muestra la foto de perfil del artista cuando está disponible. La imagen
+se carga en segundo plano y se reutiliza al volver a elegirlo; sin conexión o sin
+foto se mantiene un avatar de respaldo, sin interrumpir la reproducción.
+
 ## Estadísticas de escucha
 
 En el perfil, abre **Tu música en cifras**. Muestra las reproducciones, el tiempo escuchado y las canciones y playlists más escuchadas. El tiempo solo aumenta mientras la reproducción avanza: las pausas, la espera de carga y los saltos de posición no se cuentan. Las reproducciones antiguas se conservan, pero su tiempo anterior a esta función no puede reconstruirse. La actividad de una playlist corresponde a escuchar desde ella, no simplemente a tener allí una canción.

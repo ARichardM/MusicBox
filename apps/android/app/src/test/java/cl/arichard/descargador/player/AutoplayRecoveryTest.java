@@ -57,6 +57,18 @@ public class AutoplayRecoveryTest {
         assertFalse(player.isAutoplayLoading());
         assertEquals("", player.getAutoplayError());
     }
+
+    @Test public void restrictedArtistQueueDoesNotFetchOrAcceptRelatedSongs() throws Exception {
+        set("queueAllowsAutoplay", false);
+        set("autoplayLoading", false);
+        set("autoplayTriedFor", "");
+        player.setAutoplay(true);
+        assertTrue(player.isAutoplay());
+        assertFalse(player.isAutoplayLoading());
+        player.completeAutoplay("abcdefghijk", 0, related());
+        assertEquals(1, player.getQueue().size());
+        assertEquals("", player.getAutoplayError());
+    }
     @Test public void responseFromAnOldQueueDoesNotFinishTheNewRequest() {
         player.completeAutoplay("abcdefghijk", -1, related());
         assertTrue(player.isAutoplayLoading());

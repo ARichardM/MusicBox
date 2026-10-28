@@ -42,6 +42,20 @@ public class ImageLoader {
         return memoryCache.get(url);
     }
 
+    /** La misma caché de imágenes para avatares usados como drawable de texto. */
+    public void loadBitmap(String url, java.util.function.Consumer<Bitmap> callback) {
+        Bitmap cached = getBitmap(url);
+        if (cached != null || url == null || url.isEmpty()) {
+            mainHandler.post(() -> callback.accept(cached));
+            return;
+        }
+        executor.execute(() -> {
+            Bitmap image = downloadBitmap(url);
+            if (image != null) memoryCache.put(url, image);
+            mainHandler.post(() -> callback.accept(image));
+        });
+    }
+
     public void load(String url, ImageView imageView) {
         if (imageView == null) return;
         if (url == null || url.isEmpty()) {

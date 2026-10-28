@@ -7,6 +7,12 @@ from PySide6.QtCore import QLocale, QTranslator
 LANGUAGES = ("auto", "es", "en")
 
 EN = {
+    "Todos los artistas": "All artists",
+    "Artistas": "Artists",
+    "Quitar filtro de artista": "Clear artist filter",
+    "Filtrar por artista": "Filter by artist",
+    "Sin canciones con estos filtros": "No songs match these filters",
+    "Cambia el artista o la búsqueda": "Change the artist or search",
     "Playlists": "Playlists",
     "Tu música en cifras": "Your music in numbers",
     "Cada reproducción cuenta": "Every play counts",

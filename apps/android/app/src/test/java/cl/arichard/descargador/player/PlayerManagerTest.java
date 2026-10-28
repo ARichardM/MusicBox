@@ -45,6 +45,19 @@ public class PlayerManagerTest {
     }
     private void prepared() { Shadows.shadowOf(Looper.getMainLooper()).idle(); }
 
+    @Test public void filteredQueueKeepsAutoplayPreferenceAndRestoresItsRestriction() {
+        context.getSharedPreferences("player", 0).edit().putBoolean("autoplay", true).commit();
+        player.playSong(a, Arrays.asList(a, c), false); prepared();
+        assertTrue(player.isAutoplay());
+        assertFalse(context.getSharedPreferences("player", 0).getBoolean("queue_allows_autoplay", true));
+        PlayerManager restored = new PlayerManager(); restored.init(context);
+        restored.playNext(); prepared();
+        assertEquals(c.getPath(), restored.getCurrentSong().getPath());
+        assertFalse(context.getSharedPreferences("player", 0).getBoolean("queue_allows_autoplay", true));
+        restored.playSong(b, Arrays.asList(a, b, c)); prepared();
+        assertTrue(context.getSharedPreferences("player", 0).getBoolean("queue_allows_autoplay", false));
+    }
+
     @Test public void restoredSessionIsPausedAndKeepsPosition() {
         assertEquals(b.getPath(), player.getCurrentSong().getPath());
         assertEquals(4200, player.getCurrentPosition()); assertFalse(player.isPlaying());

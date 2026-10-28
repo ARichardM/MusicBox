@@ -60,6 +60,29 @@ public class SongAdapterSortTest {
         assertEquals(Arrays.asList("álbum", "Alfa", "Beta"), titles());
     }
 
+    @Test public void artistFilterIsExactAndCombinesWithSearchWithoutChangingPicker() {
+        adapter.setArtistFilter(" ana ");
+        assertEquals(Arrays.asList("álbum", "Alfa"), titles());
+        assertEquals(Arrays.asList("Ana", "Zeta"), adapter.getArtists());
+        adapter.filter("Alfa");
+        assertEquals(Arrays.asList("Alfa"), titles());
+        assertEquals(Arrays.asList("Ana", "Zeta"), adapter.getArtists());
+        adapter.filter("");
+        adapter.setArtistFilter("");
+        assertEquals(3, adapter.getItemCount());
+        adapter.setArtistFilter("An");
+        assertEquals(0, adapter.getItemCount());
+    }
+
+    @Test public void legacyOnlineAlbumsAndLocalSongsShareOneArtistChoice() {
+        adapter.updateSongs(Arrays.asList(song("Local", "Ana", 200, 1),
+                new Song(2, "Online", "ana · Álbum", "YouTube", 200000,
+                        "youtube:abcdefghijk", "YouTube", 2), song("Otra", "Zeta", 200, 3)));
+        assertEquals(Arrays.asList("Ana", "Zeta"), adapter.getArtists());
+        adapter.setArtistFilter("Ana");
+        assertEquals(Arrays.asList("Local", "Online"), titles());
+    }
+
     @Test public void recentIsNewestFirstAndOldestWhenReversed() {
         adapter.setSort(SongAdapter.Sort.RECENT, true);
         assertEquals(Arrays.asList("Beta", "Alfa", "álbum"), titles());

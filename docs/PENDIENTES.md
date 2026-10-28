@@ -5,6 +5,17 @@ Actualizado el 28 de octubre de 2026. Versión 2.3.4 publicada para Android y Wi
 Informe de compilaciones, pruebas, firmas y descargas verificadas:
 [`PUBLICACION_2.3.4.md`](PUBLICACION_2.3.4.md).
 
+## Filtro de artista en playlists (sin publicar)
+
+- Implementado en Android y Windows con foto de perfil y avatar de respaldo.
+  Comprobado: 10 pruebas de escritorio (`.venv`) y `testVerificationUnitTest` Android correctas.
+- Pendiente: ejecutar `PlaylistArtistDeviceTest` en dispositivo con la variante
+  `verification` (no se ha ejecutado).
+- Pendiente: subir la versión a 2.3.5 (Android, `version.py`, instalador, metadatos
+  de Windows y CHANGELOG), compilar, probar y publicar.
+- Entorno Android: usar JDK 21 (`~/.jdks/jbr-21.0.11`) y `ANDROID_HOME`; el JDK 25
+  por defecto rompe Gradle y la variante `debug` exige `google-services.json`.
+
 ## Cierre de la revisión y trabajo entre equipos
 
 - Se corrige además la repetición de copias de la misma canción en «Más escuchadas»

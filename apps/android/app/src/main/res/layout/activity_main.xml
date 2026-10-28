@@ -2,6 +2,7 @@
 <cl.arichard.descargador.util.TabSwipeLayout android:id="@+id/mainGestureRoot" xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
     android:background="@color/bg_primary">
 
     <FrameLayout android:id="@+id/contentFrame"
@@ -461,9 +462,10 @@
                         android:background="@drawable/bg_chip_inactive" android:text="@string/carpetas"
                         android:textColor="@color/text_secondary" android:textSize="13sp"/>
                 </LinearLayout>
-                <FrameLayout android:id="@+id/layoutLibraryTools"
-                    android:layout_width="match_parent" android:layout_height="40dp"
-                    android:layout_marginTop="6dp" android:visibility="gone">
+                <LinearLayout android:id="@+id/layoutLibraryTools"
+                    android:layout_width="match_parent" android:layout_height="48dp"
+                    android:layout_marginTop="4dp" android:visibility="gone"
+                    android:orientation="horizontal" android:gravity="center_vertical">
                     <LinearLayout android:id="@+id/btnLibrarySort"
                         android:layout_width="wrap_content" android:layout_height="32dp"
                         android:layout_gravity="start|center_vertical" android:gravity="center_vertical"
@@ -473,8 +475,27 @@
                             android:src="@drawable/ic_sort" app:tint="@color/accent" android:importantForAccessibility="no"/>
                         <TextView android:id="@+id/txtLibrarySort" android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_marginStart="6dp" android:textColor="@color/text_primary" android:textSize="11sp"
+                            android:layout_weight="1" android:maxLines="1" android:ellipsize="end"
                             android:fontFamily="sans-serif-medium"/>
                     </LinearLayout>
+                    <TextView android:id="@+id/btnPlaylistArtist"
+                        android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1.2"
+                        android:layout_marginStart="6dp" android:layout_marginEnd="6dp"
+                        android:paddingStart="10dp" android:paddingEnd="8dp"
+                        android:gravity="center_vertical" android:background="@drawable/bg_artist_filter"
+                        android:drawableEnd="@drawable/ic_artist_dropdown" android:drawablePadding="4dp"
+                        android:textColor="@color/text_primary" android:textSize="11sp"
+                        android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="end"
+                        android:visibility="gone" android:clickable="true" android:focusable="true"/>
+                    <ImageView android:id="@+id/btnClearPlaylistArtist"
+                        android:layout_width="32dp" android:layout_height="48dp"
+                        android:layout_marginEnd="4dp" android:paddingStart="8dp" android:paddingEnd="8dp"
+                        android:paddingTop="16dp" android:paddingBottom="16dp"
+                        android:src="@drawable/ic_close" app:tint="@color/accent"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:visibility="gone" android:clickable="true" android:focusable="true"/>
+                    <View android:id="@+id/libraryToolsSpacer"
+                        android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
                     <LinearLayout android:id="@+id/layoutAutoDownloadPill"
                         android:layout_width="wrap_content" android:layout_height="32dp"
                         android:layout_gravity="end|center_vertical"
@@ -493,7 +514,7 @@
                             android:scaleX="0.75" android:scaleY="0.75"
                             android:showText="false" android:contentDescription="@string/descarga_automatica"/>
                     </LinearLayout>
-                </FrameLayout>
+                </LinearLayout>
             </LinearLayout>
 
             <FrameLayout android:layout_width="match_parent" android:layout_height="0dp"

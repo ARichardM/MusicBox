@@ -12,6 +12,8 @@ EmptyState 1.0 EmptyState.qml
 Shimmer 1.0 Shimmer.qml
 TabStrip 1.0 TabStrip.qml
 Combo 1.0 Combo.qml
+ArtistFilter 1.0 ArtistFilter.qml
+ArtistAvatar 1.0 ArtistAvatar.qml
 Choice 1.0 Choice.qml
 FormatCard 1.0 FormatCard.qml
 Check 1.0 Check.qml

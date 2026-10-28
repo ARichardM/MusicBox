@@ -113,6 +113,8 @@ class MusicBoxBridge(QObject):
     discoveryChanged = Signal()
     forYouChanged = Signal()
     artistChanged = Signal()
+    artistPhotosChanged = Signal()
+    _artistAvatarReady = Signal(str, object)
     _artistReady = Signal(object, int)
     _artistSongsReady = Signal(object, int)
     _albumReady = Signal(object, int)
@@ -143,6 +145,9 @@ class MusicBoxBridge(QObject):
         self._library_all = []
         self._folders = []
         self._library_query = ""
+        self._library_artist = ""
+        self._library_artists = []
+        self._queue_artist = ""
         self._library_filter = "songs"
         self._library_folder = ""
         self._history = []
@@ -269,6 +274,10 @@ class MusicBoxBridge(QObject):
             self._artist_directory = dict(json.loads(self._settings.value("artistDirectory", "{}", str) or "{}"))
         except (TypeError, ValueError):
             self._artist_directory = {}
+        self._artist_avatar_pending = set()
+        self._artist_avatar_retry = {}
+        self._artist_avatar_slots = threading.Semaphore(2)
+        self._artistAvatarReady.connect(self._apply_artist_avatar)
         self._artistReady.connect(self._apply_artist)
         self._artistSongsReady.connect(self._apply_artist_songs)
         self._albumReady.connect(self._apply_album)
@@ -510,6 +519,8 @@ class MusicBoxBridge(QObject):
 
     def _maybe_autoplay(self, item):
         """Al sonar lo último de la cola online, busca canciones parecidas y las deja a continuación."""
+        if getattr(self, "_queue_artist", ""):
+            return
         video_id = item.get("id")
         if not self.autoplay or not video_id or self._autoplay_loading or video_id == self._autoplay_tried:
             return
@@ -572,6 +583,7 @@ class MusicBoxBridge(QObject):
         queue = [dict(track) for track in (tracks or []) if track.get("url")]
         if not queue or not 0 <= index < len(queue):
             return
+        self._queue_artist = ""
         self._reset_online_queue()
         self._online_queue, self._online_index = queue, index
         self._play_online(queue[index])
@@ -617,6 +629,47 @@ class MusicBoxBridge(QObject):
         if found:
             self._artist_directory[key] = entry
         return entry
+
+    @Property("QVariantMap", notify=artistPhotosChanged)
+    def artistPhotos(self):
+        directory = getattr(self, "_artist_directory", {})
+        return {name: directory.get(ytmusic.normalize(name), {}).get("photo", "")
+                for name in getattr(self, "_library_artists", [])}
+
+    @Slot(str)
+    def requestArtistPhoto(self, name):
+        key = ytmusic.normalize(name)
+        if not key:
+            return
+        if self._artist_directory.get(key, {}).get("photo"):
+            self.artistPhotosChanged.emit()
+            return
+        if key in self._artist_avatar_pending or self._artist_avatar_retry.get(key, 0) > time.monotonic():
+            return
+        self._artist_avatar_pending.add(key)
+        def work():
+            with self._artist_avatar_slots:
+                try:
+                    entry = self._resolve_artist(name)
+                except Exception:
+                    entry = {"name": name, "photo": ""}
+            try:
+                self._artistAvatarReady.emit(name, entry)
+            except RuntimeError:
+                pass  # La ventana pudo cerrarse mientras terminaba la consulta.
+        threading.Thread(target=work, daemon=True, name="artist-avatar").start()
+
+    @Slot(str, object)
+    def _apply_artist_avatar(self, name, entry):
+        key = ytmusic.normalize(name)
+        self._artist_avatar_pending.discard(key)
+        if entry.get("photo"):
+            self._artist_directory[key] = dict(entry)
+            self._artist_avatar_retry.pop(key, None)
+            self._settings.setValue("artistDirectory", json.dumps(self._artist_directory, ensure_ascii=False))
+        else:
+            self._artist_avatar_retry[key] = time.monotonic() + 60
+        self.artistPhotosChanged.emit()
 
     @Slot()
     def refreshForYou(self):
@@ -691,6 +744,22 @@ class MusicBoxBridge(QObject):
     @Property("QVariantList", notify=libraryChanged)
     def library(self):
         return [dict(row, clicks=self._clicks(self._row_keys(row))) for row in self._library]
+
+    @Property("QStringList", notify=libraryChanged)
+    def libraryArtists(self): return self._library_artists
+
+    @Property(str, notify=libraryChanged)
+    def libraryArtist(self): return self._library_artist
+
+    @staticmethod
+    def _track_artist(row):
+        # Las playlists antiguas de escritorio guardaban «artista · álbum» como canal.
+        return (row.get("artist") or (row.get("channel") or row.get("subtitle") or "").split(" · ", 1)[0]).strip()
+
+    @Slot(str)
+    def setLibraryArtist(self, value):
+        self._library_artist = value.strip() if self._library_playlist else ""
+        self._apply_library_view()
 
     @Property(int, notify=discoveryChanged)
     def totalClicks(self):
@@ -1040,7 +1109,7 @@ class MusicBoxBridge(QObject):
         if not vid or identity.entry_for(vid) in self._online_tracks:
             return
         self._online_tracks.update(identity.normalize_online_tracks({vid: {
-            "title": item.get("title", ""), "channel": item.get("subtitle") or item.get("channel", "YouTube"),
+            "title": item.get("title", ""), "channel": item.get("artist") or item.get("channel") or item.get("subtitle") or "YouTube",
             "duration": item.get("duration", 0), "thumbnail": item.get("thumbnail", ""), "url": item.get("url", "")}}))
 
     def _unify_playlists(self):
@@ -1287,6 +1356,8 @@ class MusicBoxBridge(QObject):
 
     @Slot(str)
     def setLibraryPlaylist(self, value):
+        if self._library_playlist != value.strip():
+            self._library_artist = ""
         self._library_playlist = value.strip()
         if self._library_playlist:
             self._library_folder = ""
@@ -1943,6 +2014,17 @@ class MusicBoxBridge(QObject):
         elif self._library_folder:
             roots = self._library_roots()
             rows = [row for row in rows if self._folder_of(row["path"], roots) == self._library_folder]
+        artists = {}
+        for row in rows if self._library_playlist else []:
+            artist = self._track_artist(row)
+            if artist:
+                artists.setdefault(artist.casefold(), artist)
+        self._library_artists = sorted(artists.values(), key=str.casefold)
+        artist = getattr(self, "_library_artist", "").casefold()
+        if not self._library_playlist:
+            self._library_artist = ""
+        elif artist:
+            rows = [row for row in rows if self._track_artist(row).casefold() == artist]
         # El escaneo ya entrega el orden más reciente primero.
         query = self._library_query.casefold().strip()
         if query:
@@ -1950,6 +2032,7 @@ class MusicBoxBridge(QObject):
                                                                row.get("album", ""))).casefold()]
         self._library = rows
         self.libraryChanged.emit()
+        self.artistPhotosChanged.emit()
 
     @Slot(str)
     def setLibraryQuery(self, value):
@@ -2319,11 +2402,37 @@ class MusicBoxBridge(QObject):
         item = dict(track or {})
         path = item.get("path", "")
         if not path or not Path(path).is_file(): return
+        self._queue_artist = ""
         self._queue = list(self._library)
         self._queue_index = next((i for i, row in enumerate(self._queue) if row.get("path") == path), -1)
         if self._shuffle:
             self._shuffle_queue()
         self._start_local_track(item)
+
+    @Slot("QVariantMap")
+    def playLibraryTrack(self, track):
+        """La cola filtrada es una copia y admite canciones locales y online."""
+        if not self._library_artist:
+            self.playOnline(track) if track.get("web") else self.playTrack(track)
+            return
+        item = dict(track or {})
+        key = item.get("path") or item.get("url")
+        index = next((i for i, row in enumerate(self._library)
+                      if (row.get("path") or row.get("url")) == key), -1)
+        if index < 0:
+            return
+        self._reset_online_queue()
+        self._queue_artist = self._library_artist
+        self._queue, self._queue_index = list(self._library), index
+        if self._shuffle:
+            self._shuffle_queue(index)
+        self._start_queue_track(item)
+
+    def _start_queue_track(self, item):
+        if item.get("path"):
+            self._start_local_track(dict(item))
+        else:
+            self._play_online(dict(item))
 
     def _start_local_track(self, item):
         self._sample_listening()
@@ -2479,20 +2588,23 @@ class MusicBoxBridge(QObject):
         if self._advance_online(1 if direction >= 0 else -1): return
         if not self._queue: return
         self._queue_index = (self._queue_index + (1 if direction >= 0 else -1)) % len(self._queue)
-        self._start_local_track(dict(self._queue[self._queue_index]))
+        self._start_queue_track(self._queue[self._queue_index])
 
     @Slot()
     def shuffleVisible(self):
         if not self._library: return
+        self._reset_online_queue()
+        self._queue_artist = self._library_artist
         self._queue = list(self._library)
+        self._queue_original = list(self._queue)
         random.shuffle(self._queue)
         self._queue_index = 0
-        self._start_local_track(dict(self._queue[0]))
+        self._start_queue_track(self._queue[0])
 
-    def _shuffle_queue(self):
+    def _shuffle_queue(self, current_index=None):
         """Mezcla la cola dejando la canción actual primera; recuerda el orden para poder volver."""
         self._queue_original = list(self._queue)
-        current = self._queue_current_index() if self._queue else -1
+        current = self._queue_current_index() if current_index is None else current_index
         first = [self._queue[current]] if 0 <= current < len(self._queue) else []
         rest = [row for index, row in enumerate(self._queue) if index != current]
         random.shuffle(rest)
@@ -2500,10 +2612,10 @@ class MusicBoxBridge(QObject):
         self._queue_index = 0 if first else -1
 
     def _restore_queue_order(self):
-        paths = {row.get("path") for row in self._queue}
-        ordered = [row for row in self._queue_original if row.get("path") in paths]
-        known = {row.get("path") for row in ordered}
-        self._queue = ordered + [row for row in self._queue if row.get("path") not in known]
+        paths = {row.get("path") or row.get("url") for row in self._queue}
+        ordered = [row for row in self._queue_original if (row.get("path") or row.get("url")) in paths]
+        known = {row.get("path") or row.get("url") for row in ordered}
+        self._queue = ordered + [row for row in self._queue if (row.get("path") or row.get("url")) not in known]
         self._queue_original = []
         self._queue_index = self._queue_current_index() if self._queue else -1
 
@@ -2536,8 +2648,9 @@ class MusicBoxBridge(QObject):
         self.playerChanged.emit()
 
     def _queue_current_index(self):
-        path = self._current.get("path", "")
-        return next((i for i, row in enumerate(self._queue) if row.get("path") == path), self._queue_index)
+        key = self._current.get("path") or self._current.get("url")
+        return next((i for i, row in enumerate(self._queue)
+                     if (row.get("path") or row.get("url")) == key), self._queue_index)
 
     @Slot(int, int)
     def moveQueueItem(self, source, target):
@@ -2621,7 +2734,7 @@ class MusicBoxBridge(QObject):
             return
         if 0 <= index < len(self._queue):
             self._queue_index = index
-            self._start_local_track(dict(self._queue[index]))
+            self._start_queue_track(self._queue[index])
 
     @Slot("QVariantMap")
     def toggleFavoriteFor(self, track):
