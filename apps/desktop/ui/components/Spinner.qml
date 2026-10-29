@@ -10,6 +10,8 @@ Item {
     property bool running: true
     property bool showLabel: false
     property color labelColor: Theme.fg
+    property color accentColor: Theme.accent
+    property color headColor: Theme.cyan
     readonly property bool determinate: progress >= 0
 
     implicitWidth: size
@@ -66,13 +68,13 @@ Item {
             var gradient = ctx.createConicalGradient(cx, cy, start)
             var head = Math.min(0.999, sweep / (Math.PI * 2))
             if (root.determinate) {
-                gradient.addColorStop(0, Theme.accent)
-                gradient.addColorStop(head, Theme.cyan)
-                gradient.addColorStop(1, Theme.cyan)
+                gradient.addColorStop(0, root.accentColor)
+                gradient.addColorStop(head, root.headColor)
+                gradient.addColorStop(1, root.headColor)
             } else {
                 gradient.addColorStop(0, Qt.rgba(0.31, 0.91, 1, 0))
-                gradient.addColorStop(head, Theme.cyan)
-                gradient.addColorStop(1, Theme.cyan)
+                gradient.addColorStop(head, root.headColor)
+                gradient.addColorStop(1, root.headColor)
             }
             ctx.strokeStyle = gradient
             ctx.beginPath()

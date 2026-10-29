@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import urllib.request
+import tempfile
+import uuid
 from pathlib import Path
 
 # Mismo orden que usa la app móvil.
@@ -92,9 +94,18 @@ def download_to_cache(url: str, folder: Path, extractor_download) -> str:
     last_error: Exception | None = None
     for client in CLIENT_SETS:
         try:
-            options = _options(client, format="bestaudio[ext=m4a]/bestaudio/best",
-                               outtmpl=str(folder / "%(id)s.%(ext)s"), overwrites=False)
-            return extractor_download(options, url)
+            # Never reuse a truncated fallback or race another playback of this video.
+            # Publish a complete, private cache file only after the download succeeds.
+            with tempfile.TemporaryDirectory(prefix="stream-", dir=folder) as temporary:
+                options = _options(client, format="bestaudio[ext=m4a]/bestaudio/best",
+                                   outtmpl=str(Path(temporary) / "%(id)s.%(ext)s"),
+                                   overwrites=True, continuedl=False)
+                downloaded = Path(extractor_download(options, url))
+                if not downloaded.is_file() or downloaded.stat().st_size == 0:
+                    raise RuntimeError("No se pudo descargar el audio")
+                target = folder / (uuid.uuid4().hex + downloaded.suffix)
+                downloaded.replace(target)
+                return str(target)
         except Exception as exc:
             last_error = exc
     raise last_error or RuntimeError("No se pudo descargar el audio")

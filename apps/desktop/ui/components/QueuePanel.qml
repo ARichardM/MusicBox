@@ -91,6 +91,23 @@ Item {
             font.pixelSize: 12
             elide: Text.ElideRight
         }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: musicbox.autoplayLoading || musicbox.autoplayError !== ""
+            Spinner { size: 18; running: musicbox.autoplayLoading; visible: running }
+            Label {
+                Layout.fillWidth: true
+                text: musicbox.autoplayLoading ? qsTr("Buscando…") : musicbox.autoplayError
+                color: Theme.muted
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+            PillButton {
+                text: qsTr("Reintentar")
+                visible: !musicbox.autoplayLoading && musicbox.autoplayError !== ""
+                onClicked: musicbox.retryAutoplay()
+            }
+        }
         Label {
             visible: musicbox.queue.length > 1
             text: qsTr("Arrastra el asa para reordenar")

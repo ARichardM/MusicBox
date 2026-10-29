@@ -255,6 +255,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         // Theme is already initialized in DescargadorApp.onCreate()
 
         super.onCreate(savedInstanceState);
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         boolean testRuntime = "robolectric".equals(android.os.Build.FINGERPRINT);
         if (!testRuntime && requiresSignIn() && FirebaseAuth.getInstance().getCurrentUser() == null) {
             startActivity(new Intent(this, LoginActivity.class)
@@ -2535,9 +2536,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     @Override
     public void onPlaybackError(String message) {
+        Song failedSong = PlayerManager.getInstance().getCurrentSong();
         runOnUiThread(() -> cl.arichard.descargador.util.AppNotice.error(
                 findViewById(R.id.bottomBarArea), message, "REINTENTAR",
-                () -> PlayerManager.getInstance().play()));
+                () -> PlayerManager.getInstance().retryQueuedSong(failedSong)));
     }
 
     @Override

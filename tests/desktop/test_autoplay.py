@@ -164,6 +164,32 @@ class BridgeTests(unittest.TestCase):
         bridge._play_stream(dict(track("old"), _stream_generation=1), "https://audio/old")
         self.assertEqual(bridge._current["id"], "current")
 
+    def test_failed_radio_keeps_pending_advance_and_retry_clears_the_error(self):
+        bridge = self.make(queue=[track("seed")], index=0)
+        bridge._current = track("seed")
+        bridge._autoplay_attempts = 1
+        bridge._online_waiting = True
+        bridge._apply_autoplay("seed", [], 0)
+        self.assertTrue(bridge._online_waiting)
+        self.assertNotEqual(bridge.autoplayError, "")
+        played = []
+        bridge._play_online = lambda row: played.append(row["id"])
+        bridge._apply_autoplay("seed", [track("next")], 0)
+        self.assertEqual(played, ["next"])
+        self.assertEqual(bridge.autoplayError, "")
+
+    def test_exhausted_radio_can_be_retried_without_replacing_the_queue(self):
+        bridge = self.make(queue=[track("seed")], index=0)
+        bridge._current = track("seed")
+        bridge._autoplay_tried = "seed"
+        bridge._autoplay_attempts = 3
+        bridge._apply_autoplay("seed", [], 0)
+        self.assertNotEqual(bridge.autoplayError, "")
+        bridge.retryAutoplay()
+        self.wait(bridge)
+        self.assertEqual([row["id"] for row in bridge.queue], ["seed", "x", "y"])
+        self.assertEqual(bridge.autoplayError, "")
+
 
 if __name__ == "__main__":
     unittest.main()

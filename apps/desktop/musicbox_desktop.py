@@ -25,7 +25,7 @@ from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtWidgets import QApplication, QFileDialog
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 
 import descargador_gui as download_backend
 import i18n
@@ -128,7 +128,7 @@ class MusicBoxBridge(QObject):
     libraryFoldersChanged = Signal()
     updateChanged = Signal()
     _updateEvent = Signal(object)
-    _searchFinished = Signal(object, str)
+    _searchFinished = Signal(object, str, int)
     _downloadEvent = Signal(object)
     _streamReady = Signal(object, str)
     _autoplayReady = Signal(str, list, int)
@@ -178,6 +178,11 @@ class MusicBoxBridge(QObject):
         self._dark_mode = self._settings.value("darkMode", True, bool)
         self._sidebar_expanded = self._settings.value("sidebarExpanded", True, bool)
         self._search_generation = 0
+        self._pending_search_query = ""
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(450)
+        self._search_timer.timeout.connect(lambda: self.search(self._pending_search_query))
         self._download_running = False
         self._download_progress = 0.0
         self._download_indeterminate = False
@@ -198,8 +203,17 @@ class MusicBoxBridge(QObject):
         self._audio = QAudioOutput(self)
         self._audio.setVolume(float(self._settings.value("volume", 0.8)))
         self._audio.setMuted(self._settings.value("muted", False, bool))
+        self._media_devices = QMediaDevices(self)
+        self._last_output_id = None
+        self._media_devices.audioOutputsChanged.connect(self._follow_system_audio_output)
+        self._follow_system_audio_output()
         self._player = QMediaPlayer(self)
         self._player.setAudioOutput(self._audio)
+        self._stream_resolving = False
+        self._pending_seek = 0
+        self._play_when_ready = False
+        self._playback_failures = set()
+        self._player.seekableChanged.connect(lambda _: self._resume_recovered_track())
         self._queue = []
         self._queue_index = -1
         self._repeat_mode = int(self._settings.value("repeatMode", 0))
@@ -520,7 +534,11 @@ class MusicBoxBridge(QObject):
     @Slot(bool)
     def setAutoplay(self, enabled):
         self._settings.setValue("autoplay", bool(enabled))
+        if not enabled:
+            self._autoplay_error = ""
+            self._online_waiting = False
         self.autoplayChanged.emit()
+        self.playerChanged.emit()
         if enabled and self._current.get("url") and not self._current.get("path"):
             self._maybe_autoplay(self._current)
 
@@ -529,14 +547,21 @@ class MusicBoxBridge(QObject):
         if getattr(self, "_queue_artist", ""):
             return
         video_id = item.get("id")
-        if not self.autoplay or not video_id or self._autoplay_loading or video_id == self._autoplay_tried:
+        if not self.autoplay or not video_id or self._autoplay_loading:
+            return
+        if video_id == self._autoplay_tried and (not getattr(self, "_autoplay_error", "") or getattr(self, "_autoplay_attempts", 0) >= 3):
             return
         queue = self._online_queue
         if queue and self._online_index < len(queue) - 1:
             return
         if not queue or not 0 <= self._online_index < len(queue) or queue[self._online_index].get("id") != video_id:
             self._online_queue, self._online_index = [dict(item)], 0
+        if video_id != self._autoplay_tried:
+            self._autoplay_attempts = 0
+        self._autoplay_attempts = getattr(self, "_autoplay_attempts", 0) + 1
+        self._autoplay_error = ""
         self._autoplay_tried, self._autoplay_loading = video_id, True
+        self.playerChanged.emit()
         generation = self._online_generation
 
         def work():
@@ -553,18 +578,45 @@ class MusicBoxBridge(QObject):
             return
         self._autoplay_loading = False
         queue = self._online_queue
-        if not self.autoplay or not queue or self._current.get("id") != video_id and queue[-1].get("id") != video_id:
+        if not self.autoplay or not queue:
             return
-        queue.extend(pick_autoplay(tracks, [track.get("id") for track in queue]))
+        if self._current.get("id") != video_id and queue[-1].get("id") != video_id:
+            self._maybe_autoplay(self._current)
+            return
+        more = pick_autoplay(tracks, [track.get("id") for track in queue])
+        queue.extend(more)
+        self._autoplay_error = "" if more else i18n.tr("No se pudieron agregar canciones similares. Toca para reintentar.")
         self.playerChanged.emit()
+        if not more and getattr(self, "_autoplay_attempts", 0) < 3:
+            QTimer.singleShot(1500, lambda: self._maybe_autoplay(self._current)
+                              if generation == self._online_generation and self._current.get("id") == video_id else None)
+            return
         if self._online_waiting:
             self._online_waiting = False
-            self._advance_online(1)
+            if not getattr(self, "_play_when_ready", True):
+                return
+            if (self._current.get("path") or self._current.get("url")) in getattr(self, "_playback_failures", set()):
+                self._continue_after_failure()
+            else:
+                self._advance_online(1)
 
     def _reset_online_queue(self):
         self._online_generation += 1
         self._online_queue, self._online_index, self._online_original = [], -1, []
         self._autoplay_tried, self._autoplay_loading, self._online_waiting = "", False, False
+        self._autoplay_attempts, self._autoplay_error = 0, ""
+
+    @Property(str, notify=playerChanged)
+    def autoplayError(self): return getattr(self, "_autoplay_error", "")
+
+    @Property(bool, notify=playerChanged)
+    def autoplayLoading(self): return self._autoplay_loading
+
+    @Slot()
+    def retryAutoplay(self):
+        if self._autoplay_loading: return
+        self._autoplay_tried, self._autoplay_attempts, self._autoplay_error = "", 0, ""
+        self._maybe_autoplay(self._current)
 
     def _online_queue_active(self):
         return bool(self._online_queue and self._current.get("url") and not self._current.get("path"))
@@ -591,6 +643,7 @@ class MusicBoxBridge(QObject):
         if not queue or not 0 <= index < len(queue):
             return
         self._queue_artist = ""
+        self._playback_failures = set()
         self._reset_online_queue()
         self._online_queue, self._online_index = queue, index
         self._play_online(queue[index])
@@ -972,6 +1025,25 @@ class MusicBoxBridge(QObject):
 
     @Property(bool, notify=playerChanged)
     def playing(self): return self._player.playbackState() == QMediaPlayer.PlayingState
+
+    @Property(bool, notify=playerChanged)
+    def playerLoading(self):
+        status = self._player.mediaStatus()
+        return self._stream_resolving or status == QMediaPlayer.LoadingMedia or (
+            self.playing and status in (QMediaPlayer.StalledMedia, QMediaPlayer.BufferingMedia))
+
+    @Slot()
+    def _follow_system_audio_output(self):
+        # Qt captures the default device when QAudioOutput is constructed. Refresh it
+        # on system changes without replacing the player, volume or playback position.
+        available = {bytes(device.id()) for device in self._media_devices.audioOutputs()}
+        if self._last_output_id is not None and self._last_output_id not in available:
+            # Pause before switching to speakers, and cancel any pending autoplay/recovery.
+            self.pausePlayer()
+        device = self._media_devices.defaultAudioOutput()
+        self._last_output_id = bytes(device.id()) if not device.isNull() else None
+        if not device.isNull() and device != self._audio.device():
+            self._audio.setDevice(device)
 
     @Property(int, notify=playerChanged)
     def playerPosition(self): return self._player.position()
@@ -1895,16 +1967,93 @@ class MusicBoxBridge(QObject):
         self.updateChanged.emit()
 
     def _player_error(self, error, message=""):
-        if error == QMediaPlayer.NoError: return
-        track = dict(self._current)
-        url = track.get("url", "")
-        if url and not track.get("path") and url not in self._cache_fallback_tried \
-                and self._player.source().scheme() in ("http", "https"):
-            self._cache_fallback_tried.add(url)
-            self._play_from_cache(track)
+        if error == QMediaPlayer.NoError or self._stream_resolving or self._player.source().isEmpty():
             return
-        retry = (lambda: self.playOnline(track)) if track.get("url") and not track.get("path") else None
-        self._show_notice(i18n.tr("No se pudo reproducir esta canción. ") + (message or i18n.tr("Inténtalo de nuevo en unos segundos.")), retry)
+        self._recover_playback(message)
+
+    def _recover_playback(self, message):
+        track = dict(self._current)
+        if not track:
+            return
+        position = max(self._player.position(), self._pending_seek)
+        self._stream_resolving = True  # Ignore duplicate errors from the discarded source.
+        self._player.stop()
+        self._player.setSource(QUrl())
+        generation = self._stream_generation
+        if track.get("url") and not track.get("path"):
+            self._stream_cache.pop(track["url"], None)
+            attempt = track.get("_retry_attempt", 0)
+            if attempt < 2:
+                track["_retry_attempt"] = attempt + 1
+                self._pending_seek = position
+                def retry():
+                    if generation != self._stream_generation:
+                        return
+                    if attempt == 0:
+                        self._play_online(track, recovering=True)
+                    else:
+                        self._current = track
+                        self._play_from_cache(track)
+                QTimer.singleShot(250, retry)
+                self.playerChanged.emit()
+                return
+        self._stream_resolving = False
+        self._pending_seek = 0
+        self._playback_failures.add(track.get("path") or track.get("url"))
+        self._show_notice(i18n.tr("No se pudo reproducir esta canción. ") + track.get("title", ""),
+                          lambda: self._retry_queued_track(track))
+        self.playerChanged.emit()
+        self._continue_after_failure()
+
+    def _continue_after_failure(self):
+        if not self._play_when_ready:
+            return
+        online = self._online_queue_active()
+        queue = self._online_queue if online else self._queue
+        current = self._online_index if online else self._queue_index
+        indices = list(range(current + 1, len(queue)))
+        if self._repeat_mode == 1:
+            indices += list(range(max(0, current)))
+        for index in indices:
+            item = queue[index]
+            if (item.get("path") or item.get("url")) in self._playback_failures:
+                continue
+            if online:
+                self._online_index = index
+            else:
+                self._queue_index = index
+            generation = self._stream_generation
+            QTimer.singleShot(0, lambda item=dict(item): self._start_queue_track(item)
+                              if generation == self._stream_generation and self._play_when_ready else None)
+            return
+        if online and self._autoplay_loading:
+            self._online_waiting = True
+        else:
+            self._play_when_ready = False
+
+    def _retry_queued_track(self, track):
+        key = track.get("path") or track.get("url")
+        online = self._online_queue_active()
+        queue = self._online_queue if online else self._queue
+        index = next((i for i, item in enumerate(queue) if (item.get("path") or item.get("url")) == key), -1)
+        if index < 0:
+            return
+        self._playback_failures.clear()
+        if online:
+            self._online_index = index
+        else:
+            self._queue_index = index
+        item = dict(queue[index])
+        item.pop("_retry_attempt", None)
+        self._stream_cache.pop(item.get("url"), None)
+        self._start_queue_track(item)
+
+    def _resume_recovered_track(self):
+        if (getattr(self, "_pending_seek", 0) > 0 and not self._stream_resolving
+                and self._player.mediaStatus() in (QMediaPlayer.LoadedMedia, QMediaPlayer.BufferingMedia, QMediaPlayer.BufferedMedia)
+                and self._player.isSeekable()):
+            position, self._pending_seek = self._pending_seek, 0
+            self._player.setPosition(position)
 
     def _set_busy(self, value):
         if self._busy != value:
@@ -2114,7 +2263,22 @@ class MusicBoxBridge(QObject):
         self._schedule_cloud_save()
 
     @Slot(str)
+    def scheduleSearch(self, query):
+        self._search_timer.stop()
+        self._search_generation += 1  # Invalidate results already queued on the GUI thread too.
+        query = " ".join(query.split())
+        self._pending_search_query = query
+        if not query:
+            self.clearSearch()
+        elif len(query) >= 2 and not query.lower().startswith(("http://", "https://", "www.", "youtu.be/", "youtube.com/")):
+            self._set_busy(True)
+            self._search_timer.start()
+        else:
+            self._set_busy(False)
+
+    @Slot(str)
     def search(self, query):
+        self._search_timer.stop()
         query = " ".join(query.split())
         if not query:
             self.clearSearch()
@@ -2145,12 +2309,14 @@ class MusicBoxBridge(QObject):
             except Exception as exc:
                 error = str(exc).splitlines()[-1] if str(exc) else i18n.tr("No se pudo completar la búsqueda")
             if generation == self._search_generation:
-                self._searchFinished.emit(results, error)
+                self._searchFinished.emit(results, error, generation)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    @Slot(object, str)
-    def _apply_search(self, results, error):
+    @Slot(object, str, int)
+    def _apply_search(self, results, error, generation):
+        if generation != self._search_generation:
+            return
         for item in results:
             vid = item.get("id", "")
             self._mark_local(item, vid, item.get("title", ""))
@@ -2165,6 +2331,8 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def clearSearch(self):
+        self._search_timer.stop()
+        self._pending_search_query = ""
         self._search_generation += 1
         self._search_results = []
         self.searchResultsChanged.emit()
@@ -2431,6 +2599,7 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def pausePlayer(self):
+        self._play_when_ready = False
         if self._player.playbackState() == QMediaPlayer.PlayingState:
             self._player.pause()
 
@@ -2455,6 +2624,7 @@ class MusicBoxBridge(QObject):
         item = dict(track or {})
         path = item.get("path", "")
         if not path or not Path(path).is_file(): return
+        self._playback_failures = set()
         self._queue_artist = ""
         self._queue = list(self._library)
         self._queue_index = next((i for i, row in enumerate(self._queue) if row.get("path") == path), -1)
@@ -2493,6 +2663,9 @@ class MusicBoxBridge(QObject):
         self._listening_started = False
         self._reset_online_queue()
         self._stream_generation += 1
+        self._stream_resolving = False
+        self._pending_seek = 0
+        self._play_when_ready = True
         path = item.get("path", "")
         self._current = item
         self._recorded_source = ""
@@ -2500,6 +2673,9 @@ class MusicBoxBridge(QObject):
         self._player.play(); self.playerChanged.emit()
 
     def _playback_state_changed(self, state):
+        if state == QMediaPlayer.PlayingState and not getattr(self, "_play_when_ready", True):
+            self._player.pause()
+            return
         if hasattr(self, "_listening_timer"):
             self._sample_listening()
         if state == QMediaPlayer.PlayingState:
@@ -2531,22 +2707,29 @@ class MusicBoxBridge(QObject):
     def playOnline(self, track):
         self.playOnlineList([track], 0)
 
-    def _play_online(self, track):
+    def _play_online(self, track, recovering=False):
         self._sample_listening()
-        self._listening_sample = None
-        self._listening_started = False
+        if not recovering:
+            self._listening_sample = None
+            self._listening_started = False
         item = dict(track or {})
         url = item.get("url", "")
         if not url: return
+        if not recovering:
+            item.pop("_retry_attempt", None)
+            self._pending_seek = 0
+            self._play_when_ready = True
         self._stream_generation += 1
         item["_stream_generation"] = self._stream_generation
         self._online_waiting = False
+        self._stream_resolving = True
         self._player.stop()
+        self._player.setSource(QUrl())
         self._current = item
-        self._recorded_source = ""
+        if not recovering:
+            self._recorded_source = ""
         self._current.setdefault("artist", item.get("subtitle", "YouTube"))
         self._current.setdefault("album", "Streaming")
-        self._cache_fallback_tried.discard(url)
         self._maybe_autoplay(item)
         self._set_status(i18n.tr("Preparando reproducción…"))
         self.playerChanged.emit()
@@ -2588,6 +2771,8 @@ class MusicBoxBridge(QObject):
     def _play_from_cache(self, track):
         """Si el reproductor rechaza el enlace remoto, descarga el audio y lo reproduce localmente."""
         url = track.get("url", "")
+        self._stream_resolving = True
+        self.playerChanged.emit()
         self._set_status(i18n.tr("Preparando reproducción…"))
         def work():
             source = ""
@@ -2602,28 +2787,30 @@ class MusicBoxBridge(QObject):
     def _play_stream(self, track, source):
         if track.get("_stream_generation") != self._stream_generation:
             return
+        self._stream_resolving = False
         if Path(source).is_file():
             self._current = dict(track)
             self._player.setSource(QUrl.fromLocalFile(source))
-            self._player.play()
+            if self._play_when_ready: self._player.play()
             self._set_status(i18n.tr("Reproduciendo"))
             self.playerChanged.emit()
             return
         if not source.startswith(("http://", "https://")):
-            self._set_status(source or i18n.tr("No se pudo reproducir este resultado"))
-            failed = dict(track)
-            self._show_notice(source or i18n.tr("No se pudo reproducir este resultado."), lambda: self.playOnline(failed))
+            self._current = dict(track)
+            self._recover_playback(source)
             return
         self._current = dict(track)
         self._player.setSource(QUrl(source))
-        self._player.play()
+        if self._play_when_ready: self._player.play()
         self._set_status(i18n.tr("Reproduciendo"))
         self.playerChanged.emit()
 
     @Slot()
     def togglePlayback(self):
         if not self._current: return
+        self._play_when_ready = not self.playing
         if self.playing: self._player.pause()
+        elif self._player.source().isEmpty(): self._retry_queued_track(dict(self._current))
         else: self._player.play()
 
     @Slot(int)
@@ -2789,6 +2976,7 @@ class MusicBoxBridge(QObject):
 
     @Slot(int)
     def playQueueIndex(self, index):
+        self._playback_failures = set()
         if self._online_queue_active():
             if 0 <= index < len(self._online_queue):
                 self._online_index = index
@@ -2845,6 +3033,9 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def _media_status(self):
+        self._resume_recovered_track()
+        self.playerChanged.emit()
+        if getattr(self, "_stream_resolving", False) or not getattr(self, "_play_when_ready", True): return
         if self._player.mediaStatus() != QMediaPlayer.EndOfMedia: return
         if self._repeat_mode == 2 and self._current:
             self._player.setPosition(0); self._player.play()

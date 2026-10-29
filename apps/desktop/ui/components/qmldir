@@ -1,6 +1,7 @@
 singleton Theme 1.0 Theme.qml
 Icon 1.0 Icon.qml
 Spinner 1.0 Spinner.qml
+DownloadBadge 1.0 DownloadBadge.qml
 SmoothProgress 1.0 SmoothProgress.qml
 PillButton 1.0 PillButton.qml
 Field 1.0 Field.qml

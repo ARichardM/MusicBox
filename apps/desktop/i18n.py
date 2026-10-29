@@ -7,6 +7,8 @@ from PySide6.QtCore import QLocale, QTranslator
 LANGUAGES = ("auto", "es", "en")
 
 EN = {
+    "No se pudieron agregar canciones similares. Toca para reintentar.": "Similar songs could not be added. Tap to retry.",
+    "Buscando…": "Searching…",
     "Todos los artistas": "All artists",
     "Artistas": "Artists",
     "Quitar filtro de artista": "Clear artist filter",

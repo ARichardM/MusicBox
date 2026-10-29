@@ -15,8 +15,8 @@ android {
         applicationId = "cl.arichard.descargador"
         minSdk = 24
         targetSdk = 36
-        versionCode = 13
-        versionName = "2.3.5"
+        versionCode = 14
+        versionName = "2.3.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -54,6 +54,8 @@ android {
             applicationIdSuffix = ".verification"
             versionNameSuffix = "-verification"
             matchingFallbacks += listOf("debug")
+            // El emulador necesita ejecutables Python/FFmpeg nativos, no traducción ARM.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         }
         release {
             // R8 se mantiene desactivado: yt-dlp/Python carga clases dinámicamente.

@@ -60,6 +60,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version%%-*}"
           awk -v v="$version" '/^## /{p = index($0, "## " v " ") == 1; next} p' CHANGELOG.md > release-notes.md
           test -s release-notes.md || { echo "Falta la sección $version en CHANGELOG.md"; exit 1; }
       - name: Crear GitHub Release

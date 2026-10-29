@@ -73,7 +73,7 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --yes --no-progress
-          $version = "${{ github.ref_name }}".TrimStart("v")
+          $version = "${{ github.ref_name }}".TrimStart("v").Split('-')[0]
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "packaging\windows\MusicBox.iss"
       - name: Empaquetar versión portable
         shell: pwsh
@@ -91,6 +91,7 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version%%-*}"
           awk -v v="$version" '/^## /{p = index($0, "## " v " ") == 1; next} p' CHANGELOG.md > release-notes.md
           test -s release-notes.md || { echo "Falta la sección $version en CHANGELOG.md"; exit 1; }
       - name: Adjuntar a GitHub Release

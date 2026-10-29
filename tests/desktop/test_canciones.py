@@ -232,7 +232,7 @@ class DialogTests(unittest.TestCase):
             self.dialog.paste_image()
             self.wait_job()
         self.dialog.start_ocr()
-        self.wait_job()
+        self.wait_job(timeout=90)  # El primer arranque carga los modelos OCR en otro proceso.
         self.assertIn("hello", self.dialog.names.get("1.0", "end").casefold())
         self.assertEqual(str(self.dialog.names["state"]), "normal")
 

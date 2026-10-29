@@ -71,8 +71,19 @@ Usa JDK 17 o 21 para Gradle. Las pruebas Android se ejecutan en JVM mediante
 Robolectric, sin teléfono conectado:
 
 ```powershell
-.\gradlew.bat testPreviewUnitTest lintPreview
+.\gradlew.bat testVerificationUnitTest lintVerification assembleVerification
 ```
+
+Las pruebas de dispositivo usan exclusivamente `verification`
+(`cl.arichard.descargador.verification`), sin cuenta ni configuración Firebase real.
+Esta variante incluye x86_64 para ejecutar Python y FFmpeg de forma nativa en el
+emulador; las arquitecturas de publicación para teléfonos se mantienen iguales.
+Con un dispositivo de verificación preparado, ejecuta `connectedVerificationAndroidTest`.
+Las pruebas de biblioteca necesitan audios sintéticos en la carpeta privada Music
+de ese paquete; las de red necesitan conexión y permisos de notificaciones.
+
+`preview` puede conservar una sesión real de instalaciones anteriores y no se usa
+para validar estos cambios ni modificar playlists del usuario.
 
 Para instalar una edición de pruebas junto a la app actual, sin necesitar su clave
 de firma ni reemplazar sus datos:
@@ -95,7 +106,7 @@ El estado pendiente y los pasos para retomarlo están en
 por separado. Se guarda fuera del repositorio en
 `%USERPROFILE%\.gradle\musicbox\preview.keystore` (o dentro de `GRADLE_USER_HOME`).
 Si falta, compilar/instalar preview falla antes de generar un APK con otra firma.
-Debug, verification y release mantienen sus configuraciones anteriores.
+Debug y release mantienen sus configuraciones anteriores.
 
 Para conservar la instalación actual de MusicBox pruebas, copia de forma privada
 el archivo `%USERPROFILE%\.android\debug.keystore` del Asus y ejecuta, desde la

@@ -63,6 +63,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         setContentView(R.layout.activity_now_playing);
 
         initViews();

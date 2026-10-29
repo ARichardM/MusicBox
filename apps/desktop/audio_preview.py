@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Property, QUrl, Signal, Slot
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaDevices, QMediaPlayer
 
 import i18n
 import youtube_streams
@@ -35,6 +35,11 @@ class AudioPreview(QObject):
         self._before_play = before_play
         self._audio = QAudioOutput(self)
         self._audio.setVolume(0.9)
+        self._media_devices = QMediaDevices(self)
+        self._last_output_id = None
+        self._play_when_ready = False
+        self._media_devices.audioOutputsChanged.connect(self._follow_system_audio_output)
+        self._follow_system_audio_output()
         self._player = QMediaPlayer(self)
         self._player.setAudioOutput(self._audio)
         self._key = ""
@@ -50,6 +55,19 @@ class AudioPreview(QObject):
         self._player.playbackStateChanged.connect(self._on_state)
         self._player.mediaStatusChanged.connect(self._on_media_status)
         self._player.errorOccurred.connect(self._on_error)
+
+    @Slot()
+    def _follow_system_audio_output(self):
+        available = {bytes(device.id()) for device in self._media_devices.audioOutputs()}
+        if self._last_output_id is not None and self._last_output_id not in available:
+            self._play_when_ready = False
+            self._player.pause()
+            if self._state in ("loading", "playing", "paused"):
+                self._set("paused", i18n.tr("En pausa."))
+        device = self._media_devices.defaultAudioOutput()
+        self._last_output_id = bytes(device.id()) if not device.isNull() else None
+        if not device.isNull() and device != self._audio.device():
+            self._audio.setDevice(device)
 
     # ---- propiedades ----
     @Property(str, notify=changed)
@@ -82,7 +100,9 @@ class AudioPreview(QObject):
             return
         if self._before_play:
             self._before_play()
+        self._play_when_ready = True
         self._player.stop()
+        self._player.setSource(QUrl())
         self._generation += 1
         generation = self._generation
         self._key, self._url, self._title, self._cache_tried = key, url, title, False
@@ -105,7 +125,10 @@ class AudioPreview(QObject):
             self._set("error", error or i18n.tr("No se pudo reproducir este resultado"))
             return
         self._player.setSource(self._to_url(source))
-        self._player.play()
+        if self._play_when_ready:
+            self._player.play()
+        else:
+            self._set("paused", i18n.tr("En pausa."))
 
     @staticmethod
     def _to_url(source):
@@ -116,9 +139,14 @@ class AudioPreview(QObject):
         if key != self._key or self._state not in ("playing", "paused"):
             return
         if self._state == "playing":
+            self._play_when_ready = False
             self._player.pause()
         else:
-            self._player.play()
+            self._play_when_ready = True
+            if not self._player.source().isEmpty():
+                self._player.play()
+            else:
+                self._set("loading", i18n.tr("Abriendo: ") + self._title)
 
     @Slot(int)
     def seek(self, milliseconds):
@@ -127,6 +155,7 @@ class AudioPreview(QObject):
 
     @Slot()
     def stop(self):
+        self._play_when_ready = False
         self._generation += 1
         self._player.stop()
         self._key = ""
@@ -134,6 +163,9 @@ class AudioPreview(QObject):
 
     # ---- eventos del reproductor ----
     def _on_state(self, state):
+        if state == QMediaPlayer.PlayingState and not self._play_when_ready:
+            self._player.pause()
+            return
         if self._state in ("loading", "error") and state != QMediaPlayer.PlayingState:
             return
         if state == QMediaPlayer.PlayingState:

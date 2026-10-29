@@ -23,6 +23,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
+import android.media.AudioDeviceCallback;
+import android.media.AudioDeviceInfo;
 import android.os.Build;
 import com.yausername.youtubedl_android.YoutubeDL;
 import com.yausername.youtubedl_android.YoutubeDLRequest;
@@ -33,6 +35,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.net.HttpURLConnection;
@@ -64,11 +68,16 @@ public class PlayerManager {
     private boolean hasAudioFocus = false;
     private boolean resumeOnFocusGain = false;
     private boolean noisyReceiverRegistered = false;
+    private int routedOutputId = -1;
+    private boolean routedPersonalOutput;
     private boolean autoplayLoading, advanceWhenReady;
     private String autoplayTriedFor = "";
     private int autoplayGeneration;
     private int autoplayAttempts;
     private String autoplayError = "";
+    private final Set<String> playbackFailures = new HashSet<>();
+    private String recoveryPath = "";
+    private int playbackRecoveryAttempts;
 
     /** Reserved key that carries the stream length next to the headers; it is never sent over HTTP. */
     private static final String LENGTH_KEY = "X-MusicBox-Length";
@@ -511,6 +520,8 @@ public class PlayerManager {
 
     public void playSong(Song song, List<Song> newQueue, boolean allowAutoplay) {
         if (song == null) return;
+        playbackFailures.clear();
+        recoveryPath = "";
         if (newQueue != null && !newQueue.isEmpty()) {
             queueAllowsAutoplay = allowAutoplay;
             autoplayGeneration++;
@@ -535,8 +546,12 @@ public class PlayerManager {
         return -1;
     }
 
-    private void startCurrent() {
+    protected void startCurrent() {
         if (currentSong == null) return;
+        if (!currentSong.getPath().equals(recoveryPath)) {
+            recoveryPath = currentSong.getPath();
+            playbackRecoveryAttempts = 0;
+        }
         lastSavedSecond = -1;
         if (currentSong.isOnline()) startOnline(currentSong);
         else { online = false; autoplayError = ""; startLocal(); }
@@ -561,6 +576,7 @@ public class PlayerManager {
         final int requestGeneration = generation;
         online = true;
         playWhenReady = true;
+        registerNoisyReceiver();
         currentOnlineVideoId = song.getVideoId();
         currentOnlineUrl = "https://www.youtube.com/watch?v=" + currentOnlineVideoId;
         notifyTrack();
@@ -675,6 +691,12 @@ public class PlayerManager {
         player.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK);
         player.setAudioAttributes(new AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .setUsage(AudioAttributes.USAGE_MEDIA).build());
+        // Let Android route media to the output selected by the user (Bluetooth, USB,
+        // wired headphones or speaker), including switches during playback.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) player.setPreferredDevice(null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) player.addOnRoutingChangedListener(
+                routing -> { if (routing == mediaPlayer && prepared) rememberRoutedOutput(); }, handler);
+        registerNoisyReceiver();
         player.setOnPreparedListener(mp -> {
             if (mp != mediaPlayer) return;
             prepared = true;
@@ -702,6 +724,7 @@ public class PlayerManager {
         });
         player.setOnVideoSizeChangedListener((mp, width, height) -> { fitVideo(); notifyVideo(); });
         player.setOnCompletionListener(mp -> {
+            if (mp != mediaPlayer || !prepared) return;
             if (repeatMode == REPEAT_ONE) {
                 mp.seekTo(0); mp.start();
                 SearchHistoryManager.getInstance(context).recordPlayedSong(currentSong);
@@ -717,24 +740,76 @@ public class PlayerManager {
         player.prepareAsync();
     }
 
-    private void fail(Exception error) {
+    void fail(Exception error) {
         Log.e("MusicBoxPlayer", "Playback failed", error);
+        int position = resumePosition;
+        if (prepared && mediaPlayer != null) {
+            try { position = mediaPlayer.getCurrentPosition(); } catch (IllegalStateException ignored) {}
+        }
+        // MediaPlayer is now in Error state: no transport/state queries are legal.
+        prepared = false;
         releasePlayer();
+        boolean offline = online && context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork();
+        if (online && currentSong != null && playWhenReady && !offline && playbackRecoveryAttempts < 1) {
+            playbackRecoveryAttempts++;
+            resumePosition = position;
+            synchronized (STREAM_CACHE) { STREAM_CACHE.remove(currentOnlineVideoId); }
+            final int requestGeneration = generation;
+            loading(true);
+            registerNoisyReceiver();
+            handler.postDelayed(() -> {
+                if (requestGeneration != generation) return;
+                if (playWhenReady) startCurrent();
+                else loading(false);
+            }, 500);
+            return;
+        }
         loading(false);
         String message;
         if (!online) message = cl.arichard.descargador.util.Tr.t("No se pudo abrir el archivo de música.");
-        else if (context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork())
+        else if (offline)
             message = cl.arichard.descargador.util.Tr.t("Sin conexión a internet. Revisa Wi-Fi o datos móviles.");
         else message = cl.arichard.descargador.util.Tr.t("No pudimos reproducir esta canción. YouTube rechazó temporalmente el audio.");
         for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackError(message);
         notifyState();
+        if (currentSong != null) playbackFailures.add(currentSong.getPath());
+        if (offline) playWhenReady = false;
+        continueAfterPlaybackFailure();
+    }
+
+    private void continueAfterPlaybackFailure() {
+        if (!playWhenReady) return;
+        for (int offset = 1; offset < queue.size(); offset++) {
+            int index = currentIndex + offset;
+            if (index >= queue.size()) {
+                if (repeatMode != REPEAT_ALL) break;
+                index %= queue.size();
+            }
+            if (playbackFailures.contains(queue.get(index).getPath())) continue;
+            currentIndex = index;
+            currentSong = queue.get(index);
+            resumePosition = 0; savedDuration = 0;
+            final int requestGeneration = generation;
+            handler.post(() -> {
+                if (requestGeneration == generation && playWhenReady) startCurrent();
+            });
+            notifyQueue();
+            return;
+        }
+        if (online && autoplayLoading && queueAllowsAutoplay) {
+            advanceWhenReady = true;
+            loading(true);
+        } else {
+            playWhenReady = false;
+            notifyState();
+        }
     }
     // ── AudioFocus ─────────────────────────────────────────────────────────
     private final AudioManager.OnAudioFocusChangeListener audioFocusListener = focusChange -> {
         switch (focusChange) {
             case AudioManager.AUDIOFOCUS_GAIN:
                 if (mediaPlayer != null) mediaPlayer.setVolume(1f, 1f);
-                if (resumeOnFocusGain && prepared && !mediaPlayer.isPlaying()) {
+                if (resumeOnFocusGain && playWhenReady && prepared && mediaPlayer != null && !mediaPlayer.isPlaying()) {
                     mediaPlayer.start();
                     notifyState();
                 }
@@ -792,29 +867,70 @@ public class PlayerManager {
     private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
         @Override public void onReceive(android.content.Context ctx, Intent intent) {
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
-                if (isPlaying()) { playWhenReady = false; mediaPlayer.pause(); notifyState(); }
+                // Also cancel an upcoming start or a resume after temporary focus loss.
+                pause();
             }
         }
     };
 
+    private final AudioDeviceCallback audioDeviceCallback = new AudioDeviceCallback() {
+        @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] devices) {
+            for (AudioDeviceInfo device : devices)
+                onAudioOutputRemoved(device.getId(), device.getType(), device.isSink());
+        }
+    };
+
+    // These are integer comparisons; older Android versions never report the newer types.
+    @android.annotation.SuppressLint("InlinedApi")
+    private static boolean isPersonalOutput(int type) {
+        return type == AudioDeviceInfo.TYPE_WIRED_HEADSET || type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                || type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                || type == AudioDeviceInfo.TYPE_USB_HEADSET || type == AudioDeviceInfo.TYPE_USB_DEVICE
+                || type == AudioDeviceInfo.TYPE_BLE_HEADSET;
+    }
+
+    void onAudioOutputRemoved(int id, int type, boolean sink) {
+        // Unknown route while preparing: prefer pausing over spilling audio to the speaker.
+        if (sink && (id == routedOutputId || (routedOutputId < 0 && isPersonalOutput(type)))) pause();
+    }
+
+    private void rememberRoutedOutput() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || !prepared || mediaPlayer == null) return;
+        AudioDeviceInfo device = mediaPlayer.getRoutedDevice();
+        if (device == null) return;
+        if (routedOutputId >= 0 && routedPersonalOutput && routedOutputId != device.getId() && audioManager != null) {
+            boolean stillConnected = false;
+            for (AudioDeviceInfo available : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+                if (available.getId() == routedOutputId) stillConnected = true;
+            if (!stillConnected) pause();
+        }
+        routedOutputId = device.getId();
+        routedPersonalOutput = isPersonalOutput(device.getType());
+    }
+
     private void registerNoisyReceiver() {
-        if (noisyReceiverRegistered) return;
+        if (noisyReceiverRegistered) { rememberRoutedOutput(); return; }
         IntentFilter filter = new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY);
         context.registerReceiver(noisyReceiver, filter);
         noisyReceiverRegistered = true;
+        if (audioManager != null) audioManager.registerAudioDeviceCallback(audioDeviceCallback, handler);
+        rememberRoutedOutput();
     }
 
     private void unregisterNoisyReceiver() {
         if (!noisyReceiverRegistered) return;
         try { context.unregisterReceiver(noisyReceiver); } catch (Exception ignored) {}
+        if (audioManager != null) audioManager.unregisterAudioDeviceCallback(audioDeviceCallback);
         noisyReceiverRegistered = false;
+        routedOutputId = -1;
+        routedPersonalOutput = false;
     }
     // ── Fin AudioFocus ─────────────────────────────────────────────────────
 
     /** Llamado por MediaSessionCompat.Callback desde MusicService (audífonos, asistente, etc.) */
     public void play() {
         if (currentSong == null) return;
-        if (!prepared) { playWhenReady = true; startCurrent(); return; }
+        if (!prepared) { recoveryPath = ""; playbackFailures.clear(); playWhenReady = true; startCurrent(); return; }
         if (!mediaPlayer.isPlaying() && requestAudioFocus()) {
             playWhenReady = true;
             mediaPlayer.start();
@@ -840,9 +956,10 @@ public class PlayerManager {
 
     /** Llamado por MediaSessionCompat.Callback desde MusicService */
     public void pause() {
-        if (!prepared || mediaPlayer == null || !mediaPlayer.isPlaying()) return;
         playWhenReady = false;
-        mediaPlayer.pause();
+        advanceWhenReady = false;
+        resumeOnFocusGain = false;
+        if (isPlaying()) mediaPlayer.pause();
         abandonAudioFocus();
         unregisterNoisyReceiver();
         notifyState();
@@ -852,14 +969,12 @@ public class PlayerManager {
         if (currentSong == null) return;
         if (!prepared) {
             if (loading) playWhenReady = !playWhenReady;
-            else startCurrent();
+            else { recoveryPath = ""; playbackFailures.clear(); startCurrent(); }
             return;
         }
         if (mediaPlayer.isPlaying()) {
-            playWhenReady = false;
-            mediaPlayer.pause();
-            abandonAudioFocus();
-            unregisterNoisyReceiver();
+            pause();
+            return;
         } else {
             if (requestAudioFocus()) {
                 playWhenReady = true;
@@ -1011,8 +1126,13 @@ public class PlayerManager {
 
     public List<Song> getQueue() { return new ArrayList<>(queue); }
     public int getCurrentIndex() { return currentIndex; }
+    public void retryQueuedSong(Song song) {
+        int index = indexOf(song);
+        if (index >= 0) playQueueIndex(index);
+    }
     public void playQueueIndex(int index) {
         if (index < 0 || index >= queue.size()) return;
+        recoveryPath = ""; playbackFailures.clear();
         resumePosition = 0; savedDuration = 0;
         currentIndex = index; currentSong = queue.get(index); startCurrent();
     }

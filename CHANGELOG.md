@@ -1,5 +1,31 @@
 # Historial de versiones
 
+## 2.3.6 — 29 de octubre de 2026
+
+### Versión preliminar
+
+- Publicación `v2.3.6-rc.1` para Windows y Android. No sustituye a la última versión estable: quedan pendientes las pruebas online completas de Android, una comprobación del avatar de artistas y la verificación con audífonos Bluetooth físicos.
+
+### Windows y Android
+
+- La recuperación de errores de reproducción renueva los enlaces fallidos y conserva la cola. Si una canción sigue fallando, se continúa con otra disponible, sin bucles cuando todas fallan.
+- Reintentar desde el aviso vuelve a la canción fallida sin reemplazar la cola por una sola entrada.
+- Desconectar los audífonos pausa la reproducción y cancela arranques, avances o reanudaciones pendientes. Reconectarlos no inicia la música automáticamente.
+
+### Windows
+
+- El reproductor y la escucha previa siguen la salida predeterminada de Windows y pausan antes de cambiar a otra salida cuando desaparece la que se estaba usando.
+- Inicio busca automáticamente tras una pausa de 450 ms al escribir; las respuestas antiguas no reemplazan una búsqueda más reciente.
+- Se muestran anillos de carga al buscar, abrir una canción y descargar, con una marca de descarga discreta al estilo de Android.
+- La recuperación conserva la posición cuando es posible y publica en la caché únicamente descargas completas, sin reutilizar archivos truncados.
+
+### Android
+
+- Se refuerza la pausa por desconexión con avisos de dispositivos y cambios de ruta, incluidos Bluetooth y USB, sin reanudar por una recuperación de foco o radio pendiente.
+- Los controles de volumen de las tres pantallas del reproductor actúan sobre el audio multimedia.
+- Los archivos locales dañados se omiten también sin internet; una caída de red conserva la cola online.
+- La variante aislada `verification` incluye x86_64 para ejecutar Python y FFmpeg nativos en el emulador, sin cambiar las arquitecturas de publicación para teléfonos.
+
 ## 2.3.5 — 29 de octubre de 2026
 
 ### Windows y Android

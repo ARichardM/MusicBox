@@ -178,6 +178,42 @@ class QmlUiTests(unittest.TestCase):
             bridge.setLibraryPlaylist("")
             root.setProperty("libraryPlaylist", "")
             root.setProperty("page", 0)
+            # La edición real de QML programa la búsqueda; setText por sí solo no la dispara.
+            search_field = root.findChild(QObject, "homeSearchField")
+            search_field.setProperty("text", "luis jara")
+            self.assertFalse(bridge._search_timer.isActive())
+            QMetaObject.invokeMethod(search_field, "textEdited", Qt.DirectConnection)
+            self.assertTrue(bridge._search_timer.isActive())
+            self.assertEqual(bridge._pending_search_query, "luis jara")
+            search_spinner = root.findChild(QObject, "searchLoadingSpinner")
+            APP.processEvents()
+            self.assertTrue(search_spinner.property("visible"))
+            self.assertTrue(search_spinner.property("running"))
+            QTest.qWait(80)  # Pintar el Canvas, además de cargar el componente.
+            bridge.clearSearch()
+            search_field.setProperty("text", "")
+            bridge._search_results = [
+                {"id": "saved", "title": "Descargada", "thumbnail": photo_url, "downloaded": True},
+                {"id": "folder", "title": "De una carpeta", "thumbnail": photo_url, "downloaded": True, "fromFolder": True},
+                {"id": "pending", "title": "Descargando", "thumbnail": photo_url}]
+            bridge._downloading_ids = {"pending"}
+            bridge.searchResultsChanged.emit()
+            bridge.downloadingIdsChanged.emit()
+            bridge._stream_resolving = True
+            bridge.playerChanged.emit()
+            play_button = root.findChild(QObject, "playerPlayButton")
+            self.assertTrue(play_button.property("busy"))
+            self.assertFalse(play_button.property("enabled"))
+            for dark in (False, True):
+                if bridge.darkMode != dark:
+                    bridge.toggleTheme()
+                QTest.qWait(180)
+                if preview_dir:
+                    self.assertTrue(root.grabWindow().save(str(Path(preview_dir) / f"loading-{'dark' if dark else 'light'}.png")))
+            bridge._stream_resolving = False
+            bridge.playerChanged.emit()
+            self.assertFalse(play_button.property("busy"))
+            self.assertTrue(play_button.property("enabled"))
             statistics = root.findChild(QObject, "statisticsDialog")
             self.assertIsNotNone(statistics)
             QMetaObject.invokeMethod(statistics, "open", Qt.DirectConnection)
