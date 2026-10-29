@@ -115,7 +115,7 @@ public final class SettingsActivity extends AppCompatActivity {
         java.util.List<Object[]> ranked = stats.top(3);
         for (int i = 0; i < ranked.size(); i++) {
             if (top.length() > 0) top.append("\n");
-            top.append(i + 1).append(". ").append(ranked.get(i)[0]).append("  ▶ ")
+            top.append(i + 1).append(". ").append(ranked.get(i)[0]).append("  🎧 ")
                     .append(cl.arichard.descargador.util.Clicks.format((Integer) ranked.get(i)[1]));
         }
         TextView topView = findViewById(R.id.txtStatsTop);

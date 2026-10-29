@@ -135,6 +135,7 @@ class MusicBoxBridge(QObject):
     autoplayChanged = Signal()
     _authResult = Signal(object, str)
     _remotePlaylists = Signal(object)
+    _libraryScanReady = Signal(object)
     _devicesPolled = Signal(object, bool)
     _deviceRevoked = Signal(str, bool)
 
@@ -230,6 +231,9 @@ class MusicBoxBridge(QObject):
         self._path_ids = {}
         self._auto_attempted = set()
         self._library_scanned = False
+        self._library_scan_running = False
+        self._library_scan_pending = False
+        self._library_scan_generation = 0
         self._auto_download_playlists = set(self._settings.value("autoDownloadPlaylists", [], list) or [])
         try:
             self._playlist_descriptions = json.loads(self._settings.value("playlistDescriptions", "{}", str) or "{}")
@@ -269,6 +273,7 @@ class MusicBoxBridge(QObject):
         self._online_original = []
         self._online_generation = 0
         self._stream_generation = 0
+        self._stream_cache = {}
         self._online_waiting = False
         try:
             self._artist_directory = dict(json.loads(self._settings.value("artistDirectory", "{}", str) or "{}"))
@@ -300,6 +305,7 @@ class MusicBoxBridge(QObject):
         self._player.errorOccurred.connect(self._player_error)
         self._authResult.connect(self._apply_auth_result)
         self._remotePlaylists.connect(self._apply_remote_playlists)
+        self._libraryScanReady.connect(self._apply_library_scan)
         self._sync_base = {}
         self._sync_base_section = {}
         self._cloud_sync_generation = 0
@@ -311,6 +317,7 @@ class MusicBoxBridge(QObject):
         self._device_timer.timeout.connect(self._poll_devices)
         self._device_timer.start()
         if load_startup:
+            self._restore_library_cache()
             self.refresh()
             if self._cloud.refresh_token:
                 threading.Thread(target=self._restore_session, daemon=True).start()
@@ -1911,6 +1918,20 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def refresh(self):
+        """Scan in the background; keep the cached library visible while it runs."""
+        if self._library_scan_running:
+            self._library_scan_pending = True
+            return
+        self._library_scan_running = True
+        self._library_scan_generation += 1
+        generation = self._library_scan_generation
+
+        def worker():
+            self._libraryScanReady.emit({"generation": generation, "files": self._scan_library_files()})
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _scan_library_files(self):
         found = {}
         for root in self._library_roots():
             if not root.is_dir(): continue
@@ -1922,7 +1943,6 @@ class MusicBoxBridge(QObject):
             info = media_info(path)
             info["favorite"] = str(path) in self._favorites
             files.append(info)
-        self._library_all = files
         # Archivos que MusicBox descargó muestran la marca de descarga; el resto viene de una carpeta de música.
         download_roots = []
         for root in (DEFAULT_DOWNLOAD_DIR, self._download_dir()):
@@ -1938,6 +1958,34 @@ class MusicBoxBridge(QObject):
                 item["fromFolder"] = False
             if item["path"] in self._linked_ids:
                 item["fromFolder"] = True  # importada desde una carpeta del usuario
+        return files
+
+    @Slot(object)
+    def _apply_library_scan(self, result):
+        if not isinstance(result, dict) or result.get("generation") != self._library_scan_generation:
+            return
+        self._library_scan_running = False
+        self._apply_library_files(result.get("files") or [], persist_cache=True)
+        if self._library_scan_pending:
+            self._library_scan_pending = False
+            self.refresh()
+
+    def _restore_library_cache(self):
+        try:
+            rows = json.loads(self._settings.value("libraryMetadataCache", "[]", str) or "[]")
+        except (TypeError, ValueError):
+            rows = []
+        if not isinstance(rows, list):
+            return
+        # Missing files disappear on the background pass; filtering here avoids visibly stale rows.
+        rows = [row for row in rows if isinstance(row, dict) and row.get("path") and Path(row["path"]).is_file()]
+        if rows:
+            self._apply_library_files(rows, persist_cache=False)
+
+    def _apply_library_files(self, files, persist_cache=False):
+        self._library_all = list(files)
+        if persist_cache:
+            self._settings.setValue("libraryMetadataCache", json.dumps(self._library_all, ensure_ascii=False, separators=(",", ":")))
         self._library_scanned = True
         self._unify_playlists()
         files = self._library_all
@@ -2050,7 +2098,12 @@ class MusicBoxBridge(QObject):
 
     @Slot(str)
     def setLibraryFolder(self, value):
-        self._library_folder = value.strip()
+        target = value.strip()
+        if self._library_folder != target:
+            self._library_artist = ""
+        self._library_folder = target
+        if self._library_folder:
+            self._library_playlist = ""
         self._apply_library_view()
 
     @Slot()
@@ -2497,6 +2550,11 @@ class MusicBoxBridge(QObject):
         self._maybe_autoplay(item)
         self._set_status(i18n.tr("Preparando reproducción…"))
         self.playerChanged.emit()
+        cached = self._stream_cache.get(url)
+        if cached and time.monotonic() - cached[0] < 600:
+            item.update(cached[2])
+            self._streamReady.emit(item, cached[1])
+            return
         def resolve():
             stream, error = "", ""
             try:
@@ -2505,6 +2563,10 @@ class MusicBoxBridge(QObject):
                 item.update(title=info.get("track") or info.get("title") or item.get("title"),
                                      artist=info.get("artist") or info.get("uploader") or item.get("artist"),
                                      album=info.get("album") or "Streaming")
+                if stream:
+                    self._stream_cache[url] = (time.monotonic(), stream, {
+                        "title": item.get("title", ""), "artist": item.get("artist", ""),
+                        "album": item.get("album", "Streaming")})
             except Exception as exc:
                 error = str(exc).splitlines()[-1]
             self._streamReady.emit(item, stream or error)

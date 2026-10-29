@@ -19,9 +19,9 @@ public final class Clicks {
         return ClickStats.getInstance(context).count(songs);
     }
 
-    /** " • ▶ 1.2K" or "" when never played. */
+    /** " • 🎧 1.2K" or "" when never played. */
     public static String suffix(int count) {
-        return count <= 0 ? "" : " • ▶ " + format(count);
+        return count <= 0 ? "" : " • 🎧 " + format(count);
     }
 
     public static String format(int count) {

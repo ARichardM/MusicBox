@@ -35,6 +35,7 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class PlaylistArtistDeviceTest {
     private static final String PLAYLIST = "Verificación del filtro de artista";
+    private static final String PLAYLIST_NEXT = "Verificación navegación lateral";
     private <T> T main(Supplier<T> action) {
         AtomicReference<T> result = new AtomicReference<>();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> result.set(action.get()));
@@ -60,8 +61,11 @@ public class PlaylistArtistDeviceTest {
 
     private void chooseArtist(UiDevice device, String pkg, String artist) {
         device.findObject(By.res(pkg, "btnPlaylistArtist")).click();
-        assertNotNull("Artist choice is visible", device.wait(Until.findObject(By.text(artist)), 10000));
-        device.findObject(By.text(artist)).click();
+        assertNotNull("Artist search is visible", device.wait(Until.findObject(By.res(pkg, "inputArtistSearch")), 10000));
+        device.findObject(By.res(pkg, "inputArtistSearch")).setText(artist.substring(0, Math.min(3, artist.length())));
+        androidx.test.uiautomator.BySelector choice = By.res(pkg, "txtArtistChoice").text(artist);
+        assertNotNull("Artist choice is visible", device.wait(Until.findObject(choice), 10000));
+        device.findObject(choice).click();
     }
 
     @SuppressWarnings("unchecked") private Bitmap avatar(Context context, String artist, int color) throws Exception {
@@ -105,7 +109,9 @@ public class PlaylistArtistDeviceTest {
             List<Song> samples = Arrays.asList(sample(context, 1, "Primera", "Ana"),
                     sample(context, 2, "Otra", "Zeta"), sample(context, 3, "Segunda", "Ana"));
             playlists.createPlaylist(PLAYLIST);
+            playlists.createPlaylist(PLAYLIST_NEXT);
             for (Song song : samples) playlists.addSongToPlaylist(PLAYLIST, song.getPath());
+            playlists.addSongToPlaylist(PLAYLIST_NEXT, samples.get(1).getPath());
             Field library = MainActivity.class.getDeclaredField("allSongs"); library.setAccessible(true);
             Method open = MainActivity.class.getDeclaredMethod("showPlaylistSongs", String.class); open.setAccessible(true);
             main(() -> { try {
@@ -143,12 +149,26 @@ public class PlaylistArtistDeviceTest {
             waitFor(() -> main(() -> !activity.findViewById(R.id.btnPlaylistArtist).isSelected()));
             assertFalse(main(() -> hasAvatar(activity, anaPhoto)));
             assertEquals(2, (int) main(() -> PlayerManager.getInstance().getQueue().size()));
+
+            List<String> names = playlists.getPlaylistNames();
+            int current = names.indexOf(PLAYLIST);
+            int direction = current + 1 < names.size() ? 1 : -1;
+            String destination = names.get(current + direction);
+            android.graphics.Rect page = device.findObject(By.res(pkg, "libraryContentSwipe")).getVisibleBounds();
+            int startX = direction > 0 ? page.left + page.width() * 4 / 5 : page.left + page.width() / 5;
+            int endX = direction > 0 ? page.left + page.width() / 5 : page.left + page.width() * 4 / 5;
+            assertTrue("Collection swipe is injected", device.swipe(startX, page.centerY(), endX, page.centerY(), 18));
+            assertNotNull("Adjacent playlist opens", device.wait(Until.findObject(
+                    By.text(cl.arichard.descargador.util.Tr.name(destination))), 10000));
+            assertEquals(cl.arichard.descargador.util.Tr.t("Playlist").toUpperCase(java.util.Locale.getDefault()),
+                    main(() -> ((TextView) activity.findViewById(R.id.txtLibraryContext)).getText().toString()));
         } catch (AssertionError error) {
             device.takeScreenshot(new File(context.getExternalFilesDir(null), "artist-failure-" + (dark ? "dark" : "light") + ".png"));
             throw error;
         } finally {
             main(() -> { PlayerManager.getInstance().stopAndRelease(); activity.finish(); return true; });
             playlists.deletePlaylist(PLAYLIST);
+            playlists.deletePlaylist(PLAYLIST_NEXT);
             context.getSharedPreferences("artist_avatar_urls", 0).edit().remove("ana").remove("zeta").apply();
         }
     }

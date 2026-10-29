@@ -381,7 +381,8 @@
             android:layout_width="match_parent" android:layout_height="match_parent"
             android:orientation="vertical" android:visibility="gone">
 
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            <LinearLayout android:id="@+id/libraryHeader"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="vertical" android:paddingStart="20dp" android:paddingEnd="20dp"
                 android:paddingTop="12dp">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -395,6 +396,11 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:orientation="vertical">
+                        <TextView android:id="@+id/txtLibraryContext"
+                            android:layout_width="match_parent" android:layout_height="wrap_content"
+                            android:textColor="@color/accent" android:textSize="11sp"
+                            android:textStyle="bold" android:letterSpacing="0.08"
+                            android:maxLines="1" android:visibility="gone"/>
                         <TextView android:id="@+id/txtLibraryTitle"
                             android:layout_width="match_parent" android:layout_height="wrap_content"
                             android:text="@string/mi_musica"
@@ -517,7 +523,8 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <FrameLayout android:layout_width="match_parent" android:layout_height="0dp"
+            <cl.arichard.descargador.util.CollectionSwipeLayout android:id="@+id/libraryContentSwipe"
+                android:layout_width="match_parent" android:layout_height="0dp"
                 android:layout_weight="1" android:layout_marginTop="8dp">
                 <androidx.recyclerview.widget.RecyclerView android:id="@+id/recyclerLibrary"
                     android:layout_width="match_parent" android:layout_height="match_parent"
@@ -530,7 +537,7 @@
                 <cl.arichard.descargador.util.SkeletonLoadingView android:id="@+id/libraryLoading"
                     android:layout_width="match_parent" android:layout_height="match_parent"
                     android:visibility="gone"/>
-            </FrameLayout>
+            </cl.arichard.descargador.util.CollectionSwipeLayout>
 
         </LinearLayout>
     </FrameLayout>

@@ -1,5 +1,27 @@
 # Historial de versiones
 
+## 2.3.5 — 29 de octubre de 2026
+
+### Windows y Android
+
+- Playlists y carpetas se recorren con un gesto horizontal fluido y conservan su posición, filtros y contexto. El encabezado identifica claramente si se está viendo una playlist o una carpeta y muestra su nombre.
+- El selector de artistas incorpora búsqueda inmediata, fotos o iniciales, selección reactiva y transiciones pulidas sin modificar la playlist.
+- Los contadores de reproducciones usan audífonos en canciones, playlists y carpetas en lugar del icono de reproducción.
+- Las portadas reutilizan solicitudes y resultados, evitan fundidos repetidos y reducen parpadeos al actualizar listas y collages.
+
+### Android
+
+- El splash de MusicBox tiene una entrada más visible, movimiento continuo y una salida integrada con Inicio. En Android 12 o posterior se oculta el icono nativo intermedio para evitar el doble splash.
+- La biblioteca, sincronización y secciones de Inicio reparten su trabajo entre procesos de fondo y fotogramas consecutivos. Cambiar de pestaña ya no fuerza un escaneo completo y las tarjetas aparecen sin bloquear la animación inicial.
+- La variante `verification` abre sin una cuenta ni Firebase reales y permanece aislada para pruebas automáticas; `preview` conserva la sesión real del usuario.
+- Las imágenes remotas se deduplican, se decodifican al tamaño necesario y dejan de provocar cargas de bitmap lentas durante el desplazamiento.
+
+### Windows
+
+- La biblioteca restaura al instante los metadatos guardados y valida los archivos en segundo plano, agrupando escaneos repetidos.
+- Las direcciones de reproducción online se reutilizan durante diez minutos para reducir la espera al volver a escuchar música en la nube.
+- El diseño de playlists, carpetas y filtro de artistas se adapta al ancho disponible y mantiene animaciones consistentes con Android.
+
 ## 2.3.4 — 28 de octubre de 2026
 
 ### Windows

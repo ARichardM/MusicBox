@@ -2,7 +2,9 @@
 <resources>
     <style name="Theme.MusicBox.Starting" parent="Theme.MusicBox">
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <!-- Android 12+ always inserts a system splash. Keep its mandatory phase visually empty so the
+             animated MusicBox artwork can enter from the exact same black without a masked app-icon flash. -->
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
     </style>
 </resources>

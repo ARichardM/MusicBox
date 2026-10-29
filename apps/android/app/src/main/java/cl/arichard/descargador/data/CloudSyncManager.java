@@ -16,11 +16,14 @@ import com.google.firebase.firestore.SetOptions;
 import org.json.JSONObject;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /** Sincroniza metadatos con transacciones y una base por dispositivo; los archivos permanecen locales. */
 public final class CloudSyncManager {
     private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ExecutorService stateExecutor = Executors.newSingleThreadExecutor();
     private final PlaylistManager playlists;
     private final SearchHistoryManager history;
     private final ClickStats clicks;
@@ -29,7 +32,7 @@ public final class CloudSyncManager {
     private DocumentReference document;
     private ListenerRegistration registration, revocationWatch;
     private static volatile CloudSyncManager active;
-    private boolean applying, stateLoaded, uploading;
+    private volatile boolean applying, stateLoaded, uploading;
     private JSONObject playlistBase;
     private JSONObject lastUiState;
     private final Runnable pendingUpload = this::uploadNow;
@@ -75,47 +78,61 @@ public final class CloudSyncManager {
         playlists.setChangeListener(this::scheduleUpload);
         history.setChangeListener(this::scheduleUpload);
         clicks.setChangeListener(this::scheduleUpload);
+        final DocumentReference watched = document;
         registration = document.addSnapshotListener((snapshot, error) -> {
             if (error != null || snapshot == null) return;
-            if (!snapshot.exists()) { stateLoaded = true; playlistBase = new JSONObject(); scheduleUpload(); return; }
+            if (!snapshot.exists()) {
+                stateExecutor.execute(() -> {
+                    if (document != watched) return;
+                    stateLoaded = true; playlistBase = new JSONObject(); scheduleUpload();
+                });
+                return;
+            }
             String payload = snapshot.getString("payload");
             if (payload == null || payload.isEmpty()) return;
-            try {
-                JSONObject root = new JSONObject(payload);
-                applying = true;
-                JSONObject incoming = root.optJSONObject("playlists");
-                if (incoming != null) {
-                    JSONObject local = playlists.exportJson();
-                    JSONObject merged = PlaylistSync.merge(playlistBase == null ? local : playlistBase, local, incoming);
-                    if (!PlaylistSync.same(local, merged)) playlists.importJson(merged);
-                    needsUpload |= !PlaylistSync.same(merged, incoming);
-                    // Una escritura pendiente todavía puede fallar: la base persistida solo avanza tras confirmación.
-                    if (!snapshot.getMetadata().hasPendingWrites()) {
-                        playlistBase = new JSONObject(incoming.toString());
-                        owner.edit().putString("playlists_base", playlistBase.toString()).apply();
-                    }
-                }
-                if (root.has("history")) history.importJson(root.optJSONObject("history"));
-                needsUpload |= clicks.merge(root.optJSONObject("clicks"));
-                JSONObject preferences = root.optJSONObject("preferences");
-                if (preferences != null && preferences.has("darkMode"))
-                    context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE).edit()
-                            .putBoolean("dark_mode", preferences.optBoolean("darkMode", true)).apply();
-                owner.edit().putString("devices_json", root.optJSONObject("devices") == null ? "{}" : root.optJSONObject("devices").toString()).apply();
-                applying = false;
-                boolean first = !stateLoaded;
-                stateLoaded = true;
-                if (needsUpload || first) scheduleUpload();
-                JSONObject visible = libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson());
-                if (!PlaylistSync.same(lastUiState, visible)) {
-                    lastUiState = visible;
-                    if (uiChanged != null) uiChanged.run();
-                }
-            } catch (Exception errorParsing) {
-                applying = false;
-                android.util.Log.w("MusicBoxSync", "No se pudo leer el estado remoto; se conserva la copia local", errorParsing);
-            }
+            boolean pendingWrites = snapshot.getMetadata().hasPendingWrites();
+            stateExecutor.execute(() -> applySnapshot(watched, owner, payload, pendingWrites));
         });
+    }
+
+    /** JSON parsing and merging can be large; never make a Firestore callback block animation frames. */
+    private void applySnapshot(DocumentReference watched, SharedPreferences owner, String payload, boolean pendingWrites) {
+        if (document != watched) return;
+        try {
+            JSONObject root = new JSONObject(payload);
+            applying = true;
+            JSONObject incoming = root.optJSONObject("playlists");
+            if (incoming != null) {
+                JSONObject local = playlists.exportJson();
+                JSONObject merged = PlaylistSync.merge(playlistBase == null ? local : playlistBase, local, incoming);
+                if (!PlaylistSync.same(local, merged)) playlists.importJson(merged);
+                needsUpload |= !PlaylistSync.same(merged, incoming);
+                // Una escritura pendiente todavía puede fallar: la base persistida solo avanza tras confirmación.
+                if (!pendingWrites) {
+                    playlistBase = new JSONObject(incoming.toString());
+                    owner.edit().putString("playlists_base", playlistBase.toString()).apply();
+                }
+            }
+            if (root.has("history")) history.importJson(root.optJSONObject("history"));
+            needsUpload |= clicks.merge(root.optJSONObject("clicks"));
+            JSONObject preferences = root.optJSONObject("preferences");
+            if (preferences != null && preferences.has("darkMode"))
+                context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE).edit()
+                        .putBoolean("dark_mode", preferences.optBoolean("darkMode", true)).apply();
+            owner.edit().putString("devices_json", root.optJSONObject("devices") == null ? "{}" : root.optJSONObject("devices").toString()).apply();
+            applying = false;
+            boolean first = !stateLoaded;
+            stateLoaded = true;
+            if (needsUpload || first) scheduleUpload();
+            JSONObject visible = libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson());
+            if (!PlaylistSync.same(lastUiState, visible)) {
+                lastUiState = visible;
+                if (uiChanged != null) handler.post(uiChanged);
+            }
+        } catch (Exception errorParsing) {
+            applying = false;
+            android.util.Log.w("MusicBoxSync", "No se pudo leer el estado remoto; se conserva la copia local", errorParsing);
+        }
     }
 
     public static void requestUpload() {
@@ -195,6 +212,7 @@ public final class CloudSyncManager {
         if (registration != null) registration.remove();
         if (revocationWatch != null) revocationWatch.remove();
         document = null;
+        stateExecutor.shutdownNow();
         if (active == this) active = null;
     }
 }

@@ -7,14 +7,11 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.Matrix;
 import android.graphics.RectF;
-import android.graphics.RadialGradient;
-import android.graphics.Shader;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
+import android.view.animation.LinearInterpolator;
 
 import cl.arichard.descargador.R;
 
@@ -22,24 +19,13 @@ import cl.arichard.descargador.R;
 public final class AnimatedSplashView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Bitmap cube;
-    private final Path wavePath = new Path();
     private final RectF target = new RectF();
-    private final Matrix auraMatrix = new Matrix();
-    private final RadialGradient aura = new RadialGradient(0, 0, 1,
-            new int[]{Color.argb(82, 44, 220, 255), Color.argb(25, 25, 155, 230), Color.TRANSPARENT},
-            new float[]{0f, .48f, 1f}, Shader.TileMode.CLAMP);
-    private static final float[][] WAVE_POINTS = {
-            {18,238},{32,245},{43,238},{56,192},{67,190},{83,282},{94,295},
-            {120,122},{130,128},{148,361},{158,364},{177,244},{187,242},{201,302},{220,312}
-    };
-    private final float[] xs = new float[WAVE_POINTS.length];
-    private final float[] ys = new float[WAVE_POINTS.length];
     private ValueAnimator animator;
     private ValueAnimator introAnimator;
     private float phase;
     private float intro;
-    private static final long LAUNCH_HOLD_MS = 1650;
-    private static final long LAUNCH_EXIT_MS = 460;
+    private static final long LAUNCH_HOLD_MS = 760;
+    private static final long LAUNCH_EXIT_MS = 280;
     private final boolean dismissAutomatically;
     private final Runnable dismissAnimation = this::dismiss;
 
@@ -56,18 +42,23 @@ public final class AnimatedSplashView extends View {
         cube = BitmapFactory.decodeResource(getResources(), R.drawable.logo_cube);
         paint.setFilterBitmap(true);
         paint.setDither(true);
-        setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        // Let the window renderer composite this view directly. A dedicated full-screen layer is expensive to
+        // recreate while the splash is animating and caused visible stalls on older Samsung GPUs.
     }
 
     public void start() {
         stop();
+        phase = 0f;
+        intro = 0f;
         setAlpha(1f);
         setScaleX(1f);
         setScaleY(1f);
+        setTranslationY(0f);
         animator = ValueAnimator.ofFloat(0f, 1f);
-        animator.setDuration(1650);
+        animator.setDuration(1200);
         animator.setRepeatCount(ValueAnimator.INFINITE);
-        animator.setInterpolator(new DecelerateInterpolator());
+        // Constant speed prevents the subtle pause that a decelerating repeating animator creates at each loop.
+        animator.setInterpolator(new LinearInterpolator());
         animator.addUpdateListener(value -> { phase = (float) value.getAnimatedValue(); invalidate(); });
         animator.start();
         introAnimator = ValueAnimator.ofFloat(0f, 1f);
@@ -82,7 +73,7 @@ public final class AnimatedSplashView extends View {
     }
 
     private void dismiss() {
-        animate().alpha(0f).scaleX(1.14f).scaleY(1.14f).setDuration(LAUNCH_EXIT_MS)
+        animate().alpha(0f).scaleX(1.12f).scaleY(1.12f).translationY(-dp(8)).setDuration(LAUNCH_EXIT_MS)
                 .setInterpolator(new DecelerateInterpolator(1.4f)).withEndAction(() -> {
                     stop();
                     ViewGroup parent = (ViewGroup) getParent();
@@ -108,55 +99,23 @@ public final class AnimatedSplashView extends View {
         super.onDraw(canvas);
         if (cube == null) return;
         float cycle = (float) Math.sin(phase * Math.PI * 2);
-        float size = Math.min(dp(250), Math.min(getWidth(), getHeight()) * (dismissAutomatically ? .335f : .88f));
+        float entranceScale = .82f + .18f * intro;
+        float size = Math.min(dp(250), Math.min(getWidth(), getHeight()) * (dismissAutomatically ? .335f : .88f))
+                * entranceScale;
         float maxSide = Math.max(cube.getWidth(), cube.getHeight());
         float drawWidth = size * cube.getWidth() / maxSide;
         float drawHeight = size * cube.getHeight() / maxSide;
         float left = (getWidth() - drawWidth) / 2f;
-        float top = (getHeight() - drawHeight) / 2f - dp(5) * Math.abs(cycle);
+        float top = (getHeight() - drawHeight) / 2f - dp(9) * cycle;
         target.set(left, top, left + drawWidth, top + drawHeight);
-        float cubeAlpha = dismissAutomatically ? 1f : intro;
-        float auraPulse = 1f + .08f * cycle;
-        float auraRadius = Math.max(drawWidth, drawHeight) * .55f * auraPulse;
+        float cubeAlpha = dismissAutomatically ? .2f + .8f * intro : intro;
         float centerX = target.centerX();
         float centerY = target.centerY();
-        auraMatrix.setScale(auraRadius, auraRadius);
-        auraMatrix.postTranslate(centerX, centerY);
-        aura.setLocalMatrix(auraMatrix);
-        paint.setAlpha(Math.round(255f * intro));
-        paint.setShader(aura);
-        canvas.drawCircle(centerX, centerY, auraRadius, paint);
-        paint.setShader(null);
         paint.setAlpha(Math.round(255f * cubeAlpha));
+        canvas.save();
+        canvas.rotate(1.8f * cycle * intro, centerX, centerY);
         canvas.drawBitmap(cube, null, target, paint);
-        drawWave(canvas, left, top, drawWidth, drawHeight, cubeAlpha);
-    }
-
-    private void drawWave(Canvas canvas, float left, float top, float width, float height, float alpha) {
-        final float[][] raw = WAVE_POINTS;
-        for (int i = 0; i < raw.length; i++) {
-            float t = i / (float) (raw.length - 1);
-            float travel = (float) Math.sin(phase * Math.PI * 2 - raw[i][0] / 446f * Math.PI * 4);
-            float anchor = (float) Math.sin(t * Math.PI);
-            xs[i] = left + raw[i][0] / 446f * width;
-            ys[i] = top + (raw[i][1] + 15f * travel * anchor) / 488f * height;
-        }
-        wavePath.reset();
-        wavePath.moveTo(xs[0], ys[0]);
-        for (int i = 1; i < raw.length - 1; i++) {
-            wavePath.quadTo(xs[i], ys[i], (xs[i] + xs[i + 1]) / 2f, (ys[i] + ys[i + 1]) / 2f);
-        }
-        wavePath.lineTo(xs[xs.length - 1], ys[ys.length - 1]);
-        paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeJoin(Paint.Join.ROUND);
-        paint.setStrokeWidth(9f / 446f * width);
-        paint.setColor(Color.rgb(80, 233, 255));
-        paint.setAlpha(Math.round(255f * alpha));
-        paint.setShadowLayer(12f / 446f * width, 0, 0, Color.rgb(32, 191, 255));
-        canvas.drawPath(wavePath, paint);
-        paint.clearShadowLayer();
-        paint.setStyle(Paint.Style.FILL);
+        canvas.restore();
     }
 
     private float dp(float value) { return value * getResources().getDisplayMetrics().density; }

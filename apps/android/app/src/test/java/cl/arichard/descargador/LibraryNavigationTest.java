@@ -25,6 +25,10 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class LibraryNavigationTest {
+    @Test public void verificationBuildDoesNotRequireARealAccount() {
+        assertTrue(MainActivity.isVerificationPackage("cl.arichard.descargador.verification"));
+        assertFalse(MainActivity.isVerificationPackage("cl.arichard.descargador.pruebas"));
+    }
     private Context context;
     @Before public void setup() throws Exception {
         context = RuntimeEnvironment.getApplication();
@@ -100,7 +104,17 @@ public class LibraryNavigationTest {
             picker.performClick();
             androidx.appcompat.app.AlertDialog dialog = (androidx.appcompat.app.AlertDialog)
                     org.robolectric.shadows.ShadowDialog.getLatestDialog();
-            dialog.getListView().performItemClick(null, 1, 1);
+            EditText artistSearch = dialog.findViewById(R.id.inputArtistSearch);
+            RecyclerView artistChoices = dialog.findViewById(R.id.recyclerArtistChoices);
+            assertNotNull(artistSearch); assertNotNull(artistChoices);
+            artistSearch.setText("an");
+            assertEquals(2, artistChoices.getAdapter().getItemCount()); // Todos + Ana
+            artistChoices.measure(android.view.View.MeasureSpec.makeMeasureSpec(400, android.view.View.MeasureSpec.EXACTLY),
+                    android.view.View.MeasureSpec.makeMeasureSpec(360, android.view.View.MeasureSpec.EXACTLY));
+            artistChoices.layout(0, 0, 400, 360);
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            assertNotNull(artistChoices.findViewHolderForAdapterPosition(1));
+            artistChoices.findViewHolderForAdapterPosition(1).itemView.performClick();
             RecyclerView rows = activity.findViewById(R.id.recyclerLibrary);
             assertEquals(2, rows.getAdapter().getItemCount());
             assertTrue(picker.getText().toString().contains("Ana"));
@@ -125,6 +139,37 @@ public class LibraryNavigationTest {
         } finally {
             PlayerManager.getInstance().stopAndRelease();
             controller.pause().stop().destroy();
+        }
+    }
+
+    @Test public void playlistsAndFoldersExposeTheirTypeAndAdjacentNavigation() throws Exception {
+        PlaylistManager manager = PlaylistManager.getInstance(context);
+        manager.createPlaylist("Segunda lista");
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
+            finishScan(); MainActivity activity = controller.get();
+            java.lang.reflect.Method open = MainActivity.class.getDeclaredMethod("showPlaylistSongs", String.class);
+            open.setAccessible(true); open.invoke(activity, "En camino");
+            TextView contextLabel = activity.findViewById(R.id.txtLibraryContext);
+            assertEquals("PLAYLIST", contextLabel.getText().toString());
+            assertEquals(android.view.View.VISIBLE, contextLabel.getVisibility());
+            android.view.ViewParent ancestor = contextLabel.getParent();
+            while (ancestor != null && ancestor != activity.findViewById(R.id.libraryHeader)) ancestor = ancestor.getParent();
+            assertSame("The animated header owns the collection title", activity.findViewById(R.id.libraryHeader), ancestor);
+            java.lang.reflect.Method adjacent = MainActivity.class.getDeclaredMethod("adjacentCollection", int.class);
+            adjacent.setAccessible(true);
+            java.util.List<String> names = manager.getPlaylistNames();
+            int current = names.indexOf("En camino");
+            assertTrue(current >= 0 && current + 1 < names.size());
+            assertEquals(names.get(current + 1), adjacent.invoke(activity, 1));
+            java.lang.reflect.Method show = MainActivity.class.getDeclaredMethod("showCollection", int.class, String.class);
+            String last = names.get(names.size() - 1);
+            show.setAccessible(true); show.invoke(activity, 3, last);
+            assertEquals(last, ((TextView) activity.findViewById(R.id.txtLibraryTitle)).getText().toString());
+            assertNull(adjacent.invoke(activity, 1));
+            java.lang.reflect.Method folder = MainActivity.class.getDeclaredMethod("showFolderSongs", String.class, java.util.List.class);
+            folder.setAccessible(true); folder.invoke(activity, "Viajes", java.util.Collections.emptyList());
+            assertEquals("CARPETA", contextLabel.getText().toString());
+            assertEquals("Viajes", ((TextView) activity.findViewById(R.id.txtLibraryTitle)).getText().toString());
         }
     }
 

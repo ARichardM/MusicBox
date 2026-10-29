@@ -17,6 +17,7 @@ import java.util.List;
 /** A bounded, asynchronously loaded cover mosaic ranked by actual playback history. */
 public class CoverCollageView extends FrameLayout {
     private final List<ImageView> covers = new ArrayList<>();
+    private String renderedSignature = "";
 
     public CoverCollageView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -29,8 +30,6 @@ public class CoverCollageView extends FrameLayout {
     }
 
     public void setSongs(List<Song> songs) {
-        removeAllViews(); covers.clear();
-        setBackgroundResource(cl.arichard.descargador.R.drawable.bg_cover_fallback);
         List<Song> top = SearchHistoryManager.getInstance(getContext()).getTopPlayed(songs, 4);
         if (songs != null) for (Song song : songs) {
             if (top.size() == 4) break;
@@ -38,6 +37,12 @@ public class CoverCollageView extends FrameLayout {
             for (Song selected : top) if (selected.getPath().equals(song.getPath())) { present = true; break; }
             if (!present) top.add(song);
         }
+        StringBuilder signature = new StringBuilder();
+        for (Song song : top) signature.append(song.getPath()).append('\u0000').append(song.getCoverPath()).append('\u0001');
+        if (signature.toString().equals(renderedSignature)) return;
+        renderedSignature = signature.toString();
+        removeAllViews(); covers.clear();
+        setBackgroundResource(cl.arichard.descargador.R.drawable.bg_cover_fallback);
         if (top.isEmpty()) {
             TextView empty = new TextView(getContext());
             empty.setText(Tr.t("Sin canciones")); empty.setTextSize(9); empty.setTextColor(0xFFFFFFFF);

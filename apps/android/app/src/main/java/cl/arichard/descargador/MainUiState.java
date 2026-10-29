@@ -13,7 +13,7 @@ import java.util.Map;
 /** Configuration changes recreate views, while this data and active work stay in memory. */
 public class MainUiState extends ViewModel {
     final List<Song> library = new ArrayList<>();
-    boolean libraryLoaded, resultsVisible, searchLoading, downloadVisible, isMp3 = true;
+    boolean libraryLoaded, splashShown, resultsVisible, searchLoading, downloadVisible, isMp3 = true;
     volatile boolean downloading;
     int discoveryScroll, resultPosition, downloadProgress, searchGeneration, completedDownloads;
     String searchQuery = "", searchStatus = "", downloadStatus = "", downloadEta = "";

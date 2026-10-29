@@ -31,7 +31,9 @@ public class TabSwipeLayout extends RelativeLayout {
         if (view.getVisibility() != VISIBLE || !view.getGlobalVisibleRect(bounds) || !bounds.contains(x, y)) return false;
         if (Boolean.TRUE.equals(view.getTag(cl.arichard.descargador.R.id.protectedAction))
                 || view instanceof HorizontalScrollView || view instanceof EditText || view instanceof SeekBar
-                || view instanceof SwipeActionsLayout || view instanceof DragTabBarLayout || (view != this && view instanceof ViewGroup &&
+                || view instanceof SwipeActionsLayout || view instanceof DragTabBarLayout
+                || (view instanceof CollectionSwipeLayout && ((CollectionSwipeLayout) view).isSwipeEnabled())
+                || (view != this && view instanceof ViewGroup &&
                 (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1)))) return true;
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;

@@ -61,6 +61,16 @@ class PlaylistArtistTests(unittest.TestCase):
         self.assertEqual(b.libraryArtist, "")
         self.assertEqual([r["artist"] for r in b.library], ["Otro"])
 
+    def test_opening_folder_clears_playlist_and_artist_context(self):
+        b = self.bridge
+        b._library_artist = "Ana"
+        b._library_folder = ""
+        b._library_roots = lambda: []
+        b.setLibraryFolder("Colección local")
+        self.assertEqual(b._library_folder, "Colección local")
+        self.assertEqual(b._library_playlist, "")
+        self.assertEqual(b.libraryArtist, "")
+
     def test_mixed_queue_advances_only_through_selected_artist_and_survives_browsing(self):
         b = self.bridge
         b.setLibraryArtist("Ana")

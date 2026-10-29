@@ -13,10 +13,43 @@ ApplicationWindow {
  property real splashPhase:0
  property real splashIntro:0
  property bool splashVisible:true
+ property bool collectionAnimating:false
+ property int pendingCollectionDirection:0
+ property string pendingCollectionKind:""
+ property string pendingCollectionName:""
  onWidthChanged:{if(width<1050&&musicbox.sidebarExpanded)musicbox.toggleSidebar()}
  Component.onCompleted:{if(width<1050&&musicbox.sidebarExpanded)musicbox.toggleSidebar()}
  function linkCount(text){return text.split(/\r?\n/).filter(function(x){return x.trim().length>0}).length}
  function clock(ms){var s=Math.max(0,Math.floor(ms/1000));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
+ function collectionKind(){return libraryPlaylist!==""?"playlist":(libraryFolder!==""?"folder":"")}
+ function collectionName(){return libraryPlaylist!==""?libraryPlaylist:libraryFolder}
+ function collectionNames(kind){var source=kind==="playlist"?musicbox.playlists:musicbox.folders;var names=[];for(var i=0;i<source.length;i++)names.push(source[i].name);return names}
+ function adjacentCollection(direction){var names=collectionNames(collectionKind());var index=names.indexOf(collectionName());var next=index+direction;return index>=0&&next>=0&&next<names.length?names[next]:""}
+ function openLibraryCollection(kind,name){
+  if(!name)return
+  librarySearch.clear()
+  if(kind==="playlist"){
+   libraryFilter="playlists";libraryFolder="";libraryPlaylist=name
+   musicbox.setLibraryPlaylist(name)
+  }else{
+   libraryFilter="folders";libraryPlaylist="";libraryFolder=name
+   musicbox.setLibraryFolder(name)
+  }
+ }
+ function closeLibraryCollection(){
+  if(libraryPlaylist!==""){libraryPlaylist="";musicbox.setLibraryPlaylist("")}
+  if(libraryFolder!==""){libraryFolder="";musicbox.setLibraryFolder("")}
+ }
+ function navigateAdjacentCollection(direction){
+  if(collectionAnimating)return false
+  var target=adjacentCollection(direction)
+  if(!target)return false
+  pendingCollectionDirection=direction
+  pendingCollectionKind=collectionKind()
+  pendingCollectionName=target
+  collectionSlide.start()
+  return true
+ }
  component Heading:Label{font.pixelSize:22;font.bold:true;color:w.fg}
  component Icon:Image{property int size:18;property string customColor:"";width:size;height:size;Layout.preferredWidth:size;Layout.preferredHeight:size;Layout.minimumWidth:size;Layout.maximumWidth:size;Layout.minimumHeight:size;Layout.maximumHeight:size;sourceSize.width:size*3;sourceSize.height:size*3;fillMode:Image.PreserveAspectFit;smooth:true;mipmap:true;layer.enabled:true;layer.effect:MultiEffect{colorization:1;colorizationColor:customColor!==""?customColor:(musicbox.darkMode?"#FFFFFF":"#46505E")}}
  component BrandMark:Item{id:brandMark;property real phase:0;property bool animated:false;readonly property bool live:animated||brandHover.containsMouse;width:44;height:44;transform:Translate{y:brandMark.live?-1.2*Math.abs(Math.sin(brandMark.phase*Math.PI*2)):0}NumberAnimation on phase{from:0;to:1;duration:1650;loops:Animation.Infinite;easing.type:Easing.Linear;running:brandMark.live}
@@ -44,7 +77,7 @@ ApplicationWindow {
  component Empty:ColumnLayout{property string emptyTitle;property string detailText;anchors.centerIn:parent;Label{Layout.alignment:Qt.AlignHCenter;text:parent.emptyTitle;color:w.fg;font.pixelSize:18;font.bold:true}Label{Layout.alignment:Qt.AlignHCenter;text:parent.detailText;color:w.muted}}
  component Nav:Button{id:navRoot;property int target;property url iconSource;property string label;implicitHeight:44;implicitWidth:44;Layout.preferredHeight:44;Layout.preferredWidth:musicbox.sidebarExpanded?-1:44;Layout.fillWidth:musicbox.sidebarExpanded;Layout.alignment:Qt.AlignHCenter;leftPadding:0;rightPadding:0;topInset:0;bottomInset:0;leftInset:0;rightInset:0;checkable:true;hoverEnabled:true;checked:w.page===target;font.bold:checked;ToolTip.visible:hovered&&!musicbox.sidebarExpanded;ToolTip.text:label;contentItem:Item{Icon{anchors.verticalCenter:parent.verticalCenter;x:musicbox.sidebarExpanded?12:Math.round((parent.width-width)/2);source:navRoot.iconSource;size:20;opacity:navRoot.checked?1:(navRoot.hovered?.9:.68);Behavior on x{NumberAnimation{duration:210;easing.type:Easing.OutCubic}}Behavior on opacity{NumberAnimation{duration:110}}}Text{visible:musicbox.sidebarExpanded;anchors.left:parent.left;anchors.leftMargin:44;anchors.right:parent.right;anchors.verticalCenter:parent.verticalCenter;text:navRoot.label;color:navRoot.checked?w.fg:(navRoot.hovered?w.fg:w.muted);font:navRoot.font;verticalAlignment:Text.AlignVCenter;opacity:visible?1:0;Behavior on opacity{NumberAnimation{duration:120}}Behavior on color{ColorAnimation{duration:120}}}}background:Rectangle{radius:12;color:navRoot.checked?(musicbox.darkMode?"#202C3D":"#E2EEFF"):(navRoot.hovered?(musicbox.darkMode?"#24262D":"#EEF2F7"):"transparent");Behavior on color{ColorAnimation{duration:120}}}onClicked:w.page=target}
  component RowItem:Rectangle{id:rowRoot;property var itemData:({});property bool web:false;property bool libraryRow:false;property var onlineList:[];property int onlineIndex:-1;property int queuePosition:-1;property bool active:!!itemData.path&&itemData.path===(musicbox.currentTrack.path||"");property bool isDownloading:musicbox.downloadingIds.indexOf(itemData.id)!==-1||(itemData.downloading||false);width:ListView.view?ListView.view.width-20:500;height:74;radius:16;color:active?(musicbox.darkMode?"#172B43":"#DDEEFF"):(mouse.containsMouse?(musicbox.darkMode?"#25282E":"#E7EDF5"):w.card);border.width:active?1:0;border.color:w.accent;scale:mouse.pressed?.995:1;Behavior on color{ColorAnimation{duration:120}}Behavior on scale{NumberAnimation{duration:90}}
-  RowLayout{anchors.fill:parent;anchors.margins:10;anchors.rightMargin:84;spacing:12;Rectangle{Layout.preferredWidth:52;Layout.preferredHeight:52;radius:12;color:"#283140";clip:true;Image{id:rowCover;anchors.fill:parent;source:itemData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:12;visible:rowCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!itemData.thumbnail;source:"icons/music.svg";size:22}BusyIndicator{anchors.centerIn:parent;width:26;height:26;running:rowRoot.isDownloading;visible:rowRoot.isDownloading}Rectangle{id:rowDlBadge;visible:(itemData.downloaded||false)&&!rowRoot.isDownloading;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.margins:2;width:20;height:20;radius:10;gradient:Gradient{GradientStop{position:0;color:itemData.fromFolder?"#7B8494":"#50E9FF"}GradientStop{position:1;color:itemData.fromFolder?"#566071":w.accent}}border.width:2;border.color:rowRoot.color;scale:visible?1:0;opacity:visible?1:0;Behavior on scale{NumberAnimation{duration:420;easing.type:Easing.OutElastic;easing.amplitude:1.1;easing.period:.55}}Behavior on opacity{NumberAnimation{duration:180}}Icon{anchors.centerIn:parent;source:itemData.fromFolder?"icons/folder.svg":"icons/downloaded.svg";customColor:itemData.fromFolder?"#FFFFFF":"";size:12}}}ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:itemData.title||"";color:active?w.accent:w.fg;font.bold:true;elide:Text.ElideRight}Label{Layout.fillWidth:true;text:(itemData.subtitle||"")+(itemData.clicks>0?"  ·  ▶ "+itemData.clicks:"");color:w.muted;font.pixelSize:12;elide:Text.ElideRight}}}
+  RowLayout{anchors.fill:parent;anchors.margins:10;anchors.rightMargin:84;spacing:12;Rectangle{Layout.preferredWidth:52;Layout.preferredHeight:52;radius:12;color:"#283140";clip:true;Image{id:rowCover;anchors.fill:parent;source:itemData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:12;visible:rowCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!itemData.thumbnail;source:"icons/music.svg";size:22}BusyIndicator{anchors.centerIn:parent;width:26;height:26;running:rowRoot.isDownloading;visible:rowRoot.isDownloading}Rectangle{id:rowDlBadge;visible:(itemData.downloaded||false)&&!rowRoot.isDownloading;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.margins:2;width:20;height:20;radius:10;gradient:Gradient{GradientStop{position:0;color:itemData.fromFolder?"#7B8494":"#50E9FF"}GradientStop{position:1;color:itemData.fromFolder?"#566071":w.accent}}border.width:2;border.color:rowRoot.color;scale:visible?1:0;opacity:visible?1:0;Behavior on scale{NumberAnimation{duration:420;easing.type:Easing.OutElastic;easing.amplitude:1.1;easing.period:.55}}Behavior on opacity{NumberAnimation{duration:180}}Icon{anchors.centerIn:parent;source:itemData.fromFolder?"icons/folder.svg":"icons/downloaded.svg";customColor:itemData.fromFolder?"#FFFFFF":"";size:12}}}ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:itemData.title||"";color:active?w.accent:w.fg;font.bold:true;elide:Text.ElideRight}Label{Layout.fillWidth:true;text:(itemData.subtitle||"")+(itemData.clicks>0?"  ·  🎧 "+itemData.clicks:"");color:w.muted;font.pixelSize:12;elide:Text.ElideRight}}}
   MouseArea{id:mouse;anchors.fill:parent;anchors.rightMargin:84;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:queuePosition>=0?musicbox.playQueueIndex(queuePosition):(onlineIndex>=0?musicbox.playOnlineList(onlineList,onlineIndex):(libraryRow?musicbox.playLibraryTrack(itemData):(web||itemData.web?musicbox.playOnline(itemData):musicbox.playTrack(itemData))))}
   Row{anchors.right:parent.right;anchors.rightMargin:8;anchors.verticalCenter:parent.verticalCenter;spacing:4;z:3
    IconButton{iconSource:(itemData.favorite||false)?"icons/heart_filled.svg":"icons/heart.svg";iconColor:(itemData.favorite||false)?"#FF375F":"";iconSize:18;opacity:(itemData.favorite||false)?1.0:(hovered?1.0:(mouse.containsMouse?.85:.55));ToolTip.visible:hovered;ToolTip.text:(itemData.favorite||false)?qsTr("Quitar de favoritas"):qsTr("Agregar a favoritas");onClicked:musicbox.toggleFavoriteFor(itemData)}
@@ -181,8 +214,24 @@ ApplicationWindow {
          ColumnLayout{Layout.fillWidth:true;spacing:10;Repeater{model:musicbox.albumTracks;delegate:RowItem{Layout.fillWidth:true;itemData:modelData;web:true;onlineList:musicbox.albumTracks;onlineIndex:index}}}
          Item{Layout.preferredHeight:30}}}}
     }
-    Item{ColumnLayout{anchors.fill:parent;anchors.margins:w.width<980?22:34;spacing:14
-      RowLayout{Layout.fillWidth:true;RowLayout{spacing:8;IconButton{visible:w.libraryPlaylist!==""||w.libraryFolder!=="";iconSource:"icons/previous.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Volver");onClicked:{if(w.libraryPlaylist!==""){w.libraryPlaylist="";musicbox.setLibraryPlaylist("");}if(w.libraryFolder!==""){w.libraryFolder="";musicbox.setLibraryFolder("");}}}Heading{Layout.maximumWidth:Math.max(180,w.width-520);text:w.libraryPlaylist?w.libraryPlaylist:(w.libraryFolder?w.libraryFolder:(w.libraryFilter==="playlists"?"Playlists":(w.libraryFilter==="folders"?qsTr("Carpetas"):qsTr("Mi música"))));elide:Text.ElideRight}}Item{Layout.fillWidth:true}IconButton{visible:w.libraryPlaylist==="";iconSource:"icons/plus.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Nueva playlist");onClicked:newPlaylistDialog.open()}IconButton{visible:Object.keys(musicbox.currentTrack).length>0;iconSource:"icons/locate.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Ir a la canción actual");onClicked:{for(var i=0;i<musicbox.library.length;i++){if(musicbox.library[i].path===musicbox.currentTrack.path){libraryList.positionViewAtIndex(i,ListView.Center);break}}}}IconButton{iconSource:"icons/shuffle.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Reproducir visible en aleatorio");onClicked:musicbox.shuffleVisible()}IconButton{iconSource:"icons/refresh.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Actualizar biblioteca");onClicked:musicbox.refresh()}}
+    Item{id:libraryViewport;clip:true
+     Item{id:libraryPage;anchors.fill:parent
+     ColumnLayout{anchors.fill:parent;anchors.margins:w.width<980?22:34;spacing:14
+      RowLayout{Layout.fillWidth:true;spacing:8
+       IconButton{visible:w.collectionKind()!=="";iconSource:"icons/previous.svg";iconSize:16;Accessible.name:qsTr("Volver");ToolTip.visible:hovered;ToolTip.text:qsTr("Volver");onClicked:w.closeLibraryCollection()}
+       ColumnLayout{Layout.maximumWidth:Math.max(200,w.width-610);spacing:1
+        Label{objectName:"libraryContextLabel";visible:w.collectionKind()!=="";text:w.collectionKind()==="playlist"?qsTr("PLAYLIST"):qsTr("CARPETA");color:w.accent;font.pixelSize:10;font.bold:true;font.letterSpacing:1.4}
+        Heading{objectName:"libraryHeading";Layout.fillWidth:true;text:w.collectionName()||(w.libraryFilter==="playlists"?"Playlists":(w.libraryFilter==="folders"?qsTr("Carpetas"):qsTr("Mi música")));elide:Text.ElideRight}
+        Label{objectName:"libraryCollectionCount";visible:w.collectionKind()!=="";text:musicbox.library.length+(musicbox.library.length===1?qsTr(" canción"):qsTr(" canciones"));color:w.muted;font.pixelSize:11}
+       }
+       Item{Layout.fillWidth:true}
+       IconButton{objectName:"previousCollectionButton";visible:w.collectionKind()!=="";enabled:w.adjacentCollection(-1)!=="";iconSource:"icons/prev_page.svg";iconSize:16;Accessible.name:w.collectionKind()==="playlist"?qsTr("Playlist anterior"):qsTr("Carpeta anterior");ToolTip.visible:hovered;ToolTip.text:Accessible.name;onClicked:w.navigateAdjacentCollection(-1)}
+       IconButton{objectName:"nextCollectionButton";visible:w.collectionKind()!=="";enabled:w.adjacentCollection(1)!=="";iconSource:"icons/next_page.svg";iconSize:16;Accessible.name:w.collectionKind()==="playlist"?qsTr("Playlist siguiente"):qsTr("Carpeta siguiente");ToolTip.visible:hovered;ToolTip.text:Accessible.name;onClicked:w.navigateAdjacentCollection(1)}
+       IconButton{visible:w.libraryPlaylist==="";iconSource:"icons/plus.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Nueva playlist");onClicked:newPlaylistDialog.open()}
+       IconButton{visible:Object.keys(musicbox.currentTrack).length>0;iconSource:"icons/locate.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Ir a la canción actual");onClicked:{for(var i=0;i<musicbox.library.length;i++){if(musicbox.library[i].path===musicbox.currentTrack.path){libraryList.positionViewAtIndex(i,ListView.Center);break}}}}
+       IconButton{iconSource:"icons/shuffle.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Reproducir visible en aleatorio");onClicked:musicbox.shuffleVisible()}
+       IconButton{iconSource:"icons/refresh.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Actualizar biblioteca");onClicked:musicbox.refresh()}
+      }
       Rectangle{Layout.fillWidth:true;height:60;radius:16;color:w.card;RowLayout{anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:7;spacing:8;Icon{source:"icons/search.svg";size:18}CenterField{id:librarySearch;Layout.fillWidth:true;placeholderText:qsTr("Buscar en tu música");onTextChanged:musicbox.setLibraryQuery(text)}IconButton{visible:librarySearch.text.length;iconSource:"icons/close.svg";iconSize:16;onClicked:librarySearch.clear()}}}
       RowLayout{Layout.fillWidth:true;spacing:8;Chip{text:qsTr("Canciones");value:"songs"}Chip{text:"Playlists";value:"playlists"}Chip{text:qsTr("Carpetas");value:"folders"}Item{Layout.fillWidth:true}Label{text:w.libraryFilter==="playlists"&&w.libraryPlaylist===""?(musicbox.playlists.length+(musicbox.playlists.length===1?qsTr(" playlist"):qsTr(" playlists"))):(w.libraryFilter==="folders"&&w.libraryFolder===""&&w.libraryPlaylist===""?(musicbox.folders.length+(musicbox.folders.length===1?qsTr(" carpeta"):qsTr(" carpetas"))):(musicbox.library.length+(musicbox.library.length===1?qsTr(" canción"):qsTr(" canciones"))));color:w.muted;font.pixelSize:12}}
       RowLayout {
@@ -213,10 +262,56 @@ ApplicationWindow {
        Item{Layout.fillWidth:true}
        AutoDownloadPill{objectName:"playlistAutoDownload";section:w.libraryPlaylist!==""?("playlist:"+w.libraryPlaylist):""}
       }
-      ColumnLayout{Layout.fillWidth:true;Layout.fillHeight:true;visible:w.libraryFilter==="folders"&&w.libraryFolder===""&&w.libraryPlaylist==="";spacing:8;Label{Layout.fillWidth:true;Layout.topMargin:40;visible:musicbox.folders.length===0;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.WordWrap;text:qsTr("No hay carpetas todavía. Agrega una carpeta de música en Configuración.");color:w.muted}Item{Layout.fillWidth:true;Layout.fillHeight:true;visible:musicbox.folders.length===0}GridView{id:foldersGrid;visible:musicbox.folders.length>0;Layout.fillWidth:true;Layout.fillHeight:true;cellWidth:206;cellHeight:96;clip:true;model:musicbox.folders;delegate:Rectangle{width:190;height:82;radius:15;color:folderMouse.containsMouse?(musicbox.darkMode?"#292B31":"#E7EDF5"):w.card;border.width:w.libraryFolder===modelData.name?1:0;border.color:w.accent;RowLayout{anchors.fill:parent;anchors.margins:10;spacing:12;Rectangle{Layout.preferredWidth:48;Layout.preferredHeight:48;radius:11;color:"#283140";clip:true;Image{id:folderCover;anchors.fill:parent;source:modelData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:11;visible:folderCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!modelData.thumbnail;source:"icons/music.svg";size:20}}ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:modelData.name;color:w.fg;font.bold:true;elide:Text.ElideRight}Label{text:modelData.subtitle+(modelData.clicks>0?"  ·  ▶ "+modelData.clicks:"");color:w.muted;font.pixelSize:11}}}MouseArea{id:folderMouse;anchors.fill:parent;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:{w.libraryFolder=modelData.name;musicbox.setLibraryFolder(modelData.name)}}}}}
-      GridView{id:playlistsGrid;visible:w.libraryFilter==="playlists"&&w.libraryPlaylist==="";Layout.fillWidth:true;Layout.fillHeight:true;cellWidth:210;cellHeight:210;clip:true;model:musicbox.playlists;delegate:Rectangle{width:196;height:196;radius:18;color:plHover.containsMouse?(musicbox.darkMode?"#25282E":"#E7EDF5"):w.card;border.width:1;border.color:musicbox.darkMode?"#2C2F36":"#D5DCE6";ColumnLayout{anchors.fill:parent;anchors.margins:12;spacing:8;Rectangle{Layout.fillWidth:true;Layout.preferredHeight:116;radius:12;color:"#242A35";clip:true;Image{id:playlistCover;anchors.fill:parent;source:modelData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:12;visible:playlistCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!modelData.thumbnail;source:"icons/playlist.svg";size:34}Rectangle{visible:modelData.autoDownload||false;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:6;width:22;height:22;radius:11;color:w.accent;Icon{anchors.centerIn:parent;source:"icons/download.svg";size:12}}}RowLayout{Layout.fillWidth:true;ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:modelData.name;color:w.fg;font.bold:true;font.pixelSize:13;elide:Text.ElideRight}Label{Layout.fillWidth:true;text:(modelData.description||modelData.subtitle)+(modelData.clicks>0?"  ·  ▶ "+modelData.clicks:"");color:w.muted;font.pixelSize:11;elide:Text.ElideRight}}IconButton{iconSource:"icons/more.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Configurar playlist");onClicked:playlistSettingsDialog.openFor(modelData)}}}MouseArea{id:plHover;anchors.fill:parent;anchors.rightMargin:36;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:{w.libraryPlaylist=modelData.name;musicbox.setLibraryPlaylist(modelData.name)}}}ScrollBar.vertical:SolidBar{}Empty{visible:parent.count===0;emptyTitle:qsTr("No hay playlists todavía");detailText:qsTr("Crea una con el botón + o agrega canciones desde cualquier vista")}}
+      ColumnLayout{Layout.fillWidth:true;Layout.fillHeight:true;visible:w.libraryFilter==="folders"&&w.libraryFolder===""&&w.libraryPlaylist==="";spacing:8;Label{Layout.fillWidth:true;Layout.topMargin:40;visible:musicbox.folders.length===0;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.WordWrap;text:qsTr("No hay carpetas todavía. Agrega una carpeta de música en Configuración.");color:w.muted}Item{Layout.fillWidth:true;Layout.fillHeight:true;visible:musicbox.folders.length===0}GridView{id:foldersGrid;visible:musicbox.folders.length>0;Layout.fillWidth:true;Layout.fillHeight:true;cellWidth:206;cellHeight:96;clip:true;model:musicbox.folders;delegate:Rectangle{width:190;height:82;radius:15;color:folderMouse.containsMouse?(musicbox.darkMode?"#292B31":"#E7EDF5"):w.card;border.width:w.libraryFolder===modelData.name?1:0;border.color:w.accent;RowLayout{anchors.fill:parent;anchors.margins:10;spacing:12;Rectangle{Layout.preferredWidth:48;Layout.preferredHeight:48;radius:11;color:"#283140";clip:true;Image{id:folderCover;anchors.fill:parent;source:modelData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:11;visible:folderCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!modelData.thumbnail;source:"icons/music.svg";size:20}}ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:modelData.name;color:w.fg;font.bold:true;elide:Text.ElideRight}Label{text:modelData.subtitle+(modelData.clicks>0?"  ·  🎧 "+modelData.clicks:"");color:w.muted;font.pixelSize:11}}}MouseArea{id:folderMouse;anchors.fill:parent;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:w.openLibraryCollection("folder",modelData.name)}}}}
+      GridView{id:playlistsGrid;visible:w.libraryFilter==="playlists"&&w.libraryPlaylist==="";Layout.fillWidth:true;Layout.fillHeight:true;cellWidth:210;cellHeight:210;clip:true;model:musicbox.playlists;delegate:Rectangle{width:196;height:196;radius:18;color:plHover.containsMouse?(musicbox.darkMode?"#25282E":"#E7EDF5"):w.card;border.width:1;border.color:musicbox.darkMode?"#2C2F36":"#D5DCE6";ColumnLayout{anchors.fill:parent;anchors.margins:12;spacing:8;Rectangle{Layout.fillWidth:true;Layout.preferredHeight:116;radius:12;color:"#242A35";clip:true;Image{id:playlistCover;anchors.fill:parent;source:modelData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:12;visible:playlistCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!modelData.thumbnail;source:"icons/playlist.svg";size:34}Rectangle{visible:modelData.autoDownload||false;anchors.right:parent.right;anchors.top:parent.top;anchors.margins:6;width:22;height:22;radius:11;color:w.accent;Icon{anchors.centerIn:parent;source:"icons/download.svg";size:12}}}RowLayout{Layout.fillWidth:true;ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:modelData.name;color:w.fg;font.bold:true;font.pixelSize:13;elide:Text.ElideRight}Label{Layout.fillWidth:true;text:(modelData.description||modelData.subtitle)+(modelData.clicks>0?"  ·  🎧 "+modelData.clicks:"");color:w.muted;font.pixelSize:11;elide:Text.ElideRight}}IconButton{iconSource:"icons/more.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Configurar playlist");onClicked:playlistSettingsDialog.openFor(modelData)}}}MouseArea{id:plHover;anchors.fill:parent;anchors.rightMargin:36;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:w.openLibraryCollection("playlist",modelData.name)}}ScrollBar.vertical:SolidBar{}Empty{visible:parent.count===0;emptyTitle:qsTr("No hay playlists todavía");detailText:qsTr("Crea una con el botón + o agrega canciones desde cualquier vista")}}
       ListView{id:libraryList;visible:(w.libraryFilter!=="playlists"&&!(w.libraryFilter==="folders"&&w.libraryFolder===""))||w.libraryPlaylist!=="";Layout.fillWidth:true;Layout.fillHeight:true;rightMargin:4;model:musicbox.library;spacing:8;clip:true;delegate:RowItem{itemData:modelData;libraryRow:true}add:Transition{NumberAnimation{properties:"opacity,scale";from:.7;to:1;duration:180;easing.type:Easing.OutCubic}}remove:Transition{NumberAnimation{property:"opacity";to:0;duration:100}}move:Transition{NumberAnimation{properties:"x,y";duration:190;easing.type:Easing.OutCubic}}displaced:Transition{NumberAnimation{properties:"x,y";duration:190;easing.type:Easing.OutCubic}}ScrollBar.vertical:SolidBar{}Empty{visible:parent.count===0;emptyTitle:musicbox.libraryArtist!==""?qsTr("Sin canciones con estos filtros"):(w.libraryPlaylist!==""?qsTr("Playlist vacía"):qsTr("No hay canciones aquí"));detailText:musicbox.libraryArtist!==""?qsTr("Cambia el artista o la búsqueda"):(w.libraryPlaylist!==""?qsTr("Agrega canciones a esta playlist desde el menú de 3 puntos"):qsTr("Prueba otra búsqueda o carpeta"))}}
-    }}
+     }}
+     DragHandler {
+      id:collectionDrag
+      target:null
+      enabled:w.collectionKind()!==""&&!w.collectionAnimating
+      acceptedButtons:Qt.LeftButton
+      xAxis.enabled:true
+      yAxis.enabled:false
+      grabPermissions:PointerHandler.CanTakeOverFromItems|PointerHandler.ApprovesTakeOverByAnything
+      onActiveTranslationChanged:{
+       if(!active)return
+       var distance=activeTranslation.x
+       var direction=distance<0?1:-1
+       var resisted=w.adjacentCollection(direction)===""?distance*.18:distance
+       libraryPage.x=resisted
+       libraryPage.opacity=Math.max(.72,1-Math.abs(resisted)/Math.max(1,libraryViewport.width)*.36)
+      }
+      onActiveChanged:{
+       if(active)return
+       var distance=activeTranslation.x
+       var direction=distance<0?1:-1
+       if(Math.abs(distance)>libraryViewport.width*.16&&w.adjacentCollection(direction)!=="")
+        w.navigateAdjacentCollection(direction)
+       else
+        collectionSnapBack.start()
+      }
+     }
+     ParallelAnimation {
+      id:collectionSnapBack
+      NumberAnimation{target:libraryPage;property:"x";to:0;duration:210;easing.type:Easing.OutCubic}
+      NumberAnimation{target:libraryPage;property:"opacity";to:1;duration:170}
+     }
+     SequentialAnimation {
+      id:collectionSlide
+      onStarted:w.collectionAnimating=true
+      onStopped:{w.collectionAnimating=false;libraryPage.x=0;libraryPage.opacity=1}
+      ParallelAnimation {
+       NumberAnimation{target:libraryPage;property:"x";to:-w.pendingCollectionDirection*libraryViewport.width;duration:185;easing.type:Easing.InCubic}
+       NumberAnimation{target:libraryPage;property:"opacity";to:.28;duration:155}
+      }
+      ScriptAction{script:{w.openLibraryCollection(w.pendingCollectionKind,w.pendingCollectionName);libraryPage.x=w.pendingCollectionDirection*libraryViewport.width*.3;libraryPage.opacity=.35}}
+      ParallelAnimation {
+       NumberAnimation{target:libraryPage;property:"x";to:0;duration:245;easing.type:Easing.OutCubic}
+       NumberAnimation{target:libraryPage;property:"opacity";to:1;duration:190}
+      }
+     }
+    }
     Dl.DownloadsPage{id:downloadsPage}
     Item{ColumnLayout{anchors.fill:parent;anchors.margins:34;spacing:18;Heading{text:qsTr("Historial")}Mb.Card{Layout.fillWidth:true;Layout.fillHeight:true;Dl.HistoryPanel{anchors.fill:parent;anchors.margins:16;Component.onCompleted:downloads.historyRefresh()}}}}
    }

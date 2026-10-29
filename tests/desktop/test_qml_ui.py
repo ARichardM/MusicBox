@@ -22,6 +22,11 @@ APP = QApplication.instance() or QApplication([])
 
 
 class QmlUiTests(unittest.TestCase):
+    def test_click_metrics_use_headphones_instead_of_play_icon(self):
+        source = (module.CODE_DIR / "ui" / "Main.qml").read_text(encoding="utf-8")
+        self.assertEqual(source.count('clicks>0?"  ·  🎧 "'), 3)
+        self.assertNotIn('clicks>0?"  ·  ▶ "', source)
+
     def test_main_window_opens_queue_and_statistics_without_qml_errors(self):
         QQuickStyle.setStyle("Material")
         if os.environ.get("MUSICBOX_UI_PREVIEW_DIR"):
@@ -69,11 +74,19 @@ class QmlUiTests(unittest.TestCase):
                 {"path": "/test/a.mp3", "title": "Primera", "artist": "Ana"},
                 {"path": "/test/b.mp3", "title": "Segunda", "artist": "Otro"}]
             bridge._playlists["Demostración"] = ["/test/a.mp3", "/test/b.mp3"]
+            bridge._playlists["Siguiente"] = ["/test/b.mp3"]
+            bridge.playlistsChanged.emit()
             bridge.setLibraryPlaylist("Demostración")
             root.setProperty("libraryPlaylist", "Demostración")
             root.setProperty("libraryFilter", "playlists")
             root.setProperty("page", 1)
             APP.processEvents()
+            context_label = root.findChild(QObject, "libraryContextLabel")
+            collection_heading = root.findChild(QObject, "libraryHeading")
+            collection_count = root.findChild(QObject, "libraryCollectionCount")
+            self.assertEqual(context_label.property("text"), "PLAYLIST")
+            self.assertEqual(collection_heading.property("text"), "Demostración")
+            self.assertEqual(collection_count.property("text"), "2 canciones")
             artist_filter = root.findChild(QObject, "playlistArtistFilter")
             self.assertIsNotNone(artist_filter)
             self.assertEqual(artist_filter.property("count"), 3)
@@ -132,11 +145,35 @@ class QmlUiTests(unittest.TestCase):
             QTest.keyClick(root, Qt.Key_Space)
             QTest.qWait(150)
             self.assertTrue(popup.property("visible"))
-            self.assertLessEqual(popup.property("height"), 280)
+            self.assertLessEqual(popup.property("height"), 360)
+            artist_search = root.findChild(QObject, "artistFilterSearch")
+            artist_list = root.findChild(QObject, "artistFilterList")
+            self.assertIsNotNone(artist_search)
+            self.assertIsNotNone(artist_list)
+            artist_search.setProperty("text", "Artista 39")
+            APP.processEvents()
+            self.assertEqual(artist_filter.property("filteredCount"), 1)
+            self.assertEqual(artist_list.property("count"), 1)
+            preview_dir = os.environ.get("MUSICBOX_UI_PREVIEW_DIR")
+            if preview_dir:
+                self.assertTrue(root.grabWindow().save(str(Path(preview_dir) / "artist-dialog-search.png")))
             QTest.keyClick(APP.focusWindow() or root, Qt.Key_Escape)
             QTest.qWait(400)
             self.assertFalse(popup.property("visible"),
                              f"focus={popup.property('activeFocus')} opened={popup.property('opened')}")
+            names = [row["name"] for row in bridge.playlists]
+            current = names.index("Demostración")
+            direction = 1 if current + 1 < len(names) else -1
+            expected = names[current + direction]
+            navigation_button = root.findChild(
+                QObject, "nextCollectionButton" if direction > 0 else "previousCollectionButton")
+            self.assertIsNotNone(navigation_button)
+            self.assertTrue(navigation_button.property("enabled"))
+            QMetaObject.invokeMethod(navigation_button, "clicked", Qt.DirectConnection)
+            QTest.qWait(650)
+            self.assertEqual(root.property("libraryPlaylist"), expected, "\n".join(errors))
+            self.assertEqual(bridge._library_playlist, expected)
+            self.assertEqual(collection_heading.property("text"), expected)
             bridge.setLibraryArtist("")
             bridge.setLibraryPlaylist("")
             root.setProperty("libraryPlaylist", "")
