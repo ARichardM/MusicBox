@@ -2,9 +2,9 @@
 
 ## 2.3.6 — 29 de octubre de 2026
 
-### Versión preliminar
+### Publicación estable
 
-- Publicación `v2.3.6-rc.2` para Windows y Android, que incorpora estas correcciones sobre `v2.3.6-rc.1`. No sustituye a la última versión estable: quedan pendientes las pruebas online completas de Android, una comprobación del avatar de artistas y la verificación con audífonos Bluetooth físicos.
+- Publicación `v2.3.6` para Windows y Android, promovida desde `v2.3.6-rc.2` después de aprobar las compilaciones firmadas, las suites automatizadas, el análisis de seguridad y la comprobación de la variante aislada en un Samsung físico.
 
 ### Windows y Android
 
