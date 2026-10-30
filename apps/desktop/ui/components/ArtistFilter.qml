@@ -122,10 +122,19 @@ FocusScope {
     Popup {
         id: artistPopup
         objectName: "artistFilterPopup"
-        x: Math.min(0, control.width - width)
+        readonly property real windowX: control.mapToItem(null, 0, 0).x
+        readonly property real safeMargin: 16
+        x: Math.max(safeMargin - windowX,
+                    Math.min(control.width - width,
+                             (control.Window.window ? control.Window.window.width : width)
+                             - safeMargin - windowX - width))
         y: control.height + 7
-        width: Math.min(360, control.Window.window ? control.Window.window.width - 52 : 360)
-        height: Math.min(360, Math.max(174, pickerColumn.implicitHeight + 24))
+        width: Math.max(220, Math.min(360,
+                    control.Window.window ? control.Window.window.width - safeMargin * 2 : 360))
+        height: Math.min(control.Window.window
+                         ? Math.max(174, control.Window.window.height - mapToItem(null, 0, 0).y - 24)
+                         : 360,
+                         Math.min(360, Math.max(174, pickerColumn.implicitHeight + 24)))
         padding: 12
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside

@@ -947,7 +947,7 @@ public class PlayerManager {
         autoplayLoading = advanceWhenReady = false;
         autoplayTriedFor = "";
         autoplayError = "";
-        savePosition();
+        saveSession();
         playWhenReady = false;
         releasePlayer();
         detachOnlineWebView();

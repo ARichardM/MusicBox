@@ -269,6 +269,10 @@ class MusicBoxBridge(QObject):
         self._player.positionChanged.connect(lambda _: self.playerChanged.emit())
         self._player.durationChanged.connect(lambda _: self.playerChanged.emit())
         self._player.playbackStateChanged.connect(self._playback_state_changed)
+        self._playback_session_timer = QTimer(self)
+        self._playback_session_timer.setInterval(5000)
+        self._playback_session_timer.timeout.connect(self._save_playback_session)
+        self._playback_session_timer.start()
         self._listening_sample = None
         self._listening_started = False
         self._last_listening_save = 0.0
@@ -331,6 +335,7 @@ class MusicBoxBridge(QObject):
         self._device_timer.timeout.connect(self._poll_devices)
         self._device_timer.start()
         if load_startup:
+            self._restore_playback_session()
             self._restore_library_cache()
             self.refresh()
             if self._cloud.refresh_token:
@@ -348,8 +353,65 @@ class MusicBoxBridge(QObject):
     @Slot()
     def flushListening(self):
         self._sample_listening()
+        self._save_playback_session()
         self._save_clicks()
         self._settings.sync()
+
+    @staticmethod
+    def _session_track(track):
+        item = dict(track or {})
+        item.pop("_stream_generation", None)
+        item.pop("_retry_attempt", None)
+        return item
+
+    def _save_playback_session(self):
+        """Guarda la pista, su cola y la posición sin provocar reproducción automática."""
+        if not self._current:
+            return
+        online = self._online_queue_active()
+        queue = self._online_queue if online else self._queue
+        index = self._online_index if online else self._queue_index
+        position = max(int(self._player.position()), int(getattr(self, "_pending_seek", 0)))
+        state = {
+            "current": self._session_track(self._current),
+            "queue": [self._session_track(row) for row in queue],
+            "index": index,
+            "position": position,
+            "online": online,
+            "queueArtist": self._queue_artist,
+        }
+        self._settings.setValue("playbackSession", json.dumps(state, ensure_ascii=False, separators=(",", ":")))
+
+    def _restore_playback_session(self):
+        try:
+            state = json.loads(self._settings.value("playbackSession", "{}", str) or "{}")
+            current = self._session_track(state.get("current"))
+            queue = [self._session_track(row) for row in state.get("queue", []) if isinstance(row, dict)]
+            position = max(0, int(state.get("position", 0)))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return
+        if not current:
+            return
+        path = current.get("path", "")
+        if path and not Path(path).is_file():
+            return
+        queue = [row for row in queue if not row.get("path") or Path(row["path"]).is_file()]
+        key = current.get("path") or current.get("url")
+        if not any((row.get("path") or row.get("url")) == key for row in queue):
+            queue.insert(0, current)
+        index = next((i for i, row in enumerate(queue)
+                      if (row.get("path") or row.get("url")) == key), 0)
+        self._current = current
+        self._queue_artist = str(state.get("queueArtist", ""))
+        self._pending_seek = position
+        self._play_when_ready = False
+        if state.get("online") and current.get("url") and not path:
+            self._online_queue, self._online_index = queue, index
+        else:
+            self._queue, self._queue_index = queue, index
+            if path:
+                self._player.setSource(QUrl.fromLocalFile(path))
+        self.playerChanged.emit()
 
     # --- Artistas: foto, canciones más escuchadas, todas sus canciones y discografía ---
 

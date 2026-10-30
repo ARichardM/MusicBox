@@ -267,7 +267,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         searchCache = uiState.cache; isMp3 = uiState.isMp3;
         allSongs.addAll(uiState.library);
         setContentView(R.layout.activity_main);
-        if (!uiState.splashShown) {
+        boolean showingLaunchSplash = !uiState.splashShown;
+        if (showingLaunchSplash) {
             uiState.splashShown = true;
             cl.arichard.descargador.util.AnimatedSplashView splash =
                     new cl.arichard.descargador.util.AnimatedSplashView(this);
@@ -278,7 +279,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             findViewById(R.id.mainGestureRoot).postDelayed(() -> {
                 initialUiSettled = true;
                 refreshDiscoveryContent();
-            }, 1080);
+            }, 1450);
         } else {
             initialUiSettled = true;
         }
@@ -299,7 +300,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (uiState.libraryLoaded) { restoreLibraryNavigation(); libraryReady = true; }
         applyScreenState();
         uiState.revision.observe(this, revision -> applyScreenState());
-        checkPermissionsAndScan();
+        if (showingLaunchSplash && !testRuntime)
+            findViewById(R.id.mainGestureRoot).postDelayed(this::checkPermissionsAndScan, 1400);
+        else
+            checkPermissionsAndScan();
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
                 if (songAdapter != null && songAdapter.isSelectionMode()) {
@@ -2087,13 +2091,19 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private void locatePlayingSong() {
         Song current = PlayerManager.getInstance().getCurrentSong();
         if (current == null) { Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Elige una canción primero"), Toast.LENGTH_SHORT).show(); return; }
+        // Este botón es una navegación global: siempre lleva primero a Biblioteca y elimina
+        // cualquier filtro que pueda ocultar la pista que está sonando.
+        switchTab(false);
+        inputSearchLibrary.clearFocus();
+        inputSearchLibrary.setText("");
+        if (songAdapter != null) songAdapter.setArtistFilter("");
+        updatePlaylistArtistFilter();
         int index = -1;
         if (currentLibraryMode == 0 || isViewingSubList) {
             List<Song> visible = songAdapter.getDisplayedList();
             for (int i = 0; i < visible.size(); i++) if (current.getPath().equals(visible.get(i).getPath())) { index = i; break; }
         }
         if (index < 0) {
-            inputSearchLibrary.setText("");
             if (current.isOnline()) {
                 String containing = null;
                 for (String name : PlaylistManager.getInstance(this).getPlaylistNames())

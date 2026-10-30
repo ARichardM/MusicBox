@@ -40,6 +40,27 @@ ApplicationWindow {
   if(libraryPlaylist!==""){libraryPlaylist="";musicbox.setLibraryPlaylist("")}
   if(libraryFolder!==""){libraryFolder="";musicbox.setLibraryFolder("")}
  }
+ function locateCurrentSong(){
+  if(Object.keys(musicbox.currentTrack).length===0)return
+  page=1
+  libraryFilter="songs";libraryFolder="";libraryPlaylist=""
+  librarySearch.clear()
+  musicbox.setLibraryArtist("")
+  musicbox.setLibraryFilter("songs")
+  Qt.callLater(function(){
+   var currentPath=musicbox.currentTrack.path||""
+   var currentId=musicbox.currentTrack.id||""
+   for(var i=0;i<musicbox.library.length;i++){
+    var row=musicbox.library[i]
+    if((currentPath&&row.path===currentPath)||(currentId&&row.id===currentId)){
+     libraryList.positionViewAtIndex(i,ListView.Center)
+     libraryList.currentIndex=i
+     return
+    }
+   }
+   queueDrawer.open()
+  })
+ }
  function navigateAdjacentCollection(direction){
   if(collectionAnimating)return false
   var target=adjacentCollection(direction)
@@ -51,6 +72,28 @@ ApplicationWindow {
   return true
  }
  component Heading:Label{font.pixelSize:22;font.bold:true;color:w.fg}
+ component MarqueeLabel:Item{
+  id:marqueeRoot
+  property alias text:marqueeText.text
+  property alias color:marqueeText.color
+  property alias font:marqueeText.font
+  readonly property bool overflowing:marqueeText.implicitWidth>width
+  implicitHeight:marqueeText.implicitHeight
+  clip:true
+  onWidthChanged:marqueeAnimation.restartIfNeeded()
+  onTextChanged:marqueeAnimation.restartIfNeeded()
+  Text{id:marqueeText;anchors.verticalCenter:parent.verticalCenter;x:0;elide:Text.ElideNone;renderType:Text.NativeRendering}
+  SequentialAnimation{
+   id:marqueeAnimation
+   running:marqueeRoot.visible&&marqueeRoot.overflowing
+   loops:Animation.Infinite
+   function restartIfNeeded(){stop();marqueeText.x=0;if(marqueeRoot.visible&&marqueeRoot.overflowing)start()}
+   PauseAnimation{duration:1400}
+   NumberAnimation{target:marqueeText;property:"x";to:marqueeRoot.width-marqueeText.implicitWidth;duration:Math.max(1800,(marqueeText.implicitWidth-marqueeRoot.width)*22);easing.type:Easing.InOutSine}
+   PauseAnimation{duration:1100}
+   NumberAnimation{target:marqueeText;property:"x";to:0;duration:420;easing.type:Easing.OutCubic}
+  }
+ }
  component Icon:Image{property int size:18;property string customColor:"";width:size;height:size;Layout.preferredWidth:size;Layout.preferredHeight:size;Layout.minimumWidth:size;Layout.maximumWidth:size;Layout.minimumHeight:size;Layout.maximumHeight:size;sourceSize.width:size*3;sourceSize.height:size*3;fillMode:Image.PreserveAspectFit;smooth:true;mipmap:true;layer.enabled:true;layer.effect:MultiEffect{colorization:1;colorizationColor:customColor!==""?customColor:(musicbox.darkMode?"#FFFFFF":"#46505E")}}
  component BrandMark:Item{id:brandMark;property real phase:0;property bool animated:false;readonly property bool live:animated||brandHover.containsMouse;width:44;height:44;transform:Translate{y:brandMark.live?-1.2*Math.abs(Math.sin(brandMark.phase*Math.PI*2)):0}NumberAnimation on phase{from:0;to:1;duration:1650;loops:Animation.Infinite;easing.type:Easing.Linear;running:brandMark.live}
   Rectangle{anchors.centerIn:parent;width:parent.width*1.25;height:width;radius:width/2;color:"#5050E9FF";opacity:brandMark.animated?.35+.25*Math.abs(Math.sin(brandMark.phase*Math.PI*2)):0;scale:1+.06*Math.abs(Math.sin(brandMark.phase*Math.PI*2));layer.enabled:brandMark.animated;layer.effect:MultiEffect{blurEnabled:true;blur:1;blurMax:40}}
@@ -228,7 +271,7 @@ ApplicationWindow {
        IconButton{objectName:"previousCollectionButton";visible:w.collectionKind()!=="";enabled:w.adjacentCollection(-1)!=="";iconSource:"icons/prev_page.svg";iconSize:16;Accessible.name:w.collectionKind()==="playlist"?qsTr("Playlist anterior"):qsTr("Carpeta anterior");ToolTip.visible:hovered;ToolTip.text:Accessible.name;onClicked:w.navigateAdjacentCollection(-1)}
        IconButton{objectName:"nextCollectionButton";visible:w.collectionKind()!=="";enabled:w.adjacentCollection(1)!=="";iconSource:"icons/next_page.svg";iconSize:16;Accessible.name:w.collectionKind()==="playlist"?qsTr("Playlist siguiente"):qsTr("Carpeta siguiente");ToolTip.visible:hovered;ToolTip.text:Accessible.name;onClicked:w.navigateAdjacentCollection(1)}
        IconButton{visible:w.libraryPlaylist==="";iconSource:"icons/plus.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Nueva playlist");onClicked:newPlaylistDialog.open()}
-       IconButton{visible:Object.keys(musicbox.currentTrack).length>0;iconSource:"icons/locate.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Ir a la canción actual");onClicked:{for(var i=0;i<musicbox.library.length;i++){if(musicbox.library[i].path===musicbox.currentTrack.path){libraryList.positionViewAtIndex(i,ListView.Center);break}}}}
+       IconButton{objectName:"locateCurrentSongButton";visible:Object.keys(musicbox.currentTrack).length>0;iconSource:"icons/locate.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Ir a la canción actual");onClicked:w.locateCurrentSong()}
        IconButton{iconSource:"icons/shuffle.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Reproducir visible en aleatorio");onClicked:musicbox.shuffleVisible()}
        IconButton{iconSource:"icons/refresh.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Actualizar biblioteca");onClicked:musicbox.refresh()}
       }
@@ -316,7 +359,8 @@ ApplicationWindow {
     Item{ColumnLayout{anchors.fill:parent;anchors.margins:34;spacing:18;Heading{text:qsTr("Historial")}Mb.Card{Layout.fillWidth:true;Layout.fillHeight:true;Dl.HistoryPanel{anchors.fill:parent;anchors.margins:16;Component.onCompleted:downloads.historyRefresh()}}}}
    }
    Rectangle{visible:Object.keys(musicbox.currentTrack).length>0;Layout.fillWidth:true;Layout.preferredHeight:w.expanded?205:92;color:w.panel;border.color:musicbox.darkMode?"#2C2C2E":"#D8D8DC";Behavior on Layout.preferredHeight{NumberAnimation{duration:240;easing.type:Easing.OutCubic}}ColumnLayout{anchors.fill:parent;anchors.margins:13;spacing:7
-    RowLayout{Layout.fillWidth:true;Rectangle{Layout.preferredWidth:w.expanded?80:56;Layout.preferredHeight:width;radius:13;color:w.card;clip:true;Image{anchors.fill:parent;source:musicbox.currentTrack.thumbnail||"";fillMode:Image.PreserveAspectCrop}Icon{anchors.centerIn:parent;visible:!musicbox.currentTrack.thumbnail;source:"icons/music.svg";size:20}}ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:musicbox.currentTrack.title||"";color:w.fg;font.bold:true;font.pixelSize:w.expanded?18:14;elide:Text.ElideRight}Label{Layout.fillWidth:true;text:(musicbox.currentTrack.artist||qsTr("Artista desconocido"))+(musicbox.currentTrack.album?" · "+musicbox.currentTrack.album:"");color:w.muted;elide:Text.ElideRight}}IconButton{iconSource:musicbox.currentFavorite?"icons/heart_filled.svg":"icons/heart.svg";iconColor:musicbox.currentFavorite?"#FF375F":"";iconSize:18;onClicked:musicbox.toggleFavorite()}IconButton{iconSource:"icons/shuffle.svg";iconColor:musicbox.shuffleOn?w.accent:"";iconSize:17;opacity:musicbox.shuffleOn?1:.55;ToolTip.visible:hovered;ToolTip.text:musicbox.shuffleOn?qsTr("Aleatorio activado"):qsTr("Aleatorio desactivado");onClicked:{ToolTip.hide();musicbox.toggleShuffle()}}IconButton{iconSource:"icons/previous.svg";iconSize:16;onClicked:musicbox.skip(-1)}IconButton{objectName:"playerPlayButton";implicitWidth:46;implicitHeight:46;busy:musicbox.playerLoading;enabled:!musicbox.playerLoading;iconColor:"#FFFFFF";iconSource:musicbox.playing?"icons/pause.svg":"icons/play.svg";iconSize:18;onClicked:musicbox.togglePlayback();background:Rectangle{radius:23;color:parent.down?"#0064D5":(parent.hovered?"#2997FF":w.accent);Behavior on color{ColorAnimation{duration:100}}}}IconButton{iconSource:"icons/next.svg";iconSize:16;onClicked:musicbox.skip(1)}IconButton{iconSource:musicbox.repeatMode===2?"icons/repeat_one.svg":"icons/repeat.svg";iconColor:musicbox.repeatMode===0?"":w.accent;iconSize:18;opacity:musicbox.repeatMode===0?.55:1;ToolTip.visible:hovered;ToolTip.text:musicbox.repeatMode===0?qsTr("Repetición desactivada"):(musicbox.repeatMode===1?qsTr("Repetir cola"):qsTr("Repetir canción"));onClicked:{ToolTip.hide();musicbox.cycleRepeat()}}IconButton{iconSource:"icons/queue.svg";iconSize:18;ToolTip.visible:hovered;ToolTip.text:qsTr("Cola");onClicked:queueDrawer.open()}IconButton{iconSource:w.expanded?"icons/collapse.svg":"icons/expand.svg";iconSize:16;onClicked:w.expanded=!w.expanded}}
+    RowLayout{Layout.fillWidth:true;Rectangle{Layout.preferredWidth:w.expanded?80:56;Layout.preferredHeight:width;radius:13;color:w.card;clip:true;Image{anchors.fill:parent;source:musicbox.currentTrack.thumbnail||"";fillMode:Image.PreserveAspectCrop}Icon{anchors.centerIn:parent;visible:!musicbox.currentTrack.thumbnail;source:"icons/music.svg";size:20}}ColumnLayout{Layout.fillWidth:true;MarqueeLabel{objectName:"playerTitleMarquee";Layout.fillWidth:true;text:musicbox.currentTrack.title||"";color:w.fg;font.bold:true;font.pixelSize:w.expanded?18:14}Label{Layout.fillWidth:true;text:(musicbox.currentTrack.artist||qsTr("Artista desconocido"))+(musicbox.currentTrack.album?" · "+musicbox.currentTrack.album:"");color:w.muted;elide:Text.ElideRight}}IconButton{iconSource:musicbox.currentFavorite?"icons/heart_filled.svg":"icons/heart.svg";iconColor:musicbox.currentFavorite?"#FF375F":"";iconSize:18;onClicked:musicbox.toggleFavorite()}IconButton{iconSource:"icons/shuffle.svg";iconColor:musicbox.shuffleOn?w.accent:"";iconSize:17;opacity:musicbox.shuffleOn?1:.55;ToolTip.visible:hovered;ToolTip.text:musicbox.shuffleOn?qsTr("Aleatorio activado"):qsTr("Aleatorio desactivado");onClicked:{ToolTip.hide();musicbox.toggleShuffle()}}IconButton{iconSource:"icons/previous.svg";iconSize:16;onClicked:musicbox.skip(-1)}IconButton{objectName:"playerPlayButton";implicitWidth:46;implicitHeight:46;busy:musicbox.playerLoading;enabled:!musicbox.playerLoading;iconColor:"#FFFFFF";iconSource:musicbox.playing?"icons/pause.svg":"icons/play.svg";iconSize:18;onClicked:musicbox.togglePlayback();background:Rectangle{radius:23;color:parent.down?"#0064D5":(parent.hovered?"#2997FF":w.accent);Behavior on color{ColorAnimation{duration:100}}}}IconButton{iconSource:"icons/next.svg";iconSize:16;onClicked:musicbox.skip(1)}IconButton{iconSource:musicbox.repeatMode===2?"icons/repeat_one.svg":"icons/repeat.svg";iconColor:musicbox.repeatMode===0?"":w.accent;iconSize:18;opacity:musicbox.repeatMode===0?.55:1;ToolTip.visible:hovered;ToolTip.text:musicbox.repeatMode===0?qsTr("Repetición desactivada"):(musicbox.repeatMode===1?qsTr("Repetir cola"):qsTr("Repetir canción"));onClicked:{ToolTip.hide();musicbox.cycleRepeat()}}IconButton{iconSource:"icons/queue.svg";iconSize:18;ToolTip.visible:hovered;ToolTip.text:qsTr("Cola");onClicked:queueDrawer.open()}IconButton{id:playerMoreButton;objectName:"playerMoreButton";iconSource:"icons/more.svg";iconSize:18;ToolTip.visible:hovered;ToolTip.text:qsTr("Más opciones");onClicked:playerTrackMenu.popup(playerMoreButton,playerMoreButton.width-playerTrackMenu.implicitWidth,playerMoreButton.height+4)}IconButton{iconSource:w.expanded?"icons/collapse.svg":"icons/expand.svg";iconSize:16;onClicked:w.expanded=!w.expanded}}
+    Menu{id:playerTrackMenu;margins:12;background:Rectangle{implicitWidth:250;radius:14;color:w.panel;border.width:1;border.color:w.line}MenuItem{text:musicbox.playing?qsTr("Pausar"):qsTr("Reproducir");onTriggered:musicbox.togglePlayback()}MenuItem{text:musicbox.currentFavorite?qsTr("Quitar de favoritas"):qsTr("Agregar a favoritas");onTriggered:musicbox.toggleFavorite()}MenuItem{text:qsTr("Reproducir a continuación");onTriggered:musicbox.playNextTrack(musicbox.currentTrack)}MenuItem{text:qsTr("Agregar a la cola");onTriggered:musicbox.addToQueue(musicbox.currentTrack)}MenuItem{text:qsTr("Agregar a playlist");onTriggered:{addToPlaylistDialog.targetTrack=musicbox.currentTrack;addToPlaylistDialog.open()}}MenuItem{visible:!!musicbox.currentTrack.path;height:visible?implicitHeight:0;text:qsTr("Mostrar en carpeta");onTriggered:musicbox.showInFolder(musicbox.currentTrack.path)}MenuItem{visible:!!musicbox.currentTrack.path;height:visible?implicitHeight:0;text:qsTr("Eliminar del dispositivo");Material.foreground:"#FF453A";onTriggered:{deleteTrackDialog.targetTrack=musicbox.currentTrack;deleteTrackDialog.open()}}}
     RowLayout{Layout.fillWidth:true;Label{text:w.clock(musicbox.playerPosition);color:w.muted;font.pixelSize:11}Slider{Layout.fillWidth:true;from:0;to:Math.max(1,musicbox.playerDuration);value:musicbox.playerPosition;onMoved:musicbox.seek(value)}Label{text:w.clock(musicbox.playerDuration);color:w.muted;font.pixelSize:11}IconButton{visible:w.expanded;implicitWidth:32;implicitHeight:32;iconSource:musicbox.muted||musicbox.volume===0?"icons/volume_muted.svg":"icons/volume.svg";iconSize:19;ToolTip.visible:hovered;ToolTip.text:musicbox.muted?qsTr("Activar sonido"):qsTr("Silenciar");onClicked:musicbox.toggleMute()}Slider{visible:w.expanded;Layout.preferredWidth:110;from:0;to:1;value:musicbox.volume;onMoved:musicbox.setVolume(value)}}Label{visible:w.expanded;Layout.fillWidth:true;text:qsTr("Reproduciendo desde Mi música · ")+(musicbox.currentTrack.path||"");color:w.muted;horizontalAlignment:Text.AlignHCenter;elide:Text.ElideMiddle}
    }}
   }}

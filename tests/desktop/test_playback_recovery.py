@@ -71,6 +71,20 @@ class PlaybackRecoveryTests(unittest.TestCase):
         self.bridge._resume_recovered_track()
         self.player.setPosition.assert_called_once_with(4250)
 
+    def test_session_restores_the_track_queue_and_position_paused(self):
+        self.bridge._pending_seek = 18750
+        self.bridge._save_playback_session()
+        self.bridge._current = {}
+        self.bridge._online_queue, self.bridge._online_index = [], -1
+        self.bridge._pending_seek = 0
+        self.bridge._play_when_ready = True
+        self.bridge._restore_playback_session()
+        self.assertEqual(self.bridge.currentTrack["id"], "seed")
+        self.assertEqual([row["id"] for row in self.bridge.queue], ["seed", "next", "last"])
+        self.assertEqual(self.bridge.queueIndex, 0)
+        self.assertEqual(self.bridge._pending_seek, 18750)
+        self.assertFalse(self.bridge._play_when_ready)
+
     def test_exhausted_recovery_skips_to_next_and_retry_keeps_entire_queue(self):
         self.bridge._current["_retry_attempt"] = 1
         with patch.object(youtube_streams, "download_to_cache", side_effect=OSError("rechazado")) as cache:

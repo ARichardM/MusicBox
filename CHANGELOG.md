@@ -4,16 +4,20 @@
 
 ### Versión preliminar
 
-- Publicación `v2.3.6-rc.1` para Windows y Android. No sustituye a la última versión estable: quedan pendientes las pruebas online completas de Android, una comprobación del avatar de artistas y la verificación con audífonos Bluetooth físicos.
+- Publicación `v2.3.6-rc.2` para Windows y Android, que incorpora estas correcciones sobre `v2.3.6-rc.1`. No sustituye a la última versión estable: quedan pendientes las pruebas online completas de Android, una comprobación del avatar de artistas y la verificación con audífonos Bluetooth físicos.
 
 ### Windows y Android
 
+- Al volver a abrir MusicBox se conserva la última canción, su cola y el punto donde quedó. La sesión se restaura pausada para que el usuario decida cuándo continuar.
+- «Ir a la canción actual» abre la biblioteca, limpia los filtros que ocultaban la pista y la centra desde cualquier sección o colección.
 - La recuperación de errores de reproducción renueva los enlaces fallidos y conserva la cola. Si una canción sigue fallando, se continúa con otra disponible, sin bucles cuando todas fallan.
 - Reintentar desde el aviso vuelve a la canción fallida sin reemplazar la cola por una sola entrada.
 - Desconectar los audífonos pausa la reproducción y cancela arranques, avances o reanudaciones pendientes. Reconectarlos no inicia la música automáticamente.
 
 ### Windows
 
+- El reproductor incluye el menú de tres puntos para la canción actual, y los títulos largos se desplazan suavemente en el espacio disponible.
+- El selector de artistas permanece completo y utilizable al expandir o reducir la ventana.
 - El reproductor y la escucha previa siguen la salida predeterminada de Windows y pausan antes de cambiar a otra salida cuando desaparece la que se estaba usando.
 - Inicio busca automáticamente tras una pausa de 450 ms al escribir; las respuestas antiguas no reemplazan una búsqueda más reciente.
 - Se muestran anillos de carga al buscar, abrir una canción y descargar, con una marca de descarga discreta al estilo de Android.
@@ -21,6 +25,7 @@
 
 ### Android
 
+- El splash muestra el cubo y su onda completos con un aura animada; las solicitudes de permisos esperan hasta que termine la entrada.
 - Se refuerza la pausa por desconexión con avisos de dispositivos y cambios de ruta, incluidos Bluetooth y USB, sin reanudar por una recuperación de foco o radio pendiente.
 - Los controles de volumen de las tres pantallas del reproductor actúan sobre el audio multimedia.
 - Los archivos locales dañados se omiten también sin internet; una caída de red conserva la cola online.

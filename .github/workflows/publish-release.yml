@@ -26,7 +26,7 @@ jobs:
       - name: Publicar solo cuando ambas compilaciones y sus descargas estén completas
         shell: bash
         run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || exit 0
           runs=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$RELEASE_SHA&per_page=100")
           for workflow in release-android.yml release-windows.yml; do
             status=$(jq -r --arg path ".github/workflows/$workflow" '[.workflow_runs[] | select(.path == $path and .event == "push")] | sort_by(.run_number) | last | .conclusion // "pending"' <<< "$runs")
@@ -37,5 +37,9 @@ jobs:
             jq -e --arg name "$asset" '.assets[] | select(.name == $name and .size > 0)' <<< "$release" >/dev/null || { echo "Falta $asset"; exit 1; }
           done
           if [[ $(jq -r .isDraft <<< "$release") == true ]]; then
-            gh release edit "$RELEASE_TAG" --draft=false --latest
+            if [[ "$RELEASE_TAG" == *-rc.* ]]; then
+              gh release edit "$RELEASE_TAG" --draft=false --prerelease
+            else
+              gh release edit "$RELEASE_TAG" --draft=false --latest
+            fi
           fi

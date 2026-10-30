@@ -132,6 +132,7 @@ EN = {
         "Sign in to sync your library, favorites, playlists and preferences.",
     "Instalando actualización…": "Installing update…",
     "Ir a la canción actual": "Go to current song",
+    "Más opciones": "More options",
     "La cola está vacía": "The queue is empty",
     "Las descargas permanecen únicamente en este dispositivo.": "Downloads stay only on this device.",
     "Limpiar": "Clear",
