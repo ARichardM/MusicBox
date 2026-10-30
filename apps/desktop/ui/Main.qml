@@ -17,6 +17,7 @@ ApplicationWindow {
  property int pendingCollectionDirection:0
  property string pendingCollectionKind:""
  property string pendingCollectionName:""
+ property bool synchronizingLibrarySearch:false
  onWidthChanged:{if(width<1050&&musicbox.sidebarExpanded)musicbox.toggleSidebar()}
  Component.onCompleted:{if(width<1050&&musicbox.sidebarExpanded)musicbox.toggleSidebar()}
  function linkCount(text){return text.split(/\r?\n/).filter(function(x){return x.trim().length>0}).length}
@@ -44,19 +45,15 @@ ApplicationWindow {
   if(Object.keys(musicbox.currentTrack).length===0)return
   page=1
   libraryFilter="songs";libraryFolder="";libraryPlaylist=""
+  synchronizingLibrarySearch=true
   librarySearch.clear()
-  musicbox.setLibraryArtist("")
-  musicbox.setLibraryFilter("songs")
+  synchronizingLibrarySearch=false
+  var index=musicbox.locateCurrentTrack()
   Qt.callLater(function(){
-   var currentPath=musicbox.currentTrack.path||""
-   var currentId=musicbox.currentTrack.id||""
-   for(var i=0;i<musicbox.library.length;i++){
-    var row=musicbox.library[i]
-    if((currentPath&&row.path===currentPath)||(currentId&&row.id===currentId)){
-     libraryList.positionViewAtIndex(i,ListView.Center)
-     libraryList.currentIndex=i
-     return
-    }
+   if(index>=0){
+    libraryList.positionViewAtIndex(index,ListView.Center)
+    libraryList.currentIndex=index
+    return
    }
    queueDrawer.open()
   })
@@ -275,7 +272,7 @@ ApplicationWindow {
        IconButton{iconSource:"icons/shuffle.svg";iconSize:17;ToolTip.visible:hovered;ToolTip.text:qsTr("Reproducir visible en aleatorio");onClicked:musicbox.shuffleVisible()}
        IconButton{iconSource:"icons/refresh.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:qsTr("Actualizar biblioteca");onClicked:musicbox.refresh()}
       }
-      Rectangle{Layout.fillWidth:true;height:60;radius:16;color:w.card;RowLayout{anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:7;spacing:8;Icon{source:"icons/search.svg";size:18}CenterField{id:librarySearch;Layout.fillWidth:true;placeholderText:qsTr("Buscar en tu música");onTextChanged:musicbox.setLibraryQuery(text)}IconButton{visible:librarySearch.text.length;iconSource:"icons/close.svg";iconSize:16;onClicked:librarySearch.clear()}}}
+      Rectangle{Layout.fillWidth:true;height:60;radius:16;color:w.card;RowLayout{anchors.fill:parent;anchors.leftMargin:12;anchors.rightMargin:7;spacing:8;Icon{source:"icons/search.svg";size:18}CenterField{id:librarySearch;Layout.fillWidth:true;placeholderText:qsTr("Buscar en tu música");onTextChanged:if(!w.synchronizingLibrarySearch)musicbox.setLibraryQuery(text)}IconButton{visible:librarySearch.text.length;iconSource:"icons/close.svg";iconSize:16;onClicked:librarySearch.clear()}}}
       RowLayout{Layout.fillWidth:true;spacing:8;Chip{text:qsTr("Canciones");value:"songs"}Chip{text:"Playlists";value:"playlists"}Chip{text:qsTr("Carpetas");value:"folders"}Item{Layout.fillWidth:true}Label{text:w.libraryFilter==="playlists"&&w.libraryPlaylist===""?(musicbox.playlists.length+(musicbox.playlists.length===1?qsTr(" playlist"):qsTr(" playlists"))):(w.libraryFilter==="folders"&&w.libraryFolder===""&&w.libraryPlaylist===""?(musicbox.folders.length+(musicbox.folders.length===1?qsTr(" carpeta"):qsTr(" carpetas"))):(musicbox.library.length+(musicbox.library.length===1?qsTr(" canción"):qsTr(" canciones"))));color:w.muted;font.pixelSize:12}}
       RowLayout {
        objectName:"playlistTools"

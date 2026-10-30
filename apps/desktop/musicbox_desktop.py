@@ -1446,12 +1446,37 @@ class MusicBoxBridge(QObject):
         path = str((track or {}).get("path", ""))
         if not path or not Path(path).is_file():
             return False
+        current = self._current.get("path") == path
+        released = current and callable(getattr(self._player, "setSource", None))
+        position = self._player.position() if released and callable(getattr(self._player, "position", None)) else 0
+        was_playing = bool(self._player.playbackState() == QMediaPlayer.PlayingState) if released else False
+        if released:
+            self._player.stop()
+            self._player.setSource(QUrl())
+            QApplication.processEvents()
+            QTimer.singleShot(0, lambda: self._finish_track_deletion(path, position, was_playing, 0))
+            return True
         if not QFile.moveToTrash(path):
             self._show_notice(i18n.tr("No se pudo eliminar el archivo. Comprueba que no esté en uso."))
             return False
         self._forget_track(path)
         self._show_notice(i18n.tr("Canción eliminada"), kind="info")
         return True
+
+    def _finish_track_deletion(self, path, position, was_playing, attempt):
+        """Espera sin bloquear a que el backend multimedia de Windows libere la fuente."""
+        if not Path(path).is_file() or QFile.moveToTrash(path):
+            self._forget_track(path)
+            self._show_notice(i18n.tr("Canción eliminada"), kind="info")
+            return
+        if attempt < 75:
+            QTimer.singleShot(40, lambda: self._finish_track_deletion(path, position, was_playing, attempt + 1))
+            return
+        if self._current.get("path") == path:
+            self._pending_seek = position
+            self._play_when_ready = was_playing
+            self._player.setSource(QUrl.fromLocalFile(path))
+        self._show_notice(i18n.tr("No se pudo eliminar el archivo. Comprueba que no esté en uso."))
 
     def _forget_track(self, path):
         """Quita de la app todo rastro de un archivo que ya no existe."""
@@ -1477,6 +1502,22 @@ class MusicBoxBridge(QObject):
         self.playlistsChanged.emit()
         self._schedule_cloud_save()
         self.refresh()
+
+    @Slot(result=int)
+    def locateCurrentTrack(self):
+        """Muestra toda la biblioteca y devuelve la fila actual sin cruzar listas por QML."""
+        if not self._current:
+            return -1
+        self._library_filter = "songs"
+        self._library_folder = ""
+        self._library_playlist = ""
+        self._library_artist = ""
+        self._library_query = ""
+        self._apply_library_view()
+        path = self._current.get("path", "")
+        video_id = self._current.get("id", "")
+        return next((index for index, row in enumerate(self._library)
+                     if (path and row.get("path") == path) or (video_id and row.get("id") == video_id)), -1)
 
     @Slot(str, str)
     def removeTrackFromPlaylist(self, playlist_name, track_key):

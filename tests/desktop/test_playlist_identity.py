@@ -9,6 +9,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QObject
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
 
 import musicbox_desktop as app_module
@@ -253,6 +254,38 @@ class DeleteTrackTest(unittest.TestCase):
             self.assertTrue(Path(self.path).exists())
             self.assertIn("youtube:n0vo-mLGe6I", bridge._playlists["Rock"])
             self.assertEqual(bridge._current, {"path": self.path})
+
+    def test_delete_releases_the_current_file_before_moving_it_to_trash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bridge = self.make(directory)
+            events = []
+            bridge._player = type("Player", (), {
+                "stop": lambda self_: events.append("stop"),
+                "setSource": lambda self_, source: events.append("release" if source.isEmpty() else "restore"),
+                "position": lambda self_: 1200,
+                "playbackState": lambda self_: QMediaPlayer.PlayingState,
+            })()
+            with mock.patch.object(app_module.QFile, "moveToTrash",
+                                   lambda name: events.append("trash") or Path(name).unlink() is None):
+                self.assertTrue(bridge.deleteTrack({"path": self.path}))
+                APP.processEvents()
+            self.assertEqual(events[:3], ["stop", "release", "trash"])
+
+    def test_locate_current_track_clears_filters_once_and_returns_its_index(self):
+        bridge = make_bridge()
+        bridge._current = {"path": bridge._library_all[0]["path"]}
+        bridge._library_filter = "playlists"
+        bridge._library_folder = "otra"
+        bridge._library_playlist = "Favoritos"
+        bridge._library_artist = "x"
+        bridge._library_query = "sin resultados"
+        calls = []
+        original = bridge._apply_library_view
+        bridge._apply_library_view = lambda: (calls.append(True), original())[-1]
+        self.assertEqual(bridge.locateCurrentTrack(), 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((bridge._library_filter, bridge._library_folder, bridge._library_playlist,
+                          bridge._library_artist, bridge._library_query), ("songs", "", "", "", ""))
 
     def test_delete_ignores_online_songs_and_missing_files(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,5 +1,12 @@
 # Historial de versiones
 
+## 2.3.7 — 29 de octubre de 2026
+
+### Windows
+
+- «Ir a la canción actual» limpia los filtros y encuentra la fila con una sola actualización, evitando que la interfaz se bloquee con bibliotecas grandes.
+- Al eliminar la canción que está sonando, el reproductor libera primero el archivo y espera en segundo plano a que Windows cierre el recurso antes de moverlo a la Papelera de reciclaje.
+
 ## 2.3.6 — 29 de octubre de 2026
 
 ### Publicación estable
