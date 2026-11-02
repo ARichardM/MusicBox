@@ -1,4 +1,4 @@
-"""Prueba optativa con red real: audio y reproducción automática sin tocar cuenta ni biblioteca.
+"""Prueba optativa con red real: audio, precarga y reproducción automática sin tocar cuenta ni biblioteca.
 
 Ejecutar con PYTHONPATH=apps/desktop. Usa preferencias y caché temporales y audio silenciado.
 """
@@ -23,7 +23,7 @@ def run():
         settings.setValue("muted", True)
         settings.setValue("repeatMode", 0)
         with patch.object(module, "FirebaseDesktopClient", return_value=SimpleNamespace(refresh_token="", configured=False)), \
-                patch.object(module, "ROOT", Path(folder)), \
+                patch.object(module, "ROOT", Path(folder)),                 patch.object(module, "STREAM_CACHE_DIR", Path(folder) / "cache_streams"), \
                 patch.object(module.MusicBoxBridge, "refresh"), \
                 patch.object(module.MusicBoxBridge, "checkForUpdate"), \
                 patch.object(module.MusicBoxBridge, "refreshForYou"):
@@ -51,10 +51,18 @@ def run():
                 assert bridge.currentTrack.get("id") == seed
                 assert [row.get("id") for row in bridge.queue] == queued
                 print("Error de demux recuperado: misma canción, posición y cola conservadas.", flush=True)
+                following = bridge.queue[bridge.queueIndex + 1]["url"]
+                wait(lambda: seed in " ".join(bridge._prefetched) and following in bridge._prefetched)
+                print("Precarga lista: canción actual y siguiente descargadas en segundo plano.", flush=True)
                 wait(lambda: bridge.playerDuration > 2000)
                 bridge.seek(bridge.playerDuration - 1000)
-                wait(lambda: bridge.currentTrack.get("id") != seed and bridge.playing and bridge.playerPosition > 300)
-                print("Reproducción automática avanzó y reproduce la siguiente canción.", flush=True)
+                wait(lambda: bridge.currentTrack.get("id") != seed)
+                started = time.monotonic()
+                wait(lambda: bridge.playing and bridge.playerPosition > 300)
+                assert bridge._player.source().isLocalFile(), bridge._player.source().toString()
+                print("Reproducción automática avanzó; la siguiente sonó desde la precarga en "
+                      f"{time.monotonic() - started:.2f} s.", flush=True)
+                assert time.monotonic() - started < 1.5
             finally:
                 bridge._listening_timer.stop()
                 bridge._device_timer.stop()

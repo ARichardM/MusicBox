@@ -16,7 +16,8 @@ import android.view.animation.OvershootInterpolator;
 
 /**
  * Compact ring in MusicBox colors. Without a progress value it spins while its arc breathes; with
- * {@link #setProgress(float)} it fills like a gauge. {@link #setActive(boolean)} fades it in and out.
+ * {@link #setProgress(float)} it fills like a gauge and, when it is large enough, shows the percentage
+ * in the middle. {@link #setActive(boolean)} fades it in and out.
  */
 public final class LoadingRingView extends View {
     private static final int CYAN = Color.rgb(70, 221, 251);
@@ -24,6 +25,8 @@ public final class LoadingRingView extends View {
 
     private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private boolean labelFits;
     private final RectF bounds = new RectF();
     private final ValueAnimator spin = ValueAnimator.ofFloat(0f, 360f);
     private final ValueAnimator breathe = ValueAnimator.ofFloat(0f, 1f);
@@ -42,6 +45,9 @@ public final class LoadingRingView extends View {
         track.setColor(Color.argb(46, 140, 190, 255));
         arc.setStyle(Paint.Style.STROKE);
         arc.setStrokeCap(Paint.Cap.ROUND);
+        label.setColor(Color.WHITE);
+        label.setTextAlign(Paint.Align.CENTER);
+        label.setFakeBoldText(true);
         spin.setDuration(1100);
         spin.setRepeatCount(ValueAnimator.INFINITE);
         spin.setInterpolator(new LinearInterpolator());
@@ -123,6 +129,8 @@ public final class LoadingRingView extends View {
         track.setStrokeWidth(stroke);
         arc.setStrokeWidth(stroke);
         float inset = stroke / 2f + 0.5f;
+        labelFits = size >= 26f * density;
+        label.setTextSize(Math.max(8.5f * density, size * 0.27f));
         bounds.set(getPaddingLeft() + inset, getPaddingTop() + inset, w - getPaddingRight() - inset, h - getPaddingBottom() - inset);
         arc.setShader(new SweepGradient(w / 2f, h / 2f,
                 new int[]{Color.argb(0, 70, 221, 251), CYAN, BLUE}, new float[]{0f, 0.55f, 1f}));
@@ -131,6 +139,10 @@ public final class LoadingRingView extends View {
     @Override protected void onDraw(Canvas canvas) {
         canvas.drawOval(bounds, track);
         if (target >= 0f) {
+            if (labelFits) {
+                float baseline = bounds.centerY() - (label.descent() + label.ascent()) / 2f;
+                canvas.drawText(percentText(shown), bounds.centerX(), baseline, label);
+            }
             if (shown <= 0.002f) return;
             arc.setShader(null);
             arc.setColor(mix(BLUE, CYAN, shown));
@@ -143,6 +155,11 @@ public final class LoadingRingView extends View {
         // The gradient runs 0..360 degrees and is brightest at 360, so the arc ends there: transparent tail, bright head.
         canvas.drawArc(bounds, 360f - sweep, sweep, false, arc);
         canvas.restore();
+    }
+
+    /** Texto del centro del anillo: porcentaje entero, sin pasar de 100 %. */
+    static String percentText(float fraction) {
+        return Math.round(Math.max(0f, Math.min(1f, fraction)) * 100f) + "%";
     }
 
     private static int mix(int from, int to, float amount) {

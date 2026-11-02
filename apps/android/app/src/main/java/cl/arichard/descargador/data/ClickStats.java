@@ -263,6 +263,24 @@ public class ClickStats {
         if (start || android.os.SystemClock.elapsedRealtime() - lastListeningSave >= 5000) flushListening();
     }
 
+    /** Adds a play after the player confirms the minimum real listening time. */
+    public synchronized void recordQualifiedPlay(Song song, String playlist) {
+        if (song == null) return;
+        incrementListeningPlay(primaryKey(song));
+        if (playlist != null && !playlist.isEmpty()) incrementListeningPlay("playlist:" + playlist);
+        flushListening();
+    }
+
+    private void incrementListeningPlay(String key) {
+        try {
+            JSONObject device = listening.optJSONObject(deviceId);
+            if (device == null) { device = new JSONObject(); listening.put(deviceId, device); }
+            JSONObject row = device.optJSONObject(key);
+            if (row == null) { row = new JSONObject(); device.put(key, row); }
+            row.put("plays", row.optLong("plays") + 1);
+        } catch (Exception ignored) {}
+    }
+
     private void addListening(String key, String title, String artist, String cover, long millis, boolean start) {
         try {
             JSONObject device = listening.optJSONObject(deviceId);

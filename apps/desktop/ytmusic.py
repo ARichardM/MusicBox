@@ -16,9 +16,13 @@ CLIENT_VERSION = "1.20250101.01.00"
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 FILTER_SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
 FILTER_ARTISTS = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
+FILTER_VIDEOS = "EgWKAQIQAWoKEAkQBRAKEAMQBA%3D%3D"
 DURATION = re.compile(r"^\d{1,2}(?::\d{2}){1,2}$")
 YEAR = re.compile(r"^(?:19|20)\d{2}$")
 SEPARATOR = "•"
+# En la búsqueda sin filtro, la línea de detalle empieza con el tipo («Canción • Artista • 7 M reproducciones»).
+TYPE_LABELS = {"canción", "cancion", "vídeo", "video", "song", "álbum", "album", "sencillo", "single", "ep", "artista", "artist"}
+VIEWS_SUFFIXES = ("reproducciones", "visualizaciones", "views", "plays")
 
 
 def post(endpoint: str, body: dict, opener=urllib.request.urlopen, timeout: float = 15) -> dict:
@@ -119,10 +123,14 @@ def track_from_row(row: dict, album="", artist="", thumbnail="") -> dict | None:
     title = text_of(flex[0]) if flex else ""
     found_artist, found_album, duration = "", "", 0
     for index, column in enumerate(flex[1:], start=1):
-        for part in segments(column):
+        parts = segments(column)
+        for position, part in enumerate(parts):
             text = "".join(run.get("text", "") for run in part).strip()
             browse = first(part, "browseId", "") or ""
             if not text:
+                continue
+            # Solo el primer tramo de la línea de detalle puede ser la etiqueta de tipo, y siempre trae más datos detrás.
+            if index == 1 and position == 0 and len(parts) > 1 and text.casefold() in TYPE_LABELS:
                 continue
             if DURATION.match(text):
                 duration = duration or seconds(text)
@@ -130,7 +138,7 @@ def track_from_row(row: dict, album="", artist="", thumbnail="") -> dict | None:
                 found_album = found_album or text
             elif browse.startswith("UC"):
                 found_artist = (found_artist + ", " if found_artist else "") + text
-            elif index == 1 and not found_artist and not text.endswith(("reproducciones", "views", "plays")):
+            elif index == 1 and not found_artist and not text.endswith(VIEWS_SUFFIXES):
                 found_artist = text
     for column in row.get("fixedColumns", []):
         duration = duration or seconds(text_of(column.get("musicResponsiveListItemFixedColumnRenderer", {}).get("text")))
@@ -163,16 +171,44 @@ def related(video_id: str, count: int = 25, api=post) -> list[dict]:
     # counterpart once instead of retrying the identical, unusable radio.
     for item in walk(data, "playlistPanelVideoRenderer"):
         seed = track_from_panel(item)
-        if not seed or seed["id"] != video_id or not seed["artist"]:
+        if not seed or seed["id"] != video_id or not seed["title"]:
             continue
-        for candidate in search_songs(seed["artist"] + " " + seed["title"], api=api):
-            if candidate["id"] == video_id or not _same_recording(seed, candidate):
-                continue
-            audio_id = candidate["id"]
-            radio = api("next", {"videoId": audio_id, "playlistId": "RDAMVM" + audio_id})
-            return _radio_tracks(radio, {video_id, audio_id}, count)
+        audio = _audio_counterpart(seed, api)
+        if audio:
+            radio = api("next", {"videoId": audio["id"], "playlistId": "RDAMVM" + audio["id"]})
+            tracks = _radio_tracks(radio, {video_id, audio["id"]}, count)
+            if tracks:
+                return tracks
         break
-    return []
+    # Último recurso: los videos musicales de la propia radio, para que la cola nunca quede parada.
+    return _radio_tracks(data, {video_id}, count, kinds=("video",))
+
+
+ARTIST_SEPARATOR = re.compile(r",|&|\s(?:y|and|x|feat\.?|ft\.?)\s")
+
+
+def _artist_names(artist: str) -> list[str]:
+    """«Rosa Walton y Hallie Coggins» → ["rosa walton", "hallie coggins"]."""
+    return [name for name in (normalize(part) for part in ARTIST_SEPARATOR.split(str(artist or "").casefold())) if name]
+
+
+def _named_in(seed: dict, candidate: dict) -> bool:
+    """La canción del catálogo cuyo título y algún artista aparecen en el título o canal del video."""
+    haystack = f" {normalize(seed['title'])} {normalize(seed['artist'])} "
+    title = normalize(candidate["title"])
+    return bool(title) and f" {title} " in haystack and any(f" {name} " in haystack for name in _artist_names(candidate["artist"]))
+
+
+def _audio_counterpart(seed: dict, api=post) -> dict | None:
+    """La pista de audio de un video: la misma grabación exacta o, si el título del video trae más texto
+    («Serie | "Canción" by Artista | Music Video»), una canción que aparezca nombrada en él. Máximo dos búsquedas."""
+    queries = [seed["artist"] + " " + seed["title"]] if seed["artist"] else []
+    queries.append(seed["title"])
+    for query in queries:
+        for candidate in search_songs(query, api=api)[:8]:
+            if candidate["id"] != seed["id"] and (_same_recording(seed, candidate) or _named_in(seed, candidate)):
+                return candidate
+    return None
 
 
 def _same_recording(seed: dict, candidate: dict) -> bool:
@@ -185,11 +221,11 @@ def _same_recording(seed: dict, candidate: dict) -> bool:
     return True
 
 
-def _radio_tracks(data: dict, excluded: set[str], count: int) -> list[dict]:
+def _radio_tracks(data: dict, excluded: set[str], count: int, kinds=("song", "")) -> list[dict]:
     tracks, seen = [], set(excluded)
     for item in walk(data, "playlistPanelVideoRenderer"):
         track = track_from_panel(item)
-        if track and track["id"] not in seen and track["kind"] in ("song", ""):
+        if track and track["id"] not in seen and track["kind"] in kinds:
             seen.add(track["id"])
             tracks.append(track)
     return tracks[:count]
@@ -198,6 +234,18 @@ def _radio_tracks(data: dict, excluded: set[str], count: int) -> list[dict]:
 def search_songs(query: str, api=post) -> list[dict]:
     data = api("search", {"query": query, "params": FILTER_SONGS})
     return [t for t in (track_from_row(r) for r in walk(data, "musicResponsiveListItemRenderer")) if t and t["kind"] in ("song", "")]
+
+
+def search_all(query: str, api=post) -> list[dict]:
+    """Búsqueda sin filtro de tipo de YouTube Music: canciones y videos musicales mezclados, en su orden."""
+    data = api("search", {"query": query})
+    return [t for t in (track_from_row(r) for r in walk(data, "musicResponsiveListItemRenderer")) if t]
+
+
+def search_videos(query: str, api=post) -> list[dict]:
+    """Videoclips y videos musicales del catálogo de YouTube Music (no gameplays ni vlogs de YouTube)."""
+    data = api("search", {"query": query, "params": FILTER_VIDEOS})
+    return [t for t in (track_from_row(r) for r in walk(data, "musicResponsiveListItemRenderer")) if t and t["kind"] != "song"]
 
 
 def _artist_from_row(row: dict) -> dict | None:

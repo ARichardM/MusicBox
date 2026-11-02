@@ -54,6 +54,7 @@ public final class OnlineTrackMenu {
             Toast.makeText(activity, Tr.t("Agregada a la cola"), Toast.LENGTH_SHORT).show();
             return true;
         });
+        menu.getMenu().add(Tr.t("Información de la canción")).setOnMenuItemClickListener(item -> { SongInfo.show(activity, song); return true; });
         menu.show();
     }
 

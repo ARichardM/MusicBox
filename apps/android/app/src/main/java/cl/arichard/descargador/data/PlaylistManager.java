@@ -349,10 +349,30 @@ public class PlaylistManager {
         }
         if (!list.contains(songPath)) {
             list.add(songPath);
+            Set<String> fresh = freshlyAdded.get(playlistName);
+            if (fresh == null) { fresh = new java.util.LinkedHashSet<>(); freshlyAdded.put(playlistName, fresh); }
+            fresh.add(songPath);
             save();
             return true;
         }
         return false;
+    }
+
+    /** Canciones agregadas a cada playlist que aún no se han visto al abrirla. */
+    private final Map<String, Set<String>> freshlyAdded = new HashMap<>();
+
+    /** Devuelve las canciones recién agregadas a la playlist y las olvida: el realce se muestra una sola vez. */
+    public synchronized Set<String> takeFreshlyAdded(String playlistName) {
+        Set<String> fresh = freshlyAdded.remove(playlistName);
+        return fresh == null ? new java.util.LinkedHashSet<>() : fresh;
+    }
+
+    /** Devuelve a la lista de pendientes las canciones nuevas que todavía no se pudieron mostrar. */
+    public synchronized void keepFreshlyAdded(String playlistName, java.util.Collection<String> pending) {
+        if (pending == null || pending.isEmpty()) return;
+        Set<String> fresh = freshlyAdded.get(playlistName);
+        if (fresh == null) { fresh = new java.util.LinkedHashSet<>(); freshlyAdded.put(playlistName, fresh); }
+        fresh.addAll(pending);
     }
 
     public synchronized boolean removeSongFromPlaylist(String playlistName, String songPath) {

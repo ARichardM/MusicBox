@@ -41,6 +41,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private TextView txtCurrentTime, txtTotalTime;
 
     private ImageView btnShuffle, btnPrevious, btnPlayPauseIcon, btnNext, btnRepeat;
+    /** Mientras carga, el anillo ocupa el lugar del icono de reproducir o pausar. */
+    private boolean playbackLoading;
     private FrameLayout btnPlayPauseCircle;
 
     // Download Banner
@@ -65,6 +67,11 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         super.onCreate(savedInstanceState);
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         setContentView(R.layout.activity_now_playing);
+        // La cola se mide desde el borde de la pantalla: suma la barra de gestos para que asome entera sobre ella.
+        cl.arichard.descargador.util.SystemBars.fit(this, bars -> {
+            systemBars = bars;
+            applyQueueInset();
+        });
 
         initViews();
         setupClickListeners();
@@ -142,11 +149,13 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         btnShuffle.setOnClickListener(v -> {
             boolean active = PlayerManager.getInstance().toggleShuffle();
             updateShuffleButton(active);
+            cl.arichard.descargador.util.SafeTap.pop(btnShuffle, active);
         });
 
         btnRepeat.setOnClickListener(v -> {
             int mode = PlayerManager.getInstance().toggleRepeat();
             updateRepeatButton(mode);
+            cl.arichard.descargador.util.SafeTap.pop(btnRepeat, mode != PlayerManager.REPEAT_OFF);
             Toast.makeText(this, repeatLabel(mode), Toast.LENGTH_SHORT).show();
         });
 
@@ -203,14 +212,39 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     }
 
     /** The queue peeks from the bottom edge; dragging it up reveals the full, editable list. */
+    private androidx.core.graphics.Insets systemBars = androidx.core.graphics.Insets.NONE;
+
+    private int queuePeek() { return Math.round(84 * getResources().getDisplayMetrics().density); }
+    private int[] playerPadding;
+
+    /**
+     * El reproductor deja sitio a las barras del sistema y la cola llega hasta el borde inferior, asomando entera
+     * sobre la barra de gestos. Se aplica a cada vista y no al contenedor: la hoja mide su posición desde él.
+     */
+    private void applyQueueInset() {
+        View player = findViewById(R.id.nowPlayingRoot);
+        View sheet = findViewById(R.id.queueSheet);
+        if (player != null) {
+            if (playerPadding == null) playerPadding = new int[] {player.getPaddingLeft(), player.getPaddingTop(),
+                    player.getPaddingRight(), player.getPaddingBottom()};
+            player.setPadding(playerPadding[0] + systemBars.left, playerPadding[1] + systemBars.top,
+                    playerPadding[2] + systemBars.right, playerPadding[3] + systemBars.bottom);
+        }
+        if (sheet != null) sheet.setPadding(systemBars.left, sheet.getPaddingTop(), systemBars.right, systemBars.bottom);
+        if (queueBehavior != null) {
+            queueBehavior.setPeekHeight(queuePeek() + systemBars.bottom);
+            queueBehavior.setExpandedOffset(Math.round(88 * getResources().getDisplayMetrics().density) + systemBars.top);
+        }
+    }
+
     private void setupQueueSheet() {
         android.widget.FrameLayout sheet = findViewById(R.id.queueSheet);
         float density = getResources().getDisplayMetrics().density;
         queueBehavior = com.google.android.material.bottomsheet.BottomSheetBehavior.from(sheet);
-        queueBehavior.setPeekHeight(Math.round(84 * density));
+        applyQueueInset();
         queueBehavior.setHideable(false);
         queueBehavior.setFitToContents(false);
-        queueBehavior.setExpandedOffset(Math.round(88 * density));
+        queueBehavior.setExpandedOffset(Math.round(88 * density) + systemBars.top);
         queueBehavior.setHalfExpandedRatio(.5f);
         queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
         queuePanel = cl.arichard.descargador.player.QueueSheet.embed(this, sheet, queueBehavior);
@@ -365,6 +399,9 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         if (!song.isOnline()) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.delete(this, song, deletePrompt, this::finish); return true;
         });
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongInfo.show(this, song); return true;
+        });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Cola de reproducci\u00f3n")).setIcon(R.drawable.ic_queue).setOnMenuItemClickListener(item -> {
             queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED); return true;
         });
@@ -383,6 +420,11 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     private void updatePlaybackState(boolean isPlaying) {
         btnPlayPauseIcon.setImageResource(isPlaying ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
+        btnPlayPauseIcon.animate().cancel();
+        btnPlayPauseIcon.setScaleX(.82f); btnPlayPauseIcon.setScaleY(.82f);
+        // Cancelar la animación también corta un desvanecimiento a medias: la opacidad final se fija aquí.
+        btnPlayPauseIcon.animate().scaleX(1f).scaleY(1f).alpha(playbackLoading ? 0f : 1f).setDuration(210)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(1.5f)).start();
         btnPlayPauseCircle.setContentDescription(cl.arichard.descargador.util.Tr.t(isPlaying ? "Pausar" : "Reproducir"));
     }
 
@@ -446,8 +488,10 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         runOnUiThread(() -> {
             cl.arichard.descargador.util.LoadingRingView ring = findViewById(R.id.playLoadingRing);
             if (ring == null) return;
+            playbackLoading = loading;
             ring.setActive(loading);
-            btnPlayPauseIcon.animate().alpha(loading ? 0f : 1f).setDuration(160).start();
+            btnPlayPauseIcon.animate().cancel();
+            btnPlayPauseIcon.animate().alpha(loading ? 0f : 1f).scaleX(1f).scaleY(1f).setDuration(160).start();
         });
     }
 

@@ -137,7 +137,8 @@ class SystemAudioSearchTests(unittest.TestCase):
         player.play.assert_not_called()
 
     def test_typing_debounces_and_enter_does_not_repeat_the_search(self):
-        with patch.object(module.youtube_streams, "search", return_value=[]) as search:
+        with patch.object(module.ytmusic, "search_songs", return_value=[]) as search, \
+                patch.object(module.youtube_streams, "search", return_value=[]):
             self.bridge.scheduleSearch("lu")
             QTest.qWait(150)
             self.bridge.scheduleSearch("luis jara")
@@ -153,7 +154,8 @@ class SystemAudioSearchTests(unittest.TestCase):
             self.assertEqual(self.bridge._recent_queries[:2], ["otra canción", "luis jara"])
 
     def test_clearing_or_pasting_a_link_cancels_pending_live_search(self):
-        with patch.object(module.youtube_streams, "search", return_value=[]) as search:
+        with patch.object(module.ytmusic, "search_songs", return_value=[]) as search, \
+                patch.object(module.youtube_streams, "search", return_value=[]):
             for query in ("", "x", "https://www.youtube.com/watch?v=abcdefghijk", "youtu.be/abcdefghijk"):
                 self.bridge.scheduleSearch("luis jara")
                 self.bridge.scheduleSearch(query)

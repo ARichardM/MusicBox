@@ -38,7 +38,7 @@ class PlaylistArtistTests(unittest.TestCase):
         b._shuffle, b._repeat_mode = False, 0
         b._current = {}
         b._start_local_track = Mock(side_effect=lambda row: setattr(b, "_current", row))
-        b._play_online = Mock(side_effect=lambda row: setattr(b, "_current", row))
+        b._play_online = Mock(side_effect=lambda row, **_: setattr(b, "_current", row))
         b._apply_library_view()
 
     def test_exact_artist_filter_combines_with_search_and_keeps_all_picker_choices(self):

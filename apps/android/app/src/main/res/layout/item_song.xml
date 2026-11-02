@@ -36,12 +36,14 @@
 
         <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
             android:id="@+id/imgPlayingIndicator"
-            android:layout_width="26dp"
-            android:layout_height="26dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:layout_gravity="center"
             android:src="@drawable/ic_play_arrow"
             app:tint="@color/accent"
+            android:background="@drawable/bg_play_circle"
             android:visibility="gone"/>
+
     </androidx.cardview.widget.CardView>
 
     <LinearLayout
@@ -69,22 +71,28 @@
             android:orientation="horizontal"
             android:gravity="center_vertical">
 
-            <!-- Compact Downloaded / Offline badge -->
-            <ImageView
-                android:id="@+id/imgDownloadedBadge"
+            <!-- Un solo lugar para la marca de descargada y el anillo de descarga: se cruzan sin mover el texto -->
+            <FrameLayout
+                android:id="@+id/downloadMarkSlot"
                 android:layout_width="16dp"
                 android:layout_height="16dp"
-                android:contentDescription="@string/descargada_en_el_dispositivo"
-                android:layout_marginEnd="5dp"
-                android:src="@drawable/ic_downloaded_badge"
-                app:tint="@color/accent"
-                android:visibility="visible"/>
+                android:layout_marginEnd="5dp">
 
-            <cl.arichard.descargador.util.LoadingRingView
-                android:id="@+id/progressSongDownload"
-                android:layout_width="18dp"
-                android:layout_height="18dp"
-                android:layout_marginEnd="5dp"/>
+                <ImageView
+                    android:id="@+id/imgDownloadedBadge"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/descargada_en_el_dispositivo"
+                    android:src="@drawable/ic_downloaded_badge"
+                    android:background="@drawable/bg_download_badge"
+                    app:tint="@color/accent"
+                    android:visibility="visible"/>
+
+                <cl.arichard.descargador.util.LoadingRingView
+                    android:id="@+id/progressSongDownload"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"/>
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/txtSongSubtitle"

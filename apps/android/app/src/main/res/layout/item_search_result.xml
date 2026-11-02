@@ -24,13 +24,14 @@
         <ImageView android:id="@+id/imgDownloadedResult" android:layout_width="24dp"
             android:layout_height="24dp" android:layout_gravity="top|end"
             android:layout_margin="3dp" android:padding="4dp"
-            android:background="@drawable/bg_download_status"
+            android:background="@drawable/bg_download_badge"
             android:src="@drawable/ic_downloaded_badge" android:visibility="gone"
             android:contentDescription="@string/descargada"/>
+        <!-- Avance real de la descarga, compacto y en el mismo lugar de la marca de descargada -->
         <cl.arichard.descargador.util.LoadingRingView android:id="@+id/progressDownloadResult"
-            android:layout_width="26dp" android:layout_height="26dp"
+            android:layout_width="24dp" android:layout_height="24dp"
             android:layout_gravity="top|end" android:layout_margin="3dp" android:padding="4dp"
-            android:background="@drawable/bg_download_status"/>
+            android:background="@drawable/bg_download_badge"/>
     </FrameLayout>
 
     <LinearLayout
@@ -65,16 +66,12 @@
         android:layout_height="38dp" android:padding="9dp" android:src="@drawable/ic_favorite"
         android:background="?attr/selectableItemBackgroundBorderless" android:contentDescription="@string/me_gusta"/>
 
-    <FrameLayout
-        android:id="@+id/btnAddResult"
-        android:layout_width="38dp"
-        android:layout_height="38dp"
-        android:background="@drawable/bg_download_small">
-        <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_gravity="center"
-            android:src="@drawable/ic_add"
-            app:tint="#FFFFFF"/>
-    </FrameLayout>
+    <ImageView
+        android:id="@+id/btnMoreResult"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:padding="9dp"
+        android:src="@drawable/ic_more_vert"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/mas_opciones_de_la_cancion"/>
 </LinearLayout>

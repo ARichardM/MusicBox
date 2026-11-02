@@ -61,6 +61,7 @@ public final class SettingsActivity extends AppCompatActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_settings);
+        cl.arichard.descargador.util.SystemBars.fit(this);
         findViewById(R.id.btnSettingsBack).setOnClickListener(v -> finish());
         setupLanguage();
         setupTheme();
@@ -81,6 +82,13 @@ public final class SettingsActivity extends AppCompatActivity {
         ((TextView) findViewById(R.id.txtSettingsEmail)).setText(email);
         String initial = (name.isEmpty() ? "U" : name.substring(0, 1)).toUpperCase(java.util.Locale.ROOT);
         ((TextView) findViewById(R.id.txtSettingsAvatar)).setText(initial);
+        android.widget.ImageView avatar = findViewById(R.id.imgSettingsAvatar);
+        if (user != null && user.getPhotoUrl() != null) {
+            cl.arichard.descargador.util.ImageLoader.getInstance().load(user.getPhotoUrl().toString(), avatar);
+            avatar.setVisibility(View.VISIBLE);
+            findViewById(R.id.txtSettingsAvatar).setVisibility(View.GONE);
+        }
+        setupDownloadQuality();
 
         cloudPrefs = getSharedPreferences("musicbox_cloud", MODE_PRIVATE);
         cloudPrefs.registerOnSharedPreferenceChangeListener(devicesListener);
@@ -102,6 +110,40 @@ public final class SettingsActivity extends AppCompatActivity {
         if (state == null) animateIn(findViewById(R.id.cardAccount), 0);
         if (state == null) animateIn(findViewById(R.id.rowDownloader), 40);
         if (state == null) animateIn(findViewById(R.id.cardAppearance), 80);
+    }
+
+    private void setupDownloadQuality() {
+        SharedPreferences prefs = getSharedPreferences("musicbox_prefs", MODE_PRIVATE);
+        MaterialButtonToggleGroup audio = findViewById(R.id.qualityMp3), video = findViewById(R.id.qualityMp4);
+        int audioValue = qualityValue(prefs.getString("quality_mp3", "192 kbps"), true);
+        int videoValue = qualityValue(prefs.getString("quality_mp4", "1080p"), false);
+        audio.check(audioValue == 128 ? R.id.qualityMp3Low : audioValue == 320 ? R.id.qualityMp3High : R.id.qualityMp3Normal);
+        video.check(videoValue == 480 ? R.id.qualityMp4Low : videoValue == 1080 ? R.id.qualityMp4High : R.id.qualityMp4Normal);
+        updateQualityDetails(audioValue, videoValue);
+        audio.addOnButtonCheckedListener((group, checkedId, checked) -> {
+            if (!checked) return;
+            int value = checkedId == R.id.qualityMp3Low ? 128 : checkedId == R.id.qualityMp3High ? 320 : 192;
+            prefs.edit().putString("quality_mp3", value + " kbps").apply();
+            updateQualityDetails(value, qualityValue(prefs.getString("quality_mp4", "1080p"), false));
+        });
+        video.addOnButtonCheckedListener((group, checkedId, checked) -> {
+            if (!checked) return;
+            int value = checkedId == R.id.qualityMp4Low ? 480 : checkedId == R.id.qualityMp4High ? 1080 : 720;
+            prefs.edit().putString("quality_mp4", value + "p").apply();
+            updateQualityDetails(qualityValue(prefs.getString("quality_mp3", "192 kbps"), true), value);
+        });
+    }
+
+    private int qualityValue(String quality, boolean audio) {
+        try { return Integer.parseInt(quality.replaceAll("[^0-9]", "")); }
+        catch (Exception ignored) { return audio ? 192 : 720; }
+    }
+
+    private void updateQualityDetails(int audio, int video) {
+        ((TextView) findViewById(R.id.txtQualityMp3Detail)).setText(
+                Tr.t("Baja") + " · 128 kbps     " + Tr.t("Normal") + " · 192 kbps     " + Tr.t("Alta") + " · 320 kbps");
+        ((TextView) findViewById(R.id.txtQualityMp4Detail)).setText(
+                Tr.t("Baja") + " · 480p     " + Tr.t("Normal") + " · 720p     " + Tr.t("Alta") + " · 1080p");
     }
 
     /** Total "clics" (plays) across the library, plus the most played of the recent songs. */

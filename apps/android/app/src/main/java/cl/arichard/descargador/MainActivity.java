@@ -102,6 +102,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private ImageView btnAccount, btnPaste, btnClearSearch;
     private androidx.appcompat.widget.AppCompatAutoCompleteTextView inputSearch;
     private TextView txtSearchStatus, txtSearchHint;
+    private View chipSearchAll, chipSearchSongs, chipSearchVideos, chipSearchArtists;
+    private LinearLayout layoutSearchArtists;
+    private final List<cl.arichard.descargador.util.YtMusicApi.Artist> searchArtists = new ArrayList<>();
+    private boolean loadingSearchPage;
     // Discovery Views
     private NestedScrollView containerSearchDiscovery;
     private View sectionRecentQueries, sectionTopCollections, sectionRecentPlays, sectionTopLibrary;
@@ -498,6 +502,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             uiState.resultsVisible = false;
             uiState.searchLoading = false;
             uiState.searchStatus = "";
+            uiState.searchFilter = "songs"; uiState.hasMoreResults = true; searchArtists.clear();
+            findViewById(R.id.searchFilterRow).setVisibility(View.GONE);
+            layoutSearchArtists.setVisibility(View.GONE);
             uiState.changed();
             return;
         }
@@ -518,6 +525,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         uiState.resultsVisible = false;
         uiState.searchLoading = false;
         uiState.searchStatus = "";
+        uiState.searchFilter = "songs"; uiState.hasMoreResults = true; searchArtists.clear();
+        findViewById(R.id.searchFilterRow).setVisibility(View.GONE);
+        layoutSearchArtists.setVisibility(View.GONE);
         inputSearch.setText("");
         inputSearch.requestFocus();
         uiState.changed();
@@ -623,8 +633,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
         searchResultAdapter = new SearchResultAdapter(this, new SearchResultAdapter.OnResultClickListener() {
             @Override
-            public void onAddClick(SearchResult result, View anchor) {
-                showAddMenu(result, anchor);
+            public void onMoreClick(SearchResult result, View anchor) {
+                showResultMenu(result, anchor);
             }
 
             @Override
@@ -646,6 +656,30 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
         recyclerSearchResults.setLayoutManager(new LinearLayoutManager(this));
         recyclerSearchResults.setAdapter(searchResultAdapter);
+        // Las filas nuevas ya entran con su propia cascada; el animador por defecto la cortaría.
+        recyclerSearchResults.setItemAnimator(null);
+        chipSearchAll = findViewById(R.id.chipSearchAll);
+        chipSearchSongs = findViewById(R.id.chipSearchSongs);
+        chipSearchVideos = findViewById(R.id.chipSearchVideos);
+        chipSearchArtists = findViewById(R.id.chipSearchArtists);
+        layoutSearchArtists = findViewById(R.id.layoutSearchArtists);
+        chipSearchAll.setOnClickListener(v -> setSearchFilter("all"));
+        chipSearchSongs.setOnClickListener(v -> setSearchFilter("songs"));
+        chipSearchVideos.setOnClickListener(v -> setSearchFilter("videos"));
+        chipSearchArtists.setOnClickListener(v -> setSearchFilter("artists"));
+        recyclerSearchResults.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override public void onScrolled(@NonNull RecyclerView view, int dx, int dy) {
+                if (dy <= 0 || loadingSearchPage || !uiState.hasMoreResults || uiState.searchLoading) return;
+                if ("artists".equals(uiState.searchFilter)) {
+                    if (!view.canScrollVertically(1)) loadMoreSearchResults();
+                    return;
+                }
+                LinearLayoutManager manager = (LinearLayoutManager) view.getLayoutManager();
+                if (manager != null && manager.findLastVisibleItemPosition() >= searchResultAdapter.getItemCount() - 3)
+                    loadMoreSearchResults();
+            }
+        });
+        renderSearchFilter();
 
         inputSearch.setOnEditorActionListener((v, actionId, event) -> {
             boolean isEnter = (event != null && event.getKeyCode() == android.view.KeyEvent.KEYCODE_ENTER && event.getAction() == android.view.KeyEvent.ACTION_DOWN);
@@ -659,6 +693,137 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             }
             return false;
         });
+    }
+
+    private void setSearchFilter(String filter) {
+        if (filter.equals(uiState.searchFilter)) return;
+        if ("songs".equals(filter) || "videos".equals(filter)) uiState.searchFilter = filter;
+        else uiState.searchFilter = filter;
+        uiState.searchContinuation = "";
+        uiState.results.clear();
+        uiState.resultsVisible = true;
+        uiState.hasMoreResults = true;
+        searchArtists.clear();
+        renderSearchFilter();
+        String query = inputSearch.getText().toString().trim();
+        if (!query.isEmpty()) searchFiltered(query, true);
+        else {
+            recyclerSearchResults.setVisibility("artists".equals(filter) ? View.GONE : View.VISIBLE);
+            findViewById(R.id.scrollSearchArtists).setVisibility("artists".equals(filter) ? View.VISIBLE : View.GONE);
+            uiState.searchStatus = cl.arichard.descargador.util.Tr.t("Escribe para buscar");
+            uiState.changed();
+        }
+    }
+
+    private void renderSearchFilter() {
+        if (chipSearchSongs == null) return;
+        for (Object[] item : new Object[][]{{chipSearchAll,"all"},{chipSearchSongs,"songs"},{chipSearchVideos,"videos"},{chipSearchArtists,"artists"}}) {
+            View chip = (View) item[0];
+            boolean selected = item[1].equals(uiState.searchFilter);
+            chip.setBackgroundResource(selected ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
+            ((TextView) chip).setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
+            chip.animate().cancel(); chip.setScaleX(.96f); chip.setScaleY(.96f);
+            chip.animate().scaleX(1f).scaleY(1f).setDuration(130).start();
+        }
+        boolean artists = "artists".equals(uiState.searchFilter);
+        findViewById(R.id.searchFilterRow).setVisibility(uiState.resultsVisible || uiState.searchLoading ? View.VISIBLE : View.GONE);
+        recyclerSearchResults.setVisibility(artists ? View.GONE : uiState.resultsVisible ? View.VISIBLE : View.GONE);
+        findViewById(R.id.scrollSearchArtists).setVisibility(artists && uiState.resultsVisible ? View.VISIBLE : View.GONE);
+        if (artists && layoutSearchArtists.getChildCount() == 0 && !searchArtists.isEmpty()) renderSearchArtists();
+        if (!artists) searchResultAdapter.setResults(uiState.results);
+    }
+
+    private void searchFiltered(String query, boolean fresh) {
+        final int generation = ++uiState.searchGeneration;
+        final String filter = uiState.searchFilter;
+        final String requestedContinuation = fresh ? "" : uiState.searchContinuation;
+        if (fresh) {
+            uiState.results.clear(); searchArtists.clear(); uiState.searchContinuation = "";
+            uiState.hasMoreResults = true; layoutSearchArtists.removeAllViews();
+        }
+        uiState.searchLoading = fresh;
+        uiState.loadingMore = !fresh;
+        uiState.resultsVisible = true;
+        uiState.searchStatus = cl.arichard.descargador.util.Tr.t(fresh ? "Buscando en YouTube..." : "Cargando más resultados...");
+        uiState.changed();
+        DescargadorApp.IO.execute(() -> {
+            try {
+                cl.arichard.descargador.util.YtMusicApi.SearchPage page =
+                        cl.arichard.descargador.util.YtMusicApi.searchPage(query, filter, requestedContinuation, 20);
+                runOnUiThread(() -> {
+                    if (uiState.searchGeneration != generation) return;
+                    if ("artists".equals(filter)) {
+                        searchArtists.addAll(page.artists);
+                        renderSearchArtists();
+                    } else {
+                        Set<String> ids = new HashSet<>(); for (SearchResult s : uiState.results) ids.add(s.getId());
+                        for (SearchResult s : page.songs) if (ids.add(s.getId())) uiState.results.add(s);
+                        searchResultAdapter.setResults(uiState.results); refreshDownloadedBadges();
+                        // Los primeros resultados se resuelven mientras el usuario mira la lista: al tocarlos ya están listos.
+                        if (requestedContinuation.isEmpty() && !"videos".equals(filter))
+                            for (int i = 0; i < Math.min(2, uiState.results.size()); i++)
+                                PlayerManager.getInstance().prefetchVideo(uiState.results.get(i).getId());
+                    }
+                    if (uiState.hasMoreResults && page.songs.isEmpty() && page.artists.isEmpty()
+                            && !page.continuation.isEmpty() && !page.continuation.equals(requestedContinuation)) {
+                        uiState.searchContinuation = page.continuation;
+                        loadingSearchPage = false;
+                        searchFiltered(query, false);
+                        return;
+                    }
+                    uiState.searchContinuation = page.continuation;
+                    uiState.hasMoreResults = !page.continuation.isEmpty() && (!page.songs.isEmpty() || !page.artists.isEmpty());
+                    uiState.searchLoading = false; uiState.loadingMore = false;
+                    loadingSearchPage = false;
+                    int count = "artists".equals(filter) ? searchArtists.size() : uiState.results.size();
+                    uiState.searchStatus = count == 0 ? cl.arichard.descargador.util.Tr.t("No se encontraron resultados")
+                            : count + cl.arichard.descargador.util.Tr.t(" resultados");
+                    uiState.changed();
+                    if ("artists".equals(filter) && uiState.hasMoreResults
+                            && !findViewById(R.id.scrollSearchArtists).canScrollVertically(1))
+                        findViewById(R.id.scrollSearchArtists).post(this::loadMoreSearchResults);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (uiState.searchGeneration != generation) return;
+                    if (fresh && !"artists".equals(filter)) {
+                        android.util.Log.w("MusicBoxSearch", "YouTube Music no respondió; usando YouTube", error);
+                        performPlainYoutubeSearch(query);
+                        return;
+                    }
+                    uiState.searchLoading = false; uiState.loadingMore = false;
+                    loadingSearchPage = false;
+                    uiState.searchStatus = ((DescargadorApp) getApplication()).hasNetwork()
+                            ? cl.arichard.descargador.util.Tr.t("YouTube no respondió. Toca buscar para reintentar")
+                            : cl.arichard.descargador.util.Tr.t("Sin conexión a internet");
+                    uiState.changed();
+                });
+            }
+        });
+    }
+
+    private void loadMoreSearchResults() {
+        if (loadingSearchPage || !uiState.hasMoreResults) return;
+        loadingSearchPage = true;
+        searchFiltered(inputSearch.getText().toString().trim(), false);
+    }
+
+    private void renderSearchArtists() {
+        layoutSearchArtists.removeAllViews();
+        for (cl.arichard.descargador.util.YtMusicApi.Artist artist : searchArtists) {
+            LinearLayout row = new LinearLayout(this); row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(12), dp(10), dp(12), dp(10)); row.setBackgroundResource(R.drawable.bg_card);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(72)); lp.bottomMargin = dp(8); row.setLayoutParams(lp);
+            ImageView photo = new ImageView(this); photo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            CardView circle = new CardView(this); circle.setRadius(dp(25)); circle.setCardElevation(0);
+            circle.addView(photo, new FrameLayout.LayoutParams(-1,-1)); row.addView(circle, new LinearLayout.LayoutParams(dp(50),dp(50)));
+            cl.arichard.descargador.util.ImageLoader.getInstance().load(artist.photo, photo);
+            TextView name = new TextView(this); name.setText(artist.name); name.setTextColor(ContextCompat.getColor(this,R.color.text_primary)); name.setTextSize(15); name.setTypeface(null,android.graphics.Typeface.BOLD);
+            LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(0,-2,1); textLp.setMargins(dp(14),0,dp(8),0); row.addView(name,textLp);
+            ImageView arrow = new ImageView(this); arrow.setImageResource(R.drawable.ic_arrow_back); arrow.setRotation(180); arrow.setColorFilter(ContextCompat.getColor(this,R.color.text_secondary)); row.addView(arrow,new LinearLayout.LayoutParams(dp(20),dp(20)));
+            row.setOnClickListener(v -> { Intent intent=new Intent(this,ArtistActivity.class); intent.putExtra(ArtistActivity.EXTRA_ID,artist.browseId); intent.putExtra(ArtistActivity.EXTRA_NAME,artist.name); intent.putExtra(ArtistActivity.EXTRA_PHOTO,artist.photo); startActivity(intent); });
+            cl.arichard.descargador.util.SafeTap.installRowTap(row); layoutSearchArtists.addView(row);
+        }
     }
 
     /** Remembers which list the song being played belongs to, for the "Reproduciendo desde" label. */
@@ -694,7 +859,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
-    private void showAddMenu(SearchResult result, View anchor) {
+    private void showResultMenu(SearchResult result, View anchor) {
         PopupMenu menu = new PopupMenu(MainActivity.this, anchor);
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setOnMenuItemClickListener(item -> {
             showAddOnlineToPlaylistDialog(result); return true;
@@ -706,6 +871,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, false); Toast.makeText(MainActivity.this, cl.arichard.descargador.util.Tr.t("Agregada a la cola"), Toast.LENGTH_SHORT).show(); return true;
+        });
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongInfo.show(MainActivity.this, song); return true;
         });
         menu.show();
     }
@@ -889,7 +1057,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         add.setContentDescription(cl.arichard.descargador.util.Tr.t("Agregar a playlist"));
         FrameLayout.LayoutParams addLp = new FrameLayout.LayoutParams(dp(32), dp(32), android.view.Gravity.END | android.view.Gravity.BOTTOM);
         addLp.setMargins(0, 0, dp(8), dp(8));
-        add.setOnClickListener(v -> showAddMenu(result, v));
+        add.setOnClickListener(v -> showResultMenu(result, v));
         cl.arichard.descargador.util.SafeTap.install(add);
         frame.addView(add, addLp);
         card.addView(frame);
@@ -1218,7 +1386,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
             itemView.setOnClickListener(v -> {
                 PlayerManager.getInstance().setPlaybackSource("songs", "");
-                PlayerManager.getInstance().playSong(s, allSongs);
+                PlayerManager.getInstance().playSong(s, allSongs, false);
                 startActivity(new Intent(MainActivity.this, NowPlayingActivity.class));
             });
 
@@ -1243,7 +1411,14 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
     }
 
+    /** Canciones, videos y artistas salen del catálogo de YouTube Music, como en la app de escritorio. */
     private void performYoutubeSearch(String query) {
+        findViewById(R.id.searchFilterRow).setVisibility(View.VISIBLE);
+        searchFiltered(query, true);
+    }
+
+    /** Respaldo: búsqueda normal de YouTube solo cuando YouTube Music no responde. */
+    private void performPlainYoutubeSearch(String query) {
         final int generation = ++uiState.searchGeneration;
         List<SearchResult> cached = searchCache.get(query.toLowerCase(java.util.Locale.ROOT));
         uiState.results = cached == null ? new ArrayList<>() : new ArrayList<>(cached);
@@ -1284,6 +1459,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
                     if (state.searchGeneration != generation) return;
                     state.searchLoading = false; state.results = new ArrayList<>(results); state.resultsVisible = !results.isEmpty();
+                    state.hasMoreResults = false;
                     state.searchStatus = results.isEmpty() ? cl.arichard.descargador.util.Tr.t("No se encontraron resultados") : results.size() + cl.arichard.descargador.util.Tr.t(" resultados");
                     state.cache.put(query.toLowerCase(java.util.Locale.ROOT), new ArrayList<>(results)); state.changed();
                 });
@@ -1332,7 +1508,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
         boolean resultsChanged = renderedSearchResults != uiState.results;
         if (resultsChanged) { searchResultAdapter.setResults(uiState.results); renderedSearchResults = uiState.results; }
-        recyclerSearchResults.setVisibility(uiState.resultsVisible ? View.VISIBLE : View.GONE);
+        // Spinner al final de la lista mientras llega la página siguiente de resultados.
+        searchResultAdapter.setLoadingMore(uiState.loadingMore && !"artists".equals(uiState.searchFilter));
+        renderSearchFilter();
         searchLoading.setVisibility(uiState.searchLoading ? View.VISIBLE : View.GONE);
         containerSearchDiscovery.setVisibility(uiState.resultsVisible || uiState.searchLoading ? View.GONE : View.VISIBLE);
         txtSearchStatus.setText(uiState.searchStatus);
@@ -1352,8 +1530,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void startDownload(String targetUrl, String defaultTitle, String videoId) {
         cl.arichard.descargador.download.DownloadManager manager = cl.arichard.descargador.download.DownloadManager.get(this);
+        String quality = getSharedPreferences("musicbox_prefs", MODE_PRIVATE).getString(isMp3 ? "quality_mp3" : "quality_mp4", isMp3 ? "192 kbps" : "1080p");
         int added = manager.enqueue(Collections.singletonList(targetUrl),
-                new cl.arichard.descargador.download.DownloadOptions(isMp3, isMp3 ? "192 kbps" : "1080p",
+                new cl.arichard.descargador.download.DownloadOptions(isMp3, quality,
                         false, "", cl.arichard.descargador.download.DownloadManager.cookiesPath(this),
                         StorageUtil.getDownloadDir(this).getAbsolutePath()));
         if (added == 0) Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Descarga en curso"), Toast.LENGTH_SHORT).show();
@@ -1491,8 +1670,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 rememberPlaybackSource();
                 List<Song> local = preferLocalCopies(queue);
                 int index = queue.indexOf(song);
-                PlayerManager.getInstance().playSong(index >= 0 ? local.get(index) : song, local,
-                        songAdapter.getArtistFilter().isEmpty());
+                PlayerManager.getInstance().playSong(index >= 0 ? local.get(index) : song, local, false);
                 Intent intent = new Intent(MainActivity.this, NowPlayingActivity.class);
                 startActivity(intent);
             }
@@ -1577,8 +1755,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 Collections.shuffle(shuffled);
                 rememberPlaybackSource();
                 List<Song> local = preferLocalCopies(shuffled);
-                PlayerManager.getInstance().playSong(local.get(0), local,
-                        songAdapter.getArtistFilter().isEmpty());
+                PlayerManager.getInstance().playSong(local.get(0), local, false);
             } else {
                 Toast.makeText(this, cl.arichard.descargador.util.Tr.t("No hay canciones para reproducir"), Toast.LENGTH_SHORT).show();
             }
@@ -1789,6 +1966,39 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         songAdapter.setArtistFilter("");
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
+        if (mode == 3) showArrivals(name);
+    }
+
+    /** Al abrir una playlist, lleva la vista a las canciones recién agregadas y las anima al entrar. */
+    private void showArrivals(String playlist) {
+        PlaylistManager manager = PlaylistManager.getInstance(this);
+        Set<String> fresh = manager.takeFreshlyAdded(playlist);
+        if (fresh.isEmpty()) return;
+        List<String> paths = new ArrayList<>();
+        Set<String> pending = new java.util.LinkedHashSet<>(fresh);
+        int first = -1;
+        List<Song> shown = songAdapter.getDisplayedList();
+        for (int i = 0; i < shown.size(); i++) {
+            Song song = shown.get(i);
+            String key = manager.canonicalKey(song);
+            if (fresh.contains(song.getPath()) || fresh.contains(key)) {
+                paths.add(song.getPath());
+                pending.remove(song.getPath()); pending.remove(key);
+                if (first < 0) first = i;
+            }
+        }
+        // Las que aún no aparecen en la lista (por ejemplo, mientras se actualiza) se animan la próxima vez.
+        manager.keepFreshlyAdded(playlist, pending);
+        if (paths.isEmpty()) return;
+        final int target = first;
+        // Después de restaurar la posición anterior: la primera canción nueva queda a la vista.
+        recyclerLibrary.post(() -> {
+            LinearLayoutManager layout = (LinearLayoutManager) recyclerLibrary.getLayoutManager();
+            if (layout != null && (target < layout.findFirstCompletelyVisibleItemPosition()
+                    || target > layout.findLastCompletelyVisibleItemPosition()))
+                layout.scrollToPositionWithOffset(target, Math.round(recyclerLibrary.getHeight() * .3f));
+            songAdapter.highlightArrivals(paths);
+        });
     }
 
     private boolean canSwipeCollections() {
@@ -1899,6 +2109,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setOnMenuItemClickListener(item -> {
             deleteSongs(java.util.Collections.singletonList(song), this::refreshMusicLibrary); return true;
         });
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongInfo.show(this, song); return true;
+        });
         popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Seleccionar canciones")).setOnMenuItemClickListener(item -> {
             if (songAdapter != null) songAdapter.activateSelectionMode(song);
             return true;
@@ -1928,7 +2141,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             if (picked.isEmpty()) return;
             songAdapter.clearSelection();
             PlayerManager.getInstance().setPlaybackSource("songs", "");
-            PlayerManager.getInstance().playSong(picked.get(0), picked);
+            PlayerManager.getInstance().playSong(picked.get(0), picked, false);
             startActivity(new Intent(this, NowPlayingActivity.class));
         });
         btnBulkNext.setOnClickListener(v -> {

@@ -125,6 +125,7 @@ public class DownloaderActivity extends AppCompatActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_downloader);
+        cl.arichard.descargador.util.SystemBars.fit(this);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         manager = DownloadManager.get(this);
         history = DownloadHistoryDb.get(this);
@@ -265,7 +266,9 @@ public class DownloaderActivity extends AppCompatActivity {
     // --- Formato, calidad y modo ---
 
     private String quality() {
-        return prefs.getString(mp3 ? "quality_mp3" : "quality_mp4",
+        String key = mp3 ? "quality_mp3" : "quality_mp4";
+        String selected = getSharedPreferences("musicbox_prefs", MODE_PRIVATE).getString(key, null);
+        return selected != null ? selected : prefs.getString(key,
                 mp3 ? DownloadOptions.AUDIO_QUALITY.get(0) : DownloadOptions.VIDEO_QUALITY.get(0));
     }
 
@@ -302,7 +305,7 @@ public class DownloaderActivity extends AppCompatActivity {
             lp.setMargins(0, 0, dp(8), 0);
             chip.setLayoutParams(lp);
             chip.setOnClickListener(v -> {
-                prefs.edit().putString(mp3 ? "quality_mp3" : "quality_mp4", option).apply();
+                getSharedPreferences("musicbox_prefs", MODE_PRIVATE).edit().putString(mp3 ? "quality_mp3" : "quality_mp4", option).apply();
                 renderFormat();
             });
             SafeTap.install(chip);

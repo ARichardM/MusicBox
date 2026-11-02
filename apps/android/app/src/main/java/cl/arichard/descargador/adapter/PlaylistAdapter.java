@@ -26,7 +26,21 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
  @Override public void onBindViewHolder(@NonNull Holder h,int position){
   String name=displayed.get(position);PlaylistManager pm=PlaylistManager.getInstance(context);
   List<cl.arichard.descargador.model.Song> songs=pm.resolveSongs(name,library);
-  h.name.setText(cl.arichard.descargador.util.Tr.name(name));h.collage.setSongs(songs);h.count.setText(songs.size()+(songs.size()==1?cl.arichard.descargador.util.Tr.t(" canción"):cl.arichard.descargador.util.Tr.t(" canciones"))+cl.arichard.descargador.util.Clicks.suffix(cl.arichard.descargador.util.Clicks.of(context,songs)));
+  h.name.setText(cl.arichard.descargador.util.Tr.name(name));h.collage.setSongs(songs);
+  int plays = cl.arichard.descargador.util.Clicks.of(context, songs);
+  String countText = songs.size() + (songs.size()==1?cl.arichard.descargador.util.Tr.t(" canción"):cl.arichard.descargador.util.Tr.t(" canciones"));
+  if (plays > 0) {
+   android.text.SpannableStringBuilder label = new android.text.SpannableStringBuilder(countText).append("  ·  ");
+   int start = label.length(); label.append("▶");
+   android.graphics.drawable.Drawable play = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_play_arrow);
+   if (play != null) {
+    int size = Math.round(12 * context.getResources().getDisplayMetrics().density);
+    play.setBounds(0, 0, size, size); androidx.core.graphics.drawable.DrawableCompat.setTint(play,
+      androidx.core.content.ContextCompat.getColor(context, R.color.text_secondary));
+    label.setSpan(new android.text.style.ImageSpan(play, android.text.style.ImageSpan.ALIGN_CENTER), start, start + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+   }
+   label.append("  ").append(cl.arichard.descargador.util.Clicks.format(plays)); h.count.setText(label);
+  } else h.count.setText(countText);
   String description=pm.getDescription(name);h.description.setText(description);h.description.setVisibility(description.isEmpty()?View.GONE:View.VISIBLE);
   h.itemView.setOnClickListener(v->{if(listener!=null)listener.onPlaylistClick(name);});
   h.more.setOnClickListener(v->{if(listener!=null)listener.onDeleteClick(name,v);});

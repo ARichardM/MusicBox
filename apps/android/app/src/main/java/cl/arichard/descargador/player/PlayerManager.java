@@ -50,6 +50,8 @@ public class PlayerManager {
     private static final long STREAM_CACHE_MS = 10 * 60 * 1000L;
     private static final ExecutorService PLAYBACK_IO = Executors.newCachedThreadPool();
     private static final Map<String, CachedStream> STREAM_CACHE = new HashMap<>();
+    /** Videos cuyo enlace se está resolviendo por adelantado (protegido por STREAM_CACHE). */
+    private static final Set<String> PREFETCHING = new HashSet<>();
     private static PlayerManager instance;
     public static final int REPEAT_OFF = 0, REPEAT_ALL = 1, REPEAT_ONE = 2;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -372,6 +374,8 @@ public class PlayerManager {
     private int listeningPosition;
     private boolean listeningPlaying;
     private boolean listeningStarted;
+    private long listeningQualifiedMillis;
+    private boolean listeningPlayCounted;
 
     private void startListening() {
         listeningSong = currentSong;
@@ -379,9 +383,9 @@ public class PlayerManager {
         listeningClock = android.os.SystemClock.elapsedRealtime();
         listeningPosition = getCurrentPosition();
         listeningPlaying = isPlaying();
-        listeningStarted = listeningPlaying;
-        if (listeningPlaying && context != null)
-            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, 0, true);
+        listeningStarted = false;
+        listeningQualifiedMillis = 0;
+        listeningPlayCounted = false;
     }
 
     private void sampleListening() {
@@ -390,15 +394,19 @@ public class PlayerManager {
         int position = getCurrentPosition();
         long wall = now - listeningClock, delta = (long) position - listeningPosition;
         // Position jumps are seeks, while a stalled position is buffering. Neither is listening time.
-        if (listeningPlaying && wall > 0 && delta > 0 && Math.abs(delta - wall) < 1200)
+        if (listeningPlaying && wall > 0 && delta > 0 && Math.abs(delta - wall) < 1200) {
+            listeningQualifiedMillis += Math.min(delta, wall);
             cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, Math.min(delta, wall), false);
+            if (!listeningPlayCounted && listeningQualifiedMillis >= 30_000) {
+                SearchHistoryManager.getInstance(context).recordPlayedSong(listeningSong);
+                cl.arichard.descargador.data.ClickStats.getInstance(context).recordQualifiedPlay(listeningSong, listeningPlaylist);
+                listeningPlayCounted = true;
+            }
+        }
         listeningClock = now;
         listeningPosition = position;
         listeningPlaying = isPlaying();
-        if (listeningPlaying && !listeningStarted) {
-            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, 0, true);
-            listeningStarted = true;
-        }
+        if (listeningPlaying) listeningStarted = true;
     }
 
     public static synchronized PlayerManager getInstance() {
@@ -592,27 +600,14 @@ public class PlayerManager {
             try { prepareSource(cached.url, cached.headers); } catch (Exception e) { fail(e); }
             return;
         }
-        final long startedAt = System.currentTimeMillis();
         PLAYBACK_IO.execute(() -> {
             try {
-                DescargadorApp app = (DescargadorApp) context;
-                if (!app.awaitReady(20)) throw new IllegalStateException(
-                        app.getInitError() == null ? cl.arichard.descargador.util.Tr.t("El reproductor todavía se está preparando") : app.getInitError());
-                JSONObject info = resolveOnlineInfo(target);
-                String stream = info.getString("url");
-                Map<String, String> headers = new HashMap<>();
-                JSONObject http = info.optJSONObject("http_headers");
-                if (http != null) {
-                    Iterator<String> keys = http.keys();
-                    while (keys.hasNext()) { String key = keys.next(); headers.put(key, http.getString(key)); }
-                }
-                long length = info.optLong("content_length", -1);
-                if (length > 0) headers.put(LENGTH_KEY, String.valueOf(length));
-                synchronized (STREAM_CACHE) { STREAM_CACHE.put(videoId, new CachedStream(stream, headers)); }
-                Log.i("MusicBoxPlayer", "Stream resolved in " + (System.currentTimeMillis() - startedAt) + " ms");
+                CachedStream resolved = awaitPrefetch(videoId);
+                if (resolved == null) resolved = resolveToCache(videoId, target);
+                final CachedStream ready = resolved;
                 handler.post(() -> {
                     if (generation != requestGeneration) return;
-                    try { prepareSource(stream, headers); } catch (Exception e) { fail(e); }
+                    try { prepareSource(ready.url, ready.headers); } catch (Exception e) { fail(e); }
                 });
             } catch (Exception e) {
                 handler.post(() -> { if (generation == requestGeneration) fail(e); });
@@ -620,10 +615,76 @@ public class PlayerManager {
         });
     }
 
+    /** Resuelve el enlace de audio de un video y lo deja en la caché de enlaces. */
+    private CachedStream resolveToCache(String videoId, String target) throws Exception {
+        final long startedAt = System.currentTimeMillis();
+        DescargadorApp app = (DescargadorApp) context;
+        if (!app.awaitReady(20)) throw new IllegalStateException(
+                app.getInitError() == null ? cl.arichard.descargador.util.Tr.t("El reproductor todavía se está preparando") : app.getInitError());
+        JSONObject info = resolveOnlineInfo(target);
+        String stream = info.getString("url");
+        Map<String, String> headers = new HashMap<>();
+        JSONObject http = info.optJSONObject("http_headers");
+        if (http != null) {
+            Iterator<String> keys = http.keys();
+            while (keys.hasNext()) { String key = keys.next(); headers.put(key, http.getString(key)); }
+        }
+        long length = info.optLong("content_length", -1);
+        if (length > 0) headers.put(LENGTH_KEY, String.valueOf(length));
+        CachedStream resolved = new CachedStream(stream, headers);
+        synchronized (STREAM_CACHE) { STREAM_CACHE.put(videoId, resolved); }
+        Log.i("MusicBoxPlayer", "Stream resolved in " + (System.currentTimeMillis() - startedAt) + " ms");
+        return resolved;
+    }
+
+    /** Índice de la canción que sonará después de la actual, o -1 si no hay. */
+    static int followingIndex(int current, int size, int repeatMode) {
+        if (size <= 0 || current < 0 || current >= size || repeatMode == REPEAT_ONE) return -1;
+        int next = current + 1;
+        if (next >= size) next = repeatMode == REPEAT_ALL ? 0 : -1;
+        return next == current ? -1 : next;
+    }
+
+    /** Resuelve por adelantado la siguiente canción online para que empiece sin esperar a YouTube. */
+    void prefetchNextStream() {
+        int next = followingIndex(currentIndex, queue.size(), repeatMode);
+        if (next < 0) return;
+        Song song = queue.get(next);
+        if (song == null || !song.isOnline()) return;
+        prefetchVideo(song.getVideoId());
+    }
+
+    /** Si ya hay una resolución anticipada en curso para este video, espera a que termine y devuelve su enlace. */
+    private CachedStream awaitPrefetch(String videoId) {
+        synchronized (STREAM_CACHE) {
+            long deadline = System.currentTimeMillis() + 30000;
+            while (PREFETCHING.contains(videoId) && System.currentTimeMillis() < deadline) {
+                try { STREAM_CACHE.wait(250); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+            }
+            CachedStream cached = STREAM_CACHE.get(videoId);
+            return cached != null && cached.isFresh() ? cached : null;
+        }
+    }
+
+    /** Resuelve en segundo plano el enlace de un video, p. ej. los primeros resultados de una búsqueda. */
+    public void prefetchVideo(String videoId) {
+        if (videoId == null || videoId.isEmpty()) return;
+        synchronized (STREAM_CACHE) {
+            CachedStream cached = STREAM_CACHE.get(videoId);
+            if ((cached != null && cached.isFresh()) || !PREFETCHING.add(videoId)) return;
+        }
+        PLAYBACK_IO.execute(() -> {
+            try { resolveToCache(videoId, "https://www.youtube.com/watch?v=" + videoId); }
+            catch (Exception e) { Log.w("MusicBoxPlayer", "Precarga sin enlace para " + videoId, e); }
+            finally { synchronized (STREAM_CACHE) { PREFETCHING.remove(videoId); STREAM_CACHE.notifyAll(); } }
+        });
+    }
+
     private JSONObject resolveOnlineInfo(String target) throws Exception {
         String[] clients = {"android_vr,android;player_skip=webpage,configs", "android_vr,android", "web,android", "ios,web"};
         Exception lastError = null;
         for (String client : clients) {
+            final long clientStart = System.currentTimeMillis();
             try {
                 YoutubeDLRequest request = new YoutubeDLRequest(target);
                 request.addOption("--no-playlist");
@@ -637,10 +698,16 @@ public class PlayerManager {
                 request.addOption("--extractor-args", "youtube:player_client=" + client);
                 request.addOption("-f", "bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/best[ext=mp4][protocol^=http]/best[protocol^=http]");
                 String output = YoutubeDL.getInstance().execute(request).getOut();
+                final long extracted = System.currentTimeMillis() - clientStart;
                 JSONObject info = new JSONObject(output);
                 String stream = info.optString("url", "");
                 if (!stream.isEmpty()) {
-                    long length = probeStream(stream, info.optJSONObject("http_headers"));
+                    // El tamaño ya viene en la respuesta de yt-dlp o en el propio enlace: así se evita una petición
+                    // de comprobación (unos 2,7 s en el celular). Si el enlace está roto, el reproductor reintenta.
+                    long length = knownLength(info, stream);
+                    if (length <= 0) length = probeStream(stream, info.optJSONObject("http_headers"));
+                    Log.i("MusicBoxTiming", "client=" + client + " yt-dlp=" + extracted + "ms probe="
+                            + (System.currentTimeMillis() - clientStart - extracted) + "ms length=" + length);
                     if (length >= 0) {
                         if (length > 0) info.put("content_length", length);
                         return info;
@@ -648,10 +715,24 @@ public class PlayerManager {
                 }
             } catch (Exception error) {
                 lastError = error;
+                Log.w("MusicBoxTiming", "client=" + client + " FAILED after " + (System.currentTimeMillis() - clientStart) + "ms");
                 Log.w("MusicBoxPlayer", "Resolver failed with client " + client, error);
             }
         }
         throw lastError == null ? new IllegalStateException("YouTube no devolvió un enlace reproducible") : lastError;
+    }
+
+    /** Tamaño del archivo según yt-dlp o el parámetro clen del enlace; 0 si no se conoce. */
+    static long knownLength(JSONObject info, String stream) {
+        long size = info.optLong("filesize", 0);
+        if (size <= 0) size = info.optLong("filesize_approx", 0);
+        if (size <= 0) {
+            try {
+                String clen = Uri.parse(stream).getQueryParameter("clen");
+                if (clen != null) size = Long.parseLong(clen);
+            } catch (Exception ignored) {}
+        }
+        return Math.max(0, size);
     }
 
     /** Returns the file size (0 when the server does not say) or -1 when the stream is not reachable. */
@@ -712,10 +793,10 @@ public class PlayerManager {
                     playWhenReady = false;
                 }
             }
-            SearchHistoryManager.getInstance(context).recordPlayedSong(currentSong);
             startListening();
             notifyState();
             handler.post(progressUpdater);
+            prefetchNextStream();
             Log.i("MusicBoxPlayer", "Prepared: duration=" + mp.getDuration() + " video=" + mp.getVideoWidth() + "x" + mp.getVideoHeight());
         });
         player.setOnErrorListener((mp, what, extra) -> {
@@ -727,7 +808,6 @@ public class PlayerManager {
             if (mp != mediaPlayer || !prepared) return;
             if (repeatMode == REPEAT_ONE) {
                 mp.seekTo(0); mp.start();
-                SearchHistoryManager.getInstance(context).recordPlayedSong(currentSong);
                 startListening();
             }
             else playNext();
@@ -1064,6 +1144,7 @@ public class PlayerManager {
         if (!more.isEmpty()) {
             queue.addAll(more); originalQueue.addAll(more);
             autoplayError = "";
+            if (prepared) prefetchNextStream();
         } else if (isAutoplay()) {
             autoplayError = Tr.t("No se pudieron agregar canciones similares. Toca para reintentar.");
             if (autoplayAttempts < 3) handler.postDelayed(() -> {

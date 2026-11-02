@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from app_paths import CODE_DIR, DATA_ROOT, RESOURCE_ROOT, worker_command
 
 APP_DIR = DATA_ROOT
-APP_VERSION = "2.3.7"
+APP_VERSION = "2.3.8"
 AUDIO_QUALITY = ("192 kbps", "128 kbps", "256 kbps", "320 kbps")
 VIDEO_QUALITY = ("1080p", "720p", "480p", "360p", "Mejor disponible")
 
@@ -183,7 +183,7 @@ def run_worker(config: dict) -> int:
             return
         last_progress = now
         info = data.get("info_dict") or {}
-        emit("progress", status=data["status"], title=info.get("title", "Descargando…"),
+        emit("progress", status=data["status"], title=info.get("title", "Descargando…"), id=info.get("id", ""),
              downloaded=data.get("downloaded_bytes", 0),
              total=data.get("total_bytes") or data.get("total_bytes_estimate"),
              speed=data.get("speed"), eta=data.get("eta"),

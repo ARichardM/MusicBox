@@ -1,5 +1,30 @@
 # Historial de versiones
 
+## 2.3.8 — 1 de noviembre de 2026
+
+### Windows y Android
+
+- La reproducción automática ya no se activa dentro de una playlist: una canción sin descargar sigue con la siguiente de la playlist y no con sugeridas. La cola de «Para ti» se completa aunque la canción de partida sea un video.
+- La música en streaming empieza antes: la app prepara la canción actual y la siguiente en segundo plano, resuelve los primeros resultados de una búsqueda mientras se miran y ya no comprueba el enlace antes de reproducir. La actualización diaria de yt-dlp ya no retrasa la primera canción.
+- El anillo de descarga muestra el avance real y es compacto: ocupa el lugar de la marca de descargada y se cruza con ella al terminar, sin mover el texto.
+- La búsqueda usa el catálogo de YouTube Music con las pestañas Todos, Canciones, Videos y Artistas, y carga más resultados con un spinner al final y una entrada fluida. Ya no aparecen gameplays al buscar un artista.
+- «Información de la canción» en el menú de tres puntos: datos de la app (reproducciones, favorita, playlists, estado) y del archivo u origen (formato, tamaño, calidad, enlace de YouTube).
+- El botón «Continuar con Google» usa el logo de Google.
+- Las canciones recién agregadas a una playlist se destacan con una animación al abrirla.
+
+### Windows
+
+- Los avisos se cierran solos: 4,5 s los informativos y 7 s los errores; pasar el puntero los pausa, con un tope de 20 s.
+- El icono anclado de la barra de tareas abre la ventana en el mismo botón, sin un botón aparte sin icono.
+
+### Android
+
+- Compatibilidad con Android 15 y posteriores: todas las pantallas dejan espacio para las barras del sistema, de modo que botones como el corazón y el reproductor responden en dispositivos Xiaomi y similares.
+- La rotación de pantalla vuelve en tablets; los teléfonos se quedan en vertical.
+- El splash tiene la misma onda animada y el mismo brillo que el de escritorio.
+- La barra de progreso del reproductor mini queda dentro de la tarjeta; el icono de reproducir ya no desaparece al terminar de cargar.
+- Una reproducción se cuenta tras 30 segundos de escucha real; el menú de playlists usa el icono de reproducción; Ajustes muestra la foto de la cuenta y permite elegir la calidad de descarga (MP3 128/192/320 kbps, MP4 480p/720p/1080p).
+
 ## 2.3.7 — 29 de octubre de 2026
 
 ### Windows

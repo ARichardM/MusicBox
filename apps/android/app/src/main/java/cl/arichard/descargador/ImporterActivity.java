@@ -104,6 +104,7 @@ public class ImporterActivity extends AppCompatActivity {
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         setContentView(R.layout.activity_importer);
+        cl.arichard.descargador.util.SystemBars.fit(this);
         String tree = getIntent().getStringExtra(EXTRA_TREE);
         folderMode = tree != null;
         if (folderMode) treeUri = Uri.parse(tree);

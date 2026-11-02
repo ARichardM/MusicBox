@@ -1,15 +1,14 @@
 import QtQuick
 
-// Same blue download mark and quiet backing used by Android.
+// Marca de disponibilidad local, sin placa ni borde visible.
 Rectangle {
     id: root
     property bool fromFolder: false
     width: 24
     height: 24
     radius: 7
-    color: "#E51B2633"
-    border.width: 0.75
-    border.color: fromFolder ? "#667B8494" : "#9946DDFB"
+    color: "#14000000"
+    border.width: 0
     scale: visible ? 1 : 0.8
     opacity: visible ? 1 : 0
     Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }

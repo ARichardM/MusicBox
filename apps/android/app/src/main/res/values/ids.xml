@@ -1,4 +1,5 @@
 <resources>
     <item name="protectedAction" type="id"/>
     <item name="artistAvatarKey" type="id"/>
+    <item name="searchLoadingMoreRing" type="id"/>
 </resources>

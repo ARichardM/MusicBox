@@ -10,20 +10,27 @@ import cl.arichard.descargador.R;
 
 /** In-app notice styled to belong to MusicBox instead of using system Toasts. */
 public final class AppNotice {
+    /** Duraciones en milisegundos: todos los avisos se cierran solos. */
+    static final int INFO_MS = 4000, ERROR_MS = 6000, ACTION_MS = 8000;
+
     private AppNotice() {}
 
     /** Aviso informativo con el mismo estilo; se ve solo dentro de la app. */
     public static void info(View anchor, String message) {
-        error(anchor, message, null, null);
+        show(anchor, message, null, null, INFO_MS);
     }
 
     public static void error(View anchor, String message) {
-        error(anchor, message, null, null);
+        show(anchor, message, null, null, ERROR_MS);
     }
 
     public static void error(View anchor, String message, String action, Runnable callback) {
+        show(anchor, message, action, callback, action != null && callback != null ? ACTION_MS : ERROR_MS);
+    }
+
+    private static void show(View anchor, String message, String action, Runnable callback, int duration) {
         if (anchor == null) return;
-        Snackbar bar = Snackbar.make(anchor, message, Snackbar.LENGTH_LONG);
+        Snackbar bar = Snackbar.make(anchor, message, duration);
         bar.setAnchorView(anchor);
         View view = bar.getView();
         float density = anchor.getResources().getDisplayMetrics().density;

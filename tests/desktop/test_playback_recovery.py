@@ -32,6 +32,7 @@ class PlaybackRecoveryTests(unittest.TestCase):
         self.bridge._maybe_autoplay = Mock()
         self.bridge._listening_timer.stop()
         self.bridge._device_timer.stop()
+        self.bridge._prefetch_timer.timeout.disconnect()  # Sin precarga real: estas pruebas no usan la red.
         self.bridge._online_queue = [track("seed"), track("next"), track("last")]
         self.bridge._online_index = 0
         self.bridge._current = dict(self.bridge._online_queue[0], _stream_generation=0)
@@ -121,6 +122,21 @@ class PlaybackRecoveryTests(unittest.TestCase):
         QTest.qWait(350)
         self.assertEqual(self.bridge.currentTrack["id"], "chosen")
         self.assertEqual(self.resolve.call_count, 1)
+
+    def test_streamed_song_in_a_playlist_continues_the_playlist_without_autoplay(self):
+        playlist = [dict(track("p1"), web=True), dict(track("p2"), web=True)]
+        self.bridge._library = list(playlist)
+        self.bridge.playLibraryTrack(playlist[0])
+        self.wait(lambda: self.player.play.called)
+        self.assertEqual(self.bridge.currentTrack["id"], "p1")
+        self.assertEqual(self.bridge._online_queue, [])
+        self.bridge._player_error(QMediaPlayer.FormatError, "Demuxing failed")  # Un corte tampoco activa el autoplay.
+        self.wait(lambda: self.resolve.call_count == 2 and not self.bridge._stream_resolving)
+        self.player.mediaStatus.return_value = QMediaPlayer.EndOfMedia
+        self.bridge._media_status()
+        self.wait(lambda: self.bridge.currentTrack.get("id") == "p2")
+        self.bridge._maybe_autoplay.assert_not_called()
+        self.assertEqual([row["id"] for row in self.bridge.queue], ["p1", "p2"])
 
     def test_cache_is_published_only_after_success_and_never_reuses_corrupt_file(self):
         folder = Path(self.temporary.name) / "cache"

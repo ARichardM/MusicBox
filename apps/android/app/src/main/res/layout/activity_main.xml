@@ -58,6 +58,17 @@
                         android:layout_width="wrap_content" android:layout_height="wrap_content"
                         android:textColor="@color/text_muted" android:textSize="12sp"/>
                 </LinearLayout>
+                <LinearLayout android:id="@+id/searchFilterRow" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="9dp" android:orientation="horizontal" android:visibility="gone">
+                    <TextView android:id="@+id/chipSearchAll" android:layout_width="wrap_content" android:layout_height="34dp" android:gravity="center"
+                        android:paddingStart="16dp" android:paddingEnd="16dp" android:text="@string/filtro_todos" android:textSize="13sp" android:background="@drawable/bg_chip_inactive" android:textColor="@color/text_primary"/>
+                    <TextView android:id="@+id/chipSearchSongs" android:layout_width="wrap_content" android:layout_height="34dp" android:layout_marginStart="8dp" android:gravity="center"
+                        android:paddingStart="16dp" android:paddingEnd="16dp" android:text="@string/canciones" android:textSize="13sp" android:background="@drawable/bg_chip_active" android:textColor="@color/chip_active_text"/>
+                    <TextView android:id="@+id/chipSearchVideos" android:layout_width="wrap_content" android:layout_height="34dp" android:layout_marginStart="8dp" android:gravity="center"
+                        android:paddingStart="16dp" android:paddingEnd="16dp" android:text="@string/videos" android:textSize="13sp" android:background="@drawable/bg_chip_inactive" android:textColor="@color/text_primary"/>
+                    <TextView android:id="@+id/chipSearchArtists" android:layout_width="wrap_content" android:layout_height="34dp" android:layout_marginStart="8dp" android:gravity="center"
+                        android:paddingStart="16dp" android:paddingEnd="16dp" android:text="@string/artistas" android:textSize="13sp" android:background="@drawable/bg_chip_inactive" android:textColor="@color/text_primary"/>
+                </LinearLayout>
             </LinearLayout>
 
             <!-- Dynamic content area -->
@@ -353,6 +364,11 @@
                     android:clipToPadding="false" android:paddingBottom="130dp"
                     android:scrollbars="none" android:visibility="gone"/>
 
+                <androidx.core.widget.NestedScrollView android:id="@+id/scrollSearchArtists" android:layout_width="match_parent" android:layout_height="match_parent"
+                    android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingBottom="130dp" android:visibility="gone">
+                    <LinearLayout android:id="@+id/layoutSearchArtists" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+                </androidx.core.widget.NestedScrollView>
+
                 <!-- Download progress card -->
                 <LinearLayout android:id="@+id/cardProgress"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -639,10 +655,13 @@
                     android:src="@drawable/ic_skip_next" app:tint="@color/text_secondary"
                     android:background="?attr/selectableItemBackgroundBorderless"/>
             </LinearLayout>
+            <!-- Dentro de la tarjeta, lejos de sus esquinas redondeadas, para que no parezca colgar por fuera. -->
             <ProgressBar android:id="@+id/miniProgress"
                 style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent" android:layout_height="2dp"
-                android:layout_marginStart="12dp" android:layout_marginEnd="12dp"
+                android:layout_width="match_parent" android:layout_height="3dp"
+                android:layout_marginStart="18dp" android:layout_marginEnd="18dp"
+                android:layout_marginBottom="7dp"
+                android:progressDrawable="@drawable/mini_progress"
                 android:progress="0" android:max="100"/>
         </cl.arichard.descargador.util.SwipeActionsLayout>
     </LinearLayout>

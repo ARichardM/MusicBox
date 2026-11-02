@@ -39,6 +39,7 @@ public class LoginActivity extends AppCompatActivity {
         if (MainActivity.isVerificationPackage(getPackageName())) { openApp(); return; }
         if (FirebaseAuth.getInstance().getCurrentUser() != null) { openApp(); return; }
         setContentView(R.layout.activity_login);
+        cl.arichard.descargador.util.SystemBars.fit(this);
         login = findViewById(R.id.btnGoogleLogin);
         progress = findViewById(R.id.loginProgress);
         error = findViewById(R.id.txtLoginError);

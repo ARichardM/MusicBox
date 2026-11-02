@@ -65,6 +65,7 @@ public class ArtistActivity extends AppCompatActivity {
         playerLayout.setMargins(dp(16), dp(8), dp(16), dp(16));
         root.addView(miniPlayer, playerLayout);
         setContentView(root);
+        cl.arichard.descargador.util.SystemBars.fit(this);
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() { back(); }
         });

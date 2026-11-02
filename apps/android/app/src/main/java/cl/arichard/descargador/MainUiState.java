@@ -17,6 +17,9 @@ public class MainUiState extends ViewModel {
     volatile boolean downloading;
     int discoveryScroll, resultPosition, downloadProgress, searchGeneration, completedDownloads;
     String searchQuery = "", searchStatus = "", downloadStatus = "", downloadEta = "";
+    String searchFilter = "songs";
+    boolean loadingMore, hasMoreResults = true;
+    String searchContinuation = "";
     List<SearchResult> results = new ArrayList<>();
     /** Recomendaciones "Para ti": sobreviven a un giro de pantalla. */
     RecommendationEngine.Result forYou;

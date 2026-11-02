@@ -272,9 +272,63 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         super.onBindViewHolder(holder, position, payloads);
     }
 
+    /** Rutas de canciones recién agregadas que entran con realce la próxima vez que se dibujan. */
+    private final java.util.Set<String> arriving = new java.util.LinkedHashSet<>();
+
+    /** Marca canciones recién agregadas a la playlist para que aparezcan con su animación de llegada. */
+    public void highlightArrivals(java.util.Collection<String> paths) {
+        arriving.clear();
+        if (paths != null) arriving.addAll(paths);
+        for (int i = 0; i < displayedList.size(); i++)
+            if (arriving.contains(displayedList.get(i).getPath())) notifyItemChanged(i);
+    }
+
+    /** Entra deslizándose y brilla dos veces en el azul de MusicBox; ocurre una sola vez por canción. */
+    private void playArrival(View row, int order) {
+        float density = row.getResources().getDisplayMetrics().density;
+        android.graphics.drawable.GradientDrawable glow = new android.graphics.drawable.GradientDrawable();
+        glow.setColor(androidx.core.content.ContextCompat.getColor(row.getContext(), R.color.accent));
+        glow.setCornerRadius(16 * density);
+        glow.setAlpha(0);
+        row.setForeground(glow);
+        row.setAlpha(0f);
+        row.setTranslationX(42 * density);
+        long delay = Math.min(order, 6) * 70L;
+        row.animate().cancel();
+        row.animate().alpha(1f).translationX(0f).setStartDelay(delay).setDuration(420)
+                .setInterpolator(new android.view.animation.OvershootInterpolator(1.1f)).start();
+        android.animation.ValueAnimator pulse = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        pulse.setStartDelay(delay + 220);
+        pulse.setDuration(1600);
+        pulse.addUpdateListener(animation -> {
+            float t = (float) animation.getAnimatedValue();
+            // Dos destellos suaves que se apagan: se nota la canción nueva sin molestar.
+            double wave = Math.abs(Math.sin(t * Math.PI * 2)) * (1f - t);
+            glow.setAlpha((int) Math.round(70 * wave));
+        });
+        pulse.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) { row.setForeground(null); }
+        });
+        pulse.start();
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull SongViewHolder holder) {
+        holder.itemView.animate().cancel();
+        holder.itemView.setAlpha(1f);
+        holder.itemView.setTranslationX(0f);
+        holder.itemView.setForeground(null);
+        super.onViewRecycled(holder);
+    }
+
     @Override
     public void onBindViewHolder(@NonNull SongViewHolder holder, int position) {
         Song song = displayedList.get(position);
+        if (!arriving.isEmpty() && arriving.remove(song.getPath())) {
+            int order = 0;
+            for (int i = 0; i < position; i++) if (arriving.contains(displayedList.get(i).getPath())) order++;
+            playArrival(holder.itemView, order);
+        }
         holder.txtTitle.setText(song.getTitle());
         holder.txtSubtitle.setText(song.getArtist() + " • " + song.getFormattedDuration());
         int clicks = cl.arichard.descargador.util.Clicks.of(holder.itemView.getContext(), song);
@@ -298,6 +352,8 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             // Files MusicBox downloaded get the download mark; files that come from a music folder get a folder mark.
             boolean fromFolder = isLocalFile && !savedOnline && !isMusicBoxFile(song.getPath());
             holder.imgDownloadedBadge.setImageResource(fromFolder ? R.drawable.ic_folder_badge : R.drawable.ic_downloaded_badge);
+            holder.imgDownloadedBadge.setImageTintList(android.content.res.ColorStateList.valueOf(
+                    ContextCompat.getColor(context, fromFolder ? R.color.text_secondary : R.color.accent)));
             holder.imgDownloadedBadge.setContentDescription(Tr.t(fromFolder ? "De una carpeta" : "Descargada en el dispositivo"));
             holder.imgDownloadedBadge.setVisibility((isLocalFile || savedOnline) && !downloading && !selectionMode
                     ? View.VISIBLE : View.GONE);
@@ -305,16 +361,13 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             holder.imgDownloadedBadge.setScaleY(1f);
             holder.imgDownloadedBadge.setRotation(0f);
             holder.imgDownloadedBadge.setAlpha(1f);
-            if (savedOnline && justCompletedVideoIds.remove(videoId)) {
-                holder.imgDownloadedBadge.setScaleX(0f);
-                holder.imgDownloadedBadge.setScaleY(0f);
-                holder.imgDownloadedBadge.setRotation(-35f);
-                holder.imgDownloadedBadge.setAlpha(0f);
-                holder.imgDownloadedBadge.animate().scaleX(1f).scaleY(1f).rotation(0f).alpha(1f)
-                        .setDuration(520)
-                        .setInterpolator(new android.view.animation.OvershootInterpolator(2.4f)).start();
-            }
+            if (savedOnline && justCompletedVideoIds.remove(videoId))
+                cl.arichard.descargador.util.DownloadMark.reveal(holder.imgDownloadedBadge);
         }
+        // El lugar de la marca solo ocupa espacio si hay algo que mostrar en él.
+        if (holder.downloadMarkSlot != null) holder.downloadMarkSlot.setVisibility(
+                (downloading && !selectionMode) || holder.imgDownloadedBadge.getVisibility() == View.VISIBLE
+                        ? View.VISIBLE : View.GONE);
 
         bindSelection(holder, song, false);
 
@@ -407,6 +460,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         TextView txtTitle, txtSubtitle, txtClicks;
         ImageView imgCover, imgIndicator, btnFavorite, btnMenu, imgDownloadedBadge;
         cl.arichard.descargador.util.LoadingRingView progressDownload;
+        View downloadMarkSlot;
         View viewPlayingOverlay;
 
         public SongViewHolder(@NonNull View itemView) {
@@ -421,6 +475,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             btnMenu = itemView.findViewById(R.id.btnSongMenu);
             imgDownloadedBadge = itemView.findViewById(R.id.imgDownloadedBadge);
             progressDownload = itemView.findViewById(R.id.progressSongDownload);
+            downloadMarkSlot = itemView.findViewById(R.id.downloadMarkSlot);
         }
     }
 }

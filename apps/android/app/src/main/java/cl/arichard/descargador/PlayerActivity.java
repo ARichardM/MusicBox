@@ -74,6 +74,7 @@ public class PlayerActivity extends AppCompatActivity {
         super.onCreate(state);
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         setContentView(R.layout.activity_player);
+        cl.arichard.descargador.util.SystemBars.fit(this);
 
         ImageView btnClose = findViewById(R.id.btnClosePlayer);
         tabSelectorMp3 = findViewById(R.id.tabSelectorMp3);
@@ -226,8 +227,9 @@ public class PlayerActivity extends AppCompatActivity {
             downloadUrl = "https://www.youtube.com/watch?v=" + videoId;
         if (downloadUrl == null || downloadUrl.isEmpty()) return;
         cl.arichard.descargador.download.DownloadManager manager = cl.arichard.descargador.download.DownloadManager.get(this);
+        String quality = getSharedPreferences("musicbox_prefs", MODE_PRIVATE).getString(isMp3Mode ? "quality_mp3" : "quality_mp4", isMp3Mode ? "192 kbps" : "1080p");
         manager.enqueue(java.util.Collections.singletonList(downloadUrl),
-                new cl.arichard.descargador.download.DownloadOptions(isMp3Mode, isMp3Mode ? "192 kbps" : "1080p",
+                new cl.arichard.descargador.download.DownloadOptions(isMp3Mode, quality,
                         false, "", cl.arichard.descargador.download.DownloadManager.cookiesPath(this),
                         StorageUtil.getDownloadDir(this).getAbsolutePath()));
         renderDownload();

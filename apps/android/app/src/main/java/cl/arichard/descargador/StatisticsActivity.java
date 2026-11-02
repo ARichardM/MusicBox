@@ -92,6 +92,7 @@ public final class StatisticsActivity extends AppCompatActivity {
         content.setPadding(dp(22), dp(18), dp(22), dp(38));
         scroll.addView(content);
         setContentView(scroll);
+        cl.arichard.descargador.util.SystemBars.fit(this);
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
         ImageButton back = new ImageButton(this);

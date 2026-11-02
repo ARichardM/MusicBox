@@ -149,7 +149,7 @@
                 android:layout_height="match_parent"
                 android:layout_gravity="center"
                 app:cardCornerRadius="26dp"
-                app:cardElevation="12dp"
+                app:cardElevation="4dp"
                 app:cardBackgroundColor="#1C1C1E">
 
                 <ImageView android:contentDescription="@null" android:importantForAccessibility="no"
@@ -255,7 +255,17 @@
     <SeekBar
         android:id="@+id/seekBar"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="32dp"
+        android:minHeight="3dp"
+        android:maxHeight="3dp"
+        android:paddingStart="0dp"
+        android:paddingEnd="0dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="14dp"
+        android:progressDrawable="@drawable/player_seek_track"
+        android:thumb="@drawable/player_seek_thumb"
+        android:thumbOffset="0dp"
+        android:splitTrack="false"
         android:progress="0"
         android:max="100"/>
 

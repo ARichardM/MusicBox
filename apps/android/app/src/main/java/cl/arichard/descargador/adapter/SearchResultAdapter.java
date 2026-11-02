@@ -4,7 +4,6 @@ import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
@@ -21,7 +20,7 @@ import java.util.List;
 public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapter.ViewHolder> {
 
     public interface OnResultClickListener {
-        void onAddClick(SearchResult result, View anchor);
+        void onMoreClick(SearchResult result, View anchor);
         void onPlayClick(SearchResult result);
         void onFavoriteChanged(SearchResult result, boolean favorite);
         void onItemClick(SearchResult result);
@@ -36,6 +35,11 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     private final Set<String> downloadingIds = new HashSet<>();
     private final java.util.Map<String, Float> downloadProgress = new java.util.HashMap<>();
     private final Set<String> justCompletedIds = new HashSet<>();
+    private static final int TYPE_RESULT = 0, TYPE_LOADING_MORE = 1;
+    /** Spinner al final de la lista mientras llega la página siguiente. */
+    private boolean loadingMore;
+    /** Desde esta posición, las filas recién agregadas entran con una animación; -1 si no hay ninguna. */
+    private int appearFrom = -1;
 
     public SearchResultAdapter(Context context, OnResultClickListener listener) {
         this.context = context;
@@ -100,23 +104,67 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     }
 
     public void setResults(List<SearchResult> newResults) {
-        results.clear();
-        if (newResults != null) {
-            results.addAll(newResults);
+        List<SearchResult> next = newResults == null ? new ArrayList<>() : new ArrayList<>(newResults);
+        int before = results.size();
+        if (before > 0 && next.size() > before && startsWithCurrent(next)) {
+            // Página siguiente: solo se insertan las filas nuevas, sin redibujar ni saltar lo que ya se ve.
+            results.addAll(next.subList(before, next.size()));
+            appearFrom = before;
+            notifyItemRangeInserted(before, next.size() - before);
+            return;
         }
+        results.clear();
+        results.addAll(next);
+        appearFrom = -1;
         notifyDataSetChanged();
+    }
+
+    private boolean startsWithCurrent(List<SearchResult> next) {
+        for (int i = 0; i < results.size(); i++)
+            if (!results.get(i).getId().equals(next.get(i).getId())) return false;
+        return true;
+    }
+
+    /** Muestra u oculta el spinner del final mientras se carga la página siguiente. */
+    public void setLoadingMore(boolean loading) {
+        if (loading == loadingMore) return;
+        loadingMore = loading;
+        if (loading) notifyItemInserted(results.size());
+        else notifyItemRemoved(results.size());
+    }
+
+    public boolean isLoadingMore() { return loadingMore; }
+
+    @Override
+    public int getItemViewType(int position) {
+        return position >= results.size() ? TYPE_LOADING_MORE : TYPE_RESULT;
     }
     public List<SearchResult> getResults() { return new ArrayList<>(results); }
 
     @NonNull
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == TYPE_LOADING_MORE) {
+            float density = context.getResources().getDisplayMetrics().density;
+            android.widget.FrameLayout footer = new android.widget.FrameLayout(context);
+            footer.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(72 * density)));
+            cl.arichard.descargador.util.LoadingRingView ring = new cl.arichard.descargador.util.LoadingRingView(context);
+            ring.setId(R.id.searchLoadingMoreRing);
+            int size = Math.round(30 * density);
+            footer.addView(ring, new android.widget.FrameLayout.LayoutParams(size, size, android.view.Gravity.CENTER));
+            return new ViewHolder(footer);
+        }
         View view = LayoutInflater.from(context).inflate(R.layout.item_search_result, parent, false);
         return new ViewHolder(view);
     }
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
+        if (getItemViewType(position) == TYPE_LOADING_MORE) {
+            cl.arichard.descargador.util.LoadingRingView ring = holder.itemView.findViewById(R.id.searchLoadingMoreRing);
+            if (ring != null) ring.setActive(true);
+            return;
+        }
         if (payloads.contains(PROGRESS)) {
             Float fraction = downloadProgress.get(results.get(position).getId());
             holder.progressDownload.setProgress(fraction == null ? -1f : fraction);
@@ -127,7 +175,9 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        if (getItemViewType(position) == TYPE_LOADING_MORE) return;
         SearchResult item = results.get(position);
+        animateArrival(holder.itemView, position);
         holder.txtTitle.setText(item.getTitle());
         holder.txtChannel.setText(item.getChannel() + " • " + item.getFormattedDuration());
 
@@ -148,15 +198,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             if (isDownloaded) {
                 holder.imgDownloaded.setVisibility(View.VISIBLE);
                 if (justCompletedIds.remove(item.getId())) {
-                    holder.imgDownloaded.setScaleX(0f);
-                    holder.imgDownloaded.setScaleY(0f);
-                    holder.imgDownloaded.setAlpha(0f);
-                    holder.imgDownloaded.setRotation(-35f);
-                    holder.imgDownloaded.animate()
-                            .scaleX(1f).scaleY(1f).alpha(1f).rotation(0f)
-                            .setDuration(520)
-                            .setInterpolator(new android.view.animation.OvershootInterpolator(2.4f))
-                            .start();
+                    cl.arichard.descargador.util.DownloadMark.reveal(holder.imgDownloaded);
                 } else {
                     holder.imgDownloaded.setScaleX(1f);
                     holder.imgDownloaded.setScaleY(1f);
@@ -169,14 +211,14 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         boolean favorite = PlaylistManager.getInstance(context).isOnlineTrackInPlaylist("Favoritos", item.getId());
         holder.btnFavorite.setImageResource(favorite ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
 
-        holder.btnAdd.setOnClickListener(v -> {
-            if (listener != null) listener.onAddClick(item, holder.btnAdd);
+        holder.btnMore.setOnClickListener(v -> {
+            if (listener != null) listener.onMoreClick(item, holder.btnMore);
         });
 
         holder.btnPlay.setOnClickListener(v -> { if (listener != null) listener.onPlayClick(item); });
         cl.arichard.descargador.util.SafeTap.install(holder.btnPlay);
         cl.arichard.descargador.util.SafeTap.install(holder.btnFavorite);
-        cl.arichard.descargador.util.SafeTap.install(holder.btnAdd);
+        cl.arichard.descargador.util.SafeTap.install(holder.btnMore);
         cl.arichard.descargador.util.SafeTap.installRowTap(holder.itemView);
         holder.btnFavorite.setOnClickListener(v -> {
             PlaylistManager pm = PlaylistManager.getInstance(context);
@@ -193,16 +235,40 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         });
     }
 
+    /** Las filas de una página nueva suben y aparecen en cascada, sin cortes. */
+    private void animateArrival(View row, int position) {
+        row.animate().cancel();
+        if (appearFrom < 0 || position < appearFrom) {
+            row.setAlpha(1f);
+            row.setTranslationY(0f);
+            return;
+        }
+        float density = context.getResources().getDisplayMetrics().density;
+        row.setAlpha(0f);
+        row.setTranslationY(18 * density);
+        row.animate().alpha(1f).translationY(0f).setDuration(280)
+                .setStartDelay(Math.min(6, position - appearFrom) * 45L)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+    }
+
+    @Override
+    public void onViewRecycled(@NonNull ViewHolder holder) {
+        holder.itemView.animate().cancel();
+        holder.itemView.setAlpha(1f);
+        holder.itemView.setTranslationY(0f);
+        super.onViewRecycled(holder);
+    }
+
     @Override
     public int getItemCount() {
-        return results.size();
+        return results.size() + (loadingMore ? 1 : 0);
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView imgThumbnail;
         TextView txtTitle;
         TextView txtChannel;
-        FrameLayout btnAdd;
+        View btnMore;
         ImageView btnPlay, btnFavorite, imgDownloaded;
         cl.arichard.descargador.util.LoadingRingView progressDownload;
 
@@ -211,7 +277,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             imgThumbnail = itemView.findViewById(R.id.imgThumbnail);
             txtTitle = itemView.findViewById(R.id.txtResultTitle);
             txtChannel = itemView.findViewById(R.id.txtResultChannel);
-            btnAdd = itemView.findViewById(R.id.btnAddResult);
+            btnMore = itemView.findViewById(R.id.btnMoreResult);
             btnPlay = itemView.findViewById(R.id.btnPlayResult);
             btnFavorite = itemView.findViewById(R.id.btnFavoriteResult);
             imgDownloaded = itemView.findViewById(R.id.imgDownloadedResult);

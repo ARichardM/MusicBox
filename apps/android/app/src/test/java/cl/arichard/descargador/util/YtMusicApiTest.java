@@ -117,7 +117,7 @@ public class YtMusicApiTest {
         responses.put("next", new JSONObject().put("contents", new JSONArray().put(panel("Thunder", "MUSIC_VIDEO_TYPE_OMV"))));
         responses.put("search", audioSearch("Thunder", "Otro artista"));
         assertTrue(YtMusicApi.related("Thunder", 25).isEmpty());
-        assertEquals(2, calls.size());
+        assertEquals("Una radio y como máximo dos búsquedas acotadas", 3, calls.size());
     }
 
     @Test public void emptyRadioWithoutSeedMetadataDoesNotSearchRandomMusic() throws Exception {
@@ -189,5 +189,15 @@ public class YtMusicApiTest {
     @Test public void photosAreRequestedSquare() {
         assertEquals("https://yt3.ggpht.com/abc=w544-h544-l90-rj", YtMusicApi.square("https://yt3.ggpht.com/abc=w1200-h500-l90-rj", 544));
         assertEquals("", YtMusicApi.square(null, 544));
+    }
+
+    @Test public void aLongVideoTitleFindsTheSongItNamesButNotACover() {
+        String video = "Cyberpunk: Edgerunners | “I Really Want to Stay At Your House” by Rosa Walton | Music Video";
+        SearchResult song = new SearchResult("audio", "I Really Want to Stay at Your House", "Rosa Walton y Hallie Coggins", 240, "", "");
+        SearchResult cover = new SearchResult("cover", "I Really Want to Stay at Your House", "Samuel Kim y Lorien", 240, "", "");
+        assertTrue(YtMusicApi.namedIn(video, "Netflix", song));
+        assertFalse(YtMusicApi.namedIn(video, "Netflix", cover));
+        assertEquals(java.util.Arrays.asList("taylor swift", "ed sheeran", "future"),
+                YtMusicApi.artistNames("Taylor Swift feat. Ed Sheeran & Future"));
     }
 }

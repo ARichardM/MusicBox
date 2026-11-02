@@ -20,6 +20,23 @@ public final class YoutubeApi {
 
     private YoutubeApi() {}
 
+    public static final class SearchPage {
+        public final List<SearchResult> videos = new ArrayList<>();
+        public String continuation = "";
+    }
+
+    private static void collect(Object node, String key, List<JSONObject> out) {
+        if (node instanceof JSONObject) {
+            JSONObject object = (JSONObject) node;
+            if (object.has(key) && object.opt(key) instanceof JSONObject) out.add(object.optJSONObject(key));
+            JSONArray names = object.names();
+            for (int i = 0; names != null && i < names.length(); i++) collect(object.opt(names.optString(i)), key, out);
+        } else if (node instanceof JSONArray) {
+            JSONArray array = (JSONArray) node;
+            for (int i = 0; i < array.length(); i++) collect(array.opt(i), key, out);
+        }
+    }
+
     private static JSONObject post(String endpoint, JSONObject fields) throws Exception {
         JSONObject client = new JSONObject().put("clientName", "WEB").put("clientVersion", "2.20250101.00.00")
                 .put("hl", "es").put("gl", "CL");
@@ -65,26 +82,31 @@ public final class YoutubeApi {
 
     /** Búsqueda de videos (solo videos), hasta {@code limit} resultados. */
     public static List<SearchResult> search(String query, int limit) throws Exception {
-        JSONObject response = post("search", new JSONObject().put("query", query).put("params", "EgIQAQ%3D%3D"));
-        JSONArray sections = response.getJSONObject("contents").getJSONObject("twoColumnSearchResultsRenderer")
-                .getJSONObject("primaryContents").getJSONObject("sectionListRenderer").getJSONArray("contents");
-        List<SearchResult> found = new ArrayList<>();
-        for (int i = 0; i < sections.length(); i++) {
-            JSONObject section = sections.getJSONObject(i).optJSONObject("itemSectionRenderer");
-            if (section == null) continue;
-            JSONArray items = section.optJSONArray("contents");
-            if (items == null) continue;
-            for (int j = 0; j < items.length() && found.size() < limit; j++) {
-                JSONObject v = items.getJSONObject(j).optJSONObject("videoRenderer");
-                if (v == null) continue;
-                String id = v.optString("videoId", "");
-                if (id.isEmpty()) continue;
-                found.add(new SearchResult(id, firstRun(v.optJSONObject("title"), ""), firstRun(v.optJSONObject("ownerText"), "YouTube"),
-                        seconds(v.optJSONObject("lengthText")), "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg",
-                        "https://www.youtube.com/watch?v=" + id));
-            }
+        return searchPage(query, "", limit).videos;
+    }
+
+    public static SearchPage searchPage(String query, String continuation, int limit) throws Exception {
+        JSONObject response = continuation == null || continuation.isEmpty()
+                ? post("search", new JSONObject().put("query", query).put("params", "EgIQAQ%3D%3D"))
+                : post("search", new JSONObject().put("continuation", continuation));
+        SearchPage page = new SearchPage();
+        List<JSONObject> videos = new ArrayList<>(); collect(response, "videoRenderer", videos);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (JSONObject video : videos) {
+            if (page.videos.size() >= limit) break;
+            String id = video.optString("videoId", "");
+            if (id.isEmpty() || !seen.add(id)) continue;
+            page.videos.add(new SearchResult(id, firstRun(video.optJSONObject("title"), ""), firstRun(video.optJSONObject("ownerText"), "YouTube"),
+                    seconds(video.optJSONObject("lengthText")), "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg",
+                    "https://www.youtube.com/watch?v=" + id));
         }
-        return found;
+        List<JSONObject> tokens = new ArrayList<>(); collect(response, "nextContinuationData", tokens);
+        if (!tokens.isEmpty()) page.continuation = tokens.get(0).optString("continuation", "");
+        if (page.continuation.isEmpty()) {
+            tokens.clear(); collect(response, "continuationCommand", tokens);
+            if (!tokens.isEmpty()) page.continuation = tokens.get(0).optString("token", "");
+        }
+        return page;
     }
 
     /** Canciones relacionadas: la lista Mix de YouTube ({@code RD<id>}) que arranca en ese video, sin incluirlo. */

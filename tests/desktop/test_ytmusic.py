@@ -55,6 +55,21 @@ class RelatedTest(unittest.TestCase):
         self.assertEqual([c[0] for c in calls], ["next", "search", "next"])
         self.assertEqual(calls[-1][1]["videoId"], "audio")
 
+    def test_a_long_video_title_finds_the_song_it_names(self):
+        seed = {"id": "video", "title": "Cyberpunk: Edgerunners | “I Really Want to Stay At Your House” by Rosa Walton | Music Video",
+                "artist": "Netflix"}
+        song = {"id": "audio", "title": "I Really Want to Stay at Your House", "artist": "Rosa Walton y Hallie Coggins"}
+        cover = {"id": "cover", "title": "I Really Want to Stay at Your House", "artist": "Samuel Kim y Lorien"}
+        self.assertTrue(ytmusic._named_in(seed, song))
+        self.assertFalse(ytmusic._named_in(seed, cover))
+        self.assertEqual(ytmusic._artist_names("Taylor Swift feat. Ed Sheeran & Future"), ["taylor swift", "ed sheeran", "future"])
+
+    def test_without_any_audio_track_the_radio_videos_keep_the_queue_going(self):
+        api = fake_api(next={"contents": [self.panel("video", "UGC"), self.panel("clip1", "OMV"), self.panel("clip2", "UGC")]},
+                       search={})
+        self.assertEqual([t["id"] for t in ytmusic.related("video", api=api)], ["clip1", "clip2"])
+        self.assertLessEqual(sum(1 for endpoint, _ in api.calls if endpoint == "search"), 2)
+
     def test_fallback_rejects_wrong_artist_or_remix(self):
         seed = {"title": "Imagine Dragons - Thunder", "artist": "Imagine Dragons"}
         self.assertTrue(ytmusic._same_recording(seed, {"title": "Thunder", "artist": "Imagine Dragons"}))
@@ -190,6 +205,34 @@ class ParsingHelpersTest(unittest.TestCase):
 
     def test_a_row_without_id_or_title_is_ignored(self):
         self.assertIsNone(ytmusic.track_from_row({"flexColumns": []}))
+
+    def test_song_and_video_searches_never_mix_gameplays_with_songs(self):
+        def row(vid, vtype):
+            return {"musicResponsiveListItemRenderer": {
+                "playlistItemData": {"videoId": vid},
+                "flexColumns": [{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": vid}]}}}],
+                "overlay": {"watchEndpoint": {"watchEndpointMusicSupportedConfigs": {
+                    "watchEndpointMusicConfig": {"musicVideoType": vtype}}}}}}
+        data = {"contents": [row("song", "MUSIC_VIDEO_TYPE_ATV"), row("clip", "MUSIC_VIDEO_TYPE_OMV"),
+                             row("gameplay", "MUSIC_VIDEO_TYPE_UGC")]}
+        api = fake_api(search=data)
+        self.assertEqual([t["id"] for t in ytmusic.search_songs("vegetta777", api=api)], ["song"])
+        self.assertEqual([t["id"] for t in ytmusic.search_videos("vegetta777", api=api)], ["clip", "gameplay"])
+        self.assertEqual([body["params"] for _endpoint, body in api.calls], [ytmusic.FILTER_SONGS, ytmusic.FILTER_VIDEOS])
+
+    def test_unfiltered_search_ignores_the_type_label_and_view_counts(self):
+        def row(vid, vtype, detail):
+            return {"musicResponsiveListItemRenderer": {"playlistItemData": {"videoId": vid},
+                "flexColumns": [{"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": vid}]}}},
+                                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+                                    run for piece in detail.split(" • ") for run in ({"text": piece}, {"text": " • "})][:-1]}}}],
+                "overlay": {"watchEndpoint": {"watchEndpointMusicSupportedConfigs": {"watchEndpointMusicConfig": {"musicVideoType": vtype}}}}}}
+        data = {"contents": [row("song", "MUSIC_VIDEO_TYPE_ATV", "Canción • Christian Relikia"),
+                             row("clip", "MUSIC_VIDEO_TYPE_UGC", "Vídeo • Zyronex • 59 visualizaciones")]}
+        found = {t["id"]: t for t in ytmusic.search_all("vegetta", api=fake_api(search=data))}
+        self.assertEqual(found["song"]["artist"], "Christian Relikia")
+        self.assertEqual(found["clip"]["artist"], "Zyronex")
+        self.assertEqual({t["kind"] for t in found.values()}, {"song", "video"})
 
     def test_related_ignores_videos_mixed_into_the_radio(self):
         def item(vid, vtype):

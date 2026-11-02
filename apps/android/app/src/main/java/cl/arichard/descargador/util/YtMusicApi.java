@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.HashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -28,6 +29,9 @@ public final class YtMusicApi {
     private static final String VERSION = "1.20250101.01.00";
     private static final String ARTISTS = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D";
     private static final Pattern DURATION = Pattern.compile("^\\d{1,2}(:\\d{2}){1,2}$");
+    /** En la búsqueda sin filtro, el detalle empieza con el tipo («Canción • Artista • 7 M reproducciones»). */
+    private static final Set<String> TYPE_LABELS = new HashSet<>(java.util.Arrays.asList(
+            "canción", "cancion", "vídeo", "video", "song", "álbum", "album", "sencillo", "single", "ep", "artista", "artist"));
     private static final Pattern YEAR = Pattern.compile("^(19|20)\\d{2}$");
     private static final String SEPARATOR = "•";
     private static final int MAX_PLAYLIST = 300;
@@ -200,7 +204,12 @@ public final class YtMusicApi {
 
     /** Una fila de lista (búsqueda, página del artista, álbum o playlist). Null si no es una canción de audio. */
     private static SearchResult trackFromRow(JSONObject row, String fallbackArtist, String fallbackThumb) {
-        if (row == null || !isSong(row)) return null;
+        return trackFromRow(row, fallbackArtist, fallbackThumb, false);
+    }
+
+    /** Igual, pero con {@code allowVideos} también devuelve videoclips y videos subidos (pestañas Videos y Todos). */
+    private static SearchResult trackFromRow(JSONObject row, String fallbackArtist, String fallbackThumb, boolean allowVideos) {
+        if (row == null || (!allowVideos && !isSong(row))) return null;
         String id = firstString(row.optJSONObject("playlistItemData"), "videoId");
         if (id.isEmpty()) id = firstString(row, "videoId");
         JSONArray columns = row.optJSONArray("flexColumns");
@@ -210,14 +219,18 @@ public final class YtMusicApi {
         String artist = "";
         long duration = 0;
         for (int i = 1; i < columns.length(); i++) {
-            for (List<JSONObject> part : segments(flexText(columns.optJSONObject(i)))) {
+            List<List<JSONObject>> detail = segments(flexText(columns.optJSONObject(i)));
+            for (int p = 0; p < detail.size(); p++) {
+                List<JSONObject> part = detail.get(p);
                 String text = join(part);
                 String browse = part.isEmpty() ? "" : firstString(part.get(0), "browseId");
                 if (text.isEmpty()) continue;
+                // Solo el primer tramo de la línea de detalle puede ser la etiqueta de tipo, y siempre trae más datos detrás.
+                if (i == 1 && p == 0 && detail.size() > 1 && TYPE_LABELS.contains(text.toLowerCase(Locale.ROOT))) continue;
                 if (DURATION.matcher(text).matches()) { if (duration == 0) duration = seconds(text); }
                 else if (browse.startsWith("MPRE")) { /* álbum */ }
                 else if (browse.startsWith("UC")) artist = artist.isEmpty() ? text : artist + ", " + text;
-                else if (i == 1 && artist.isEmpty() && !text.matches(".*(reproducciones|views|plays)$")) artist = text;
+                else if (i == 1 && artist.isEmpty() && !text.matches(".*(reproducciones|visualizaciones|views|plays)$")) artist = text;
             }
         }
         JSONArray fixed = row.optJSONArray("fixedColumns");
@@ -240,15 +253,75 @@ public final class YtMusicApi {
 
     public static List<Artist> searchArtists(String query) throws Exception {
         JSONObject data = post("search", new JSONObject().put("query", query).put("params", ARTISTS));
+        return parseArtists(data);
+    }
+
+    private static List<Artist> parseArtists(JSONObject data) {
         List<Artist> artists = new ArrayList<>();
         for (JSONObject row : all(data, "musicResponsiveListItemRenderer")) {
-            String id = firstString(row.optJSONObject("navigationEndpoint"), "browseId");
+            String id = firstString(row, "navigationEndpoint");
+            if (id.isEmpty()) id = firstString(row.optJSONObject("navigationEndpoint"), "browseId");
             JSONArray columns = row.optJSONArray("flexColumns");
             if (!id.startsWith("UC") || columns == null || columns.length() == 0) continue;
             String name = text(flexText(columns.optJSONObject(0)));
             if (!name.isEmpty()) artists.add(new Artist(name, id, square(bestThumbnail(row), 226)));
         }
         return artists;
+    }
+
+    /** Search music tracks in pages, retaining YouTube Music continuation tokens. */
+    public static final class SearchPage {
+        public final List<SearchResult> songs = new ArrayList<>();
+        public final List<Artist> artists = new ArrayList<>();
+        public String continuation = "";
+    }
+
+    public static SearchPage searchPage(String query, String filter, String continuation, int limit) throws Exception {
+        SearchPage page = new SearchPage();
+        JSONObject data;
+        if (continuation != null && !continuation.isEmpty()) {
+            data = post("search", new JSONObject().put("continuation", continuation));
+        } else {
+            String params = "artists".equals(filter) ? ARTISTS
+                    : "videos".equals(filter) ? "EgWKAQIQAWoKEAkQBRAKEAMQBA%3D%3D"
+                    : "all".equals(filter) ? null
+                    : "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D";
+            JSONObject body = new JSONObject().put("query", query);
+            if (params != null) body.put("params", params);
+            data = post("search", body);
+        }
+        if ("artists".equals(filter)) page.artists.addAll(parseArtists(data));
+        else {
+            Set<String> seen = new HashSet<>();
+            for (JSONObject row : all(data, "musicResponsiveListItemRenderer")) {
+                String type = firstString(row, "musicVideoType");
+                if ("songs".equals(filter) && !type.isEmpty() && !"MUSIC_VIDEO_TYPE_ATV".equals(type)) continue;
+                if ("videos".equals(filter) && !type.isEmpty() && "MUSIC_VIDEO_TYPE_ATV".equals(type)) continue;
+                boolean videosToo = "videos".equals(filter) || "all".equals(filter);
+                SearchResult song = trackFromRow(row, "", "", videosToo);
+                if (song != null && seen.add(song.getId())) page.songs.add(song);
+            }
+            if ("videos".equals(filter)) {
+                for (JSONObject video : all(data, "videoRenderer")) {
+                    String id = video.optString("videoId", "");
+                    if (id.isEmpty() || !seen.add(id)) continue;
+                    page.songs.add(new SearchResult(id, text(video.optJSONObject("title")),
+                            firstString(video, "ownerText"), seconds(firstString(video, "lengthText")),
+                            "https://i.ytimg.com/vi/" + id + "/mqdefault.jpg", "https://www.youtube.com/watch?v=" + id));
+                }
+            }
+        }
+        for (JSONObject item : all(data, "nextContinuationData")) {
+            page.continuation = item.optString("continuation", "");
+            if (!page.continuation.isEmpty()) break;
+        }
+        if (page.continuation.isEmpty()) for (JSONObject item : all(data, "continuationCommand")) {
+            page.continuation = item.optString("token", "");
+            if (!page.continuation.isEmpty()) break;
+        }
+        if (limit > 0 && page.songs.size() > limit) page.songs.subList(limit, page.songs.size()).clear();
+        if (limit > 0 && page.artists.size() > limit) page.artists.subList(limit, page.artists.size()).clear();
+        return page;
     }
 
     private static String normalize(String text) {
@@ -353,32 +426,72 @@ public final class YtMusicApi {
     public static List<SearchResult> related(String videoId, int limit) throws Exception {
         if (limit <= 0) return new ArrayList<>();
         JSONObject data = post("next", new JSONObject().put("videoId", videoId).put("playlistId", "RDAMVM" + videoId));
-        List<SearchResult> songs = radioTracks(data, videoId, "", limit);
+        List<SearchResult> songs = radioTracks(data, videoId, "", limit, false);
         if (!songs.isEmpty()) return songs;
-        // A music video can produce an OMV-only radio. Repeating that request cannot
+        // A music video can produce a video-only radio. Repeating that request cannot
         // recover audio tracks: find the same recording in Music's songs catalogue.
         for (JSONObject seed : all(data, "playlistPanelVideoRenderer")) {
             if (!videoId.equals(seed.optString("videoId"))) continue;
             String title = text(seed.optJSONObject("title"));
             List<List<JSONObject>> parts = segments(seed.optJSONObject("longBylineText"));
             String artist = parts.isEmpty() ? "" : join(parts.get(0));
-            if (title.isEmpty() || artist.isEmpty()) break;
-            JSONObject search = post("search", new JSONObject().put("query", artist + " " + title)
-                    .put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"));
-            for (JSONObject row : all(search, "musicResponsiveListItemRenderer")) {
-                SearchResult candidate = trackFromRow(row, "", "");
-                if (candidate == null || candidate.getId().equals(videoId)
-                        || !sameRecording(title, artist, candidate)) continue;
-                String audioId = candidate.getId();
+            if (title.isEmpty()) break;
+            SearchResult audio = audioCounterpart(videoId, title, artist);
+            if (audio != null) {
+                String audioId = audio.getId();
                 JSONObject radio = post("next", new JSONObject().put("videoId", audioId).put("playlistId", "RDAMVM" + audioId));
-                songs = radioTracks(radio, videoId, audioId, limit);
+                songs = radioTracks(radio, videoId, audioId, limit, false);
                 android.util.Log.i("MusicBoxAutoplay", "Audio radio fallback: " + videoId + " -> " + audioId + ", tracks=" + songs.size());
-                return songs; // Bounded: one search and one alternate radio, never a query per result.
+                if (!songs.isEmpty()) return songs;
             }
             break;
         }
-        android.util.Log.w("MusicBoxAutoplay", "No audio radio tracks for " + videoId);
+        // Último recurso: los videos musicales de la propia radio, para que la cola nunca quede parada.
+        songs = radioTracks(data, videoId, "", limit, true);
+        android.util.Log.w("MusicBoxAutoplay", "No audio radio tracks for " + videoId + ", using " + songs.size() + " radio videos");
         return songs;
+    }
+
+    /**
+     * La pista de audio de un video: la misma grabación exacta o, si el título del video trae más texto
+     * («Serie | "Canción" by Artista | Music Video»), una canción nombrada en él. Máximo dos búsquedas.
+     */
+    private static SearchResult audioCounterpart(String videoId, String title, String artist) throws Exception {
+        List<String> queries = new ArrayList<>();
+        if (!artist.isEmpty()) queries.add(artist + " " + title);
+        queries.add(title);
+        for (String query : queries) {
+            JSONObject search = post("search", new JSONObject().put("query", query)
+                    .put("params", "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"));
+            int checked = 0;
+            for (JSONObject row : all(search, "musicResponsiveListItemRenderer")) {
+                SearchResult candidate = trackFromRow(row, "", "");
+                if (candidate == null || candidate.getId().equals(videoId)) continue;
+                if (sameRecording(title, artist, candidate) || namedIn(title, artist, candidate)) return candidate;
+                if (++checked >= 8) break;
+            }
+        }
+        return null;
+    }
+
+    /** «Rosa Walton y Hallie Coggins» → [rosa walton, hallie coggins]. */
+    static List<String> artistNames(String artist) {
+        List<String> names = new ArrayList<>();
+        for (String part : (artist == null ? "" : artist.toLowerCase(Locale.ROOT))
+                .split(",|&|\\s(?:y|and|x|feat\\.?|ft\\.?)\\s")) {
+            String name = normalize(part);
+            if (!name.isEmpty()) names.add(name);
+        }
+        return names;
+    }
+
+    /** La canción del catálogo cuyo título y algún artista aparecen en el título o canal del video. */
+    static boolean namedIn(String videoTitle, String channel, SearchResult candidate) {
+        String haystack = " " + normalize(videoTitle) + " " + normalize(channel) + " ";
+        String title = normalize(candidate.getTitle());
+        if (title.isEmpty() || !haystack.contains(" " + title + " ")) return false;
+        for (String name : artistNames(candidate.getChannel())) if (haystack.contains(" " + name + " ")) return true;
+        return false;
     }
 
     private static boolean sameRecording(String title, String artist, SearchResult candidate) {
@@ -389,12 +502,12 @@ public final class YtMusicApi {
                 && (wantedArtist.equals(actualArtist) || (" " + wantedArtist + " ").contains(" " + actualArtist + " "));
     }
 
-    private static List<SearchResult> radioTracks(JSONObject data, String videoId, String audioId, int limit) {
+    private static List<SearchResult> radioTracks(JSONObject data, String videoId, String audioId, int limit, boolean videos) {
         List<SearchResult> songs = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (JSONObject item : all(data, "playlistPanelVideoRenderer")) {
             String id = item.optString("videoId");
-            if (id.isEmpty() || id.equals(videoId) || id.equals(audioId) || !isSong(item) || !seen.add(id)) continue;
+            if (id.isEmpty() || id.equals(videoId) || id.equals(audioId) || isSong(item) == videos || !seen.add(id)) continue;
             List<List<JSONObject>> parts = segments(item.optJSONObject("longBylineText"));
             String artist = parts.isEmpty() ? "" : join(parts.get(0));
             songs.add(new SearchResult(id, text(item.optJSONObject("title")), artist, seconds(text(item.optJSONObject("lengthText"))),

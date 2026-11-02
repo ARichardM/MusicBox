@@ -36,6 +36,8 @@ def make_bridge(from_page=True):
     bridge._download_queue = []
     bridge._download_process = None
     bridge._downloading_ids = set()
+    bridge._download_item_progress = {}
+    bridge.downloadingIdsChanged.connect(bridge._prune_item_progress)
     bridge.refresh = lambda: None
     bridge.notices = []
     bridge._show_notice = lambda text, retry=None, kind="error": bridge.notices.append(text)
@@ -127,6 +129,24 @@ class DownloadStateTests(unittest.TestCase):
         self.assertLessEqual(len(bridge.downloadLogLines), 1200)
         self.assertEqual(bridge.downloadLogLines[-1]["text"], "línea 1299")
         self.assertEqual(bridge.downloadLogLines[-1]["level"], "warning")
+
+    def test_each_song_ring_shows_its_own_real_progress(self):
+        bridge = make_bridge(from_page=False)
+        bridge._downloading_ids.update({"aaaaaaaaaaa", "bbbbbbbbbbb"})
+        self.assertEqual(bridge.downloadItemProgress, {"aaaaaaaaaaa": 0.0, "bbbbbbbbbbb": 0.0})  # En cola: anillo vacío.
+        bridge._handle_download_event({"event": "progress", "status": "downloading", "id": "aaaaaaaaaaa",
+                                       "downloaded": 300, "total": 1000})
+        self.assertAlmostEqual(bridge.downloadItemProgress["aaaaaaaaaaa"], 0.3)
+        self.assertEqual(bridge.downloadItemProgress["bbbbbbbbbbb"], 0.0)
+        bridge._handle_download_event({"event": "progress", "status": "downloading", "id": "aaaaaaaaaaa",
+                                       "downloaded": 400, "total": None})  # Sin tamaño: conserva el último avance.
+        self.assertAlmostEqual(bridge.downloadItemProgress["aaaaaaaaaaa"], 0.3)
+        bridge._handle_download_event({"event": "progress", "status": "finished", "id": "aaaaaaaaaaa",
+                                       "downloaded": 1000, "total": 1000})
+        self.assertEqual(bridge.downloadItemProgress["aaaaaaaaaaa"], 1.0)
+        bridge._handle_download_event({"event": "ready", "filename": "C:/Musica/Tema [aaaaaaaaaaa].mp3"})
+        self.assertEqual(bridge.downloadItemProgress, {"bbbbbbbbbbb": 0.0})
+        self.assertEqual(bridge._download_item_progress, {})
 
     def test_validation_errors_are_returned_not_shown(self):
         bridge = make_bridge()

@@ -182,8 +182,17 @@ public class PlayerManagerTest {
     }
     @Test public void automaticAdvanceCountsTowardsCollectionCollages() {
         cl.arichard.descargador.data.ClickStats.getInstance(context).resetForAccount();
+        // The fixture songs normally last 20 seconds. Give the automatically
+        // selected track enough duration to cross the real-listening threshold.
+        ShadowMediaPlayer.addMediaInfo(DataSource.toDataSource(c.getPath()), new ShadowMediaPlayer.MediaInfo(60000, 0));
         player.playNext(); prepared();
         SearchHistoryManager history = SearchHistoryManager.getInstance(context);
+        assertTrue(player.isPlaying());
+        assertEquals("Preparing a track is not a play", 0, cl.arichard.descargador.data.ClickStats.getInstance(context).count(c));
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(29));
+        assertEquals("Less than 30 seconds of real playback does not count", 0,
+                cl.arichard.descargador.data.ClickStats.getInstance(context).count(c));
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2));
         assertEquals(1, cl.arichard.descargador.data.ClickStats.getInstance(context).count(c));
         assertEquals(c.getPath(), history.getTopPlayed(Arrays.asList(a, b, c), 1).get(0).getPath());
     }
