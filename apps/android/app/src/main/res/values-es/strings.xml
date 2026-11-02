@@ -29,6 +29,15 @@
     <string name="cancelar_seleccion">Cancelar selección</string>
     <string name="cancion_artista_o_enlace_de_youtube">Canción, artista o enlace de YouTube</string>
     <string name="filtro_todos">Todos</string>
+    <string name="videos">Videos</string>
+    <string name="artistas">Artistas</string>
+    <string name="calidad_descarga">CALIDAD DE DESCARGA</string>
+    <string name="calidad_baja">Baja</string>
+    <string name="calidad_normal">Normal</string>
+    <string name="calidad_alta">Alta</string>
+    <string name="audio_y_video">Audio y video</string>
+    <string name="formato_mp3">MP3 · Solo audio</string>
+    <string name="formato_mp4">MP4 · Audio y video</string>
     <string name="canciones">Canciones</string>
     <string name="carpetas">Carpetas</string>
     <string name="cerrar_sesion">Cerrar sesión</string>
