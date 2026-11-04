@@ -37,7 +37,7 @@ from historial import DownloadHistory
 from musicbox_cloud import FirebaseDesktopClient
 from click_stats import ClickStats, song_key
 import ytmusic
-from recommendations import PER_SEED, Recommender, pick_autoplay
+from recommendations import PER_SEED, Recommender, pick_autoplay, playlist_seeds
 import track_identity as identity
 import playlist_sync
 import stream_prefetch
@@ -123,6 +123,8 @@ class MusicBoxBridge(QObject):
     _artistSongsReady = Signal(object, int)
     _albumReady = Signal(object, int)
     _forYouReady = Signal(object, int)
+    playlistSuggestionsChanged = Signal()
+    _playlistSuggestionsReady = Signal(object, int, str)
     downloadingIdsChanged = Signal()
     downloadItemProgressChanged = Signal()
     autoDownloadChanged = Signal()
@@ -162,6 +164,7 @@ class MusicBoxBridge(QObject):
         self._history = []
         self._busy = False
         self._settings = settings if settings is not None else QSettings("MusicBox", "Desktop")
+        self._library_sort, self._library_sort_ascending = self._read_library_sort()
         self._language_setting = self._settings.value("language", "auto", str)
         if self._language_setting not in i18n.LANGUAGES: self._language_setting = "auto"
         i18n.set_language(self._language_setting)
@@ -324,6 +327,9 @@ class MusicBoxBridge(QObject):
         self._for_you = {"songs": [], "artists": [], "mode": ""}
         self._for_you_loading = False
         self._for_you_generation = 0
+        self._playlist_sugg = {"playlist": "", "songs": [], "loading": False}
+        self._playlist_sugg_generation = 0
+        self._playlist_sugg_collapsed = False
         self._recommender = Recommender(
             self._related_songs,
             lambda query: youtube_streams.search(query, self._extract_info, 12))
@@ -331,7 +337,13 @@ class MusicBoxBridge(QObject):
             self._recommender.restore(json.loads(self._settings.value("forYouCache", "{}", str) or "{}"))
         except (TypeError, ValueError):
             pass
+        try:
+            self._recommender.restore_playlists(json.loads(self._settings.value("playlistSuggestionsCache", "{}", str) or "{}"))
+        except (TypeError, ValueError):
+            pass
+        self._playlist_sugg_collapsed = self._settings.value("playlistSuggestionsCollapsed", False, bool)
         self._forYouReady.connect(self._apply_for_you)
+        self._playlistSuggestionsReady.connect(self._apply_playlist_suggestions)
         self._downloadEvent.connect(self._handle_download_event)
         self._streamReady.connect(self._play_stream)
         self._autoplayReady.connect(self._apply_autoplay)
@@ -900,6 +912,85 @@ class MusicBoxBridge(QObject):
         self._settings.setValue("forYouCache", json.dumps(self._recommender.snapshot(), ensure_ascii=False,
                                                          separators=(",", ":")))
 
+    @Property("QVariantList", notify=playlistSuggestionsChanged)
+    def playlistSuggestions(self): return self._playlist_sugg["songs"]
+
+    @Property(str, notify=playlistSuggestionsChanged)
+    def playlistSuggestionsPlaylist(self): return self._playlist_sugg["playlist"]
+
+    @Property(bool, notify=playlistSuggestionsChanged)
+    def playlistSuggestionsLoading(self): return self._playlist_sugg["loading"]
+
+    @Property(bool, notify=playlistSuggestionsChanged)
+    def playlistSuggestionsCollapsed(self): return self._playlist_sugg_collapsed
+
+    @Slot(bool)
+    def setPlaylistSuggestionsCollapsed(self, value):
+        self._playlist_sugg_collapsed = bool(value)
+        self._settings.setValue("playlistSuggestionsCollapsed", self._playlist_sugg_collapsed)
+        self.playlistSuggestionsChanged.emit()
+
+    @staticmethod
+    def _run_in_thread(work):
+        threading.Thread(target=work, daemon=True, name="playlist-suggestions").start()
+
+    @Slot(str, bool)
+    def loadPlaylistSuggestions(self, name, fresh):
+        """Pide canciones parecidas a las de la playlist ``name``; ``fresh`` ignora la caché vigente."""
+        name = name.strip()
+        self._playlist_sugg_generation += 1
+        generation = self._playlist_sugg_generation
+        keys = list(self._playlists.get(name, [])) if name else []
+        ids = [identity.bare_id(key) or self._path_ids.get(key, "") for key in keys]
+        seeds = playlist_seeds(ids, lambda video_id: self._clicks_stats.count(song_key("", video_id)))
+        known_titles = [row.get("title", "") for row in self._library_all if row.get("path") in keys]
+        known_titles += [self._online_tracks.get(key, {}).get("title", "") for key in keys]
+        known_ids = {video_id for video_id in ids if video_id}
+        self._playlist_sugg = {"playlist": name, "songs": [], "loading": bool(seeds)}
+        self.playlistSuggestionsChanged.emit()
+        if not seeds:
+            return
+
+        def worker():
+            try:
+                outcome = self._recommender.for_playlist(seeds, known_ids, known_titles, fresh=fresh)
+            except Exception:
+                outcome = {"songs": [], "mode": "offline"}
+            try:
+                self._playlistSuggestionsReady.emit(outcome, generation, name)
+            except RuntimeError:
+                pass  # La ventana pudo cerrarse mientras terminaba la consulta.
+
+        self._run_in_thread(worker)
+
+    @Slot(object, int, str)
+    def _apply_playlist_suggestions(self, outcome, generation, name):
+        if generation != self._playlist_sugg_generation or name != self._playlist_sugg["playlist"]:
+            return
+        songs = []
+        for item in outcome.get("songs", []):
+            item = dict(item)
+            video_id = item.get("id", "")
+            self._mark_local(item, video_id, item.get("title", ""))
+            item["favorite"] = self._is_fav(item)
+            item["web"] = True
+            songs.append(item)
+        self._playlist_sugg = {"playlist": name, "songs": songs, "loading": False}
+        self.playlistSuggestionsChanged.emit()
+        self._settings.setValue("playlistSuggestionsCache", json.dumps(
+            self._recommender.snapshot_playlists(), ensure_ascii=False, separators=(",", ":")))
+
+    @Slot("QVariantMap")
+    def addSuggestionToPlaylist(self, track):
+        """Agrega una sugerencia a la playlist abierta y la quita del carrusel."""
+        name = self._library_playlist
+        item = dict(track or {})
+        if not name or not item.get("id"):
+            return
+        self.addTrackToPlaylist(name, item)
+        self._playlist_sugg["songs"] = [song for song in self._playlist_sugg["songs"] if song.get("id") != item["id"]]
+        self.playlistSuggestionsChanged.emit()
+
     def _migrate_legacy_clicks(self, rows):
         """Pasa los contadores antiguos (por ruta de archivo) a la clave común entre plataformas."""
         changed = False
@@ -938,6 +1029,45 @@ class MusicBoxBridge(QObject):
     @Property(str, notify=libraryChanged)
     def libraryArtist(self): return self._library_artist
 
+    _library_sort, _library_sort_ascending = "default", True
+    _SORT_MODES = ("default", "title", "artist", "recent", "plays", "duration")
+
+    def _read_library_sort(self):
+        mode, _, direction = str(self._settings.value("librarySort", "default:1", str) or "").partition(":")
+        return (mode if mode in self._SORT_MODES else "default"), direction != "0"
+
+    @Property(str, notify=libraryChanged)
+    def librarySort(self): return self._library_sort
+
+    @Property(bool, notify=libraryChanged)
+    def librarySortAscending(self): return self._library_sort_ascending
+
+    @Slot(str, bool)
+    def setLibrarySort(self, mode, ascending):
+        self._library_sort = mode if mode in self._SORT_MODES else "default"
+        self._library_sort_ascending = bool(ascending)
+        self._settings.setValue("librarySort", f"{self._library_sort}:{1 if ascending else 0}")
+        self._apply_library_view()
+
+    def _sorted_rows(self, rows):
+        """Ordena como Android: cada modo tiene un sentido natural y el segundo toque lo invierte."""
+        mode = self._library_sort
+        if mode == "default":
+            ordered = list(rows)
+        else:
+            def title(row): return row.get("title", "").casefold()
+            if mode == "artist": key = lambda row: (self._track_artist(row).casefold(), title(row))
+            elif mode == "duration": key = lambda row: (row.get("duration") or 0, title(row))
+            elif mode == "plays": key = lambda row: (-self._clicks(self._row_keys(row)), title(row))
+            elif mode == "recent":
+                # El escaneo ya entrega lo más reciente primero; en una playlist lo último agregado va al final.
+                position = {id(row): index for index, row in enumerate(rows)}
+                sign = -1 if self._library_playlist else 1
+                key = lambda row: (sign * position[id(row)], title(row))
+            else: key = title
+            ordered = sorted(rows, key=key)
+        return ordered if self._library_sort_ascending else ordered[::-1]
+
     @staticmethod
     def _track_artist(row):
         # Las playlists antiguas de escritorio guardaban «artista · álbum» como canal.
@@ -966,20 +1096,26 @@ class MusicBoxBridge(QObject):
                 clicks.setdefault(name, set()).update(self._row_keys(row))
         return [dict(folder, clicks=self._clicks(clicks.get(folder.get("name"), ()))) for folder in self._folders]
 
+    def _entry_thumbnail(self, entry, by_path, id_rows):
+        """Portada de una entrada de playlist: archivo local, datos online guardados o miniatura de YouTube."""
+        vid = identity.bare_id(entry) or self._path_ids.get(entry, "")
+        row = by_path.get(entry) or id_rows.get(vid)
+        if row and row.get("thumbnail"):
+            return row["thumbnail"]
+        meta = self._online_tracks.get(identity.entry_for(vid)) or self._online_tracks.get(entry) or {}
+        if meta.get("thumbnail"):
+            return meta["thumbnail"]
+        return f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg" if vid else ""
+
     @Property("QVariantList", notify=playlistsChanged)
     def playlists(self):
         result = []
         by_path_clicks = {row.get("path"): row for row in self._library_all}
+        id_rows = {vid: by_path_clicks[path] for path, vid in self._path_ids.items() if path in by_path_clicks}
         for name, keys in self._playlists.items():
             thumb = ""
             for k in keys:
-                if k in self._online_tracks:
-                    thumb = self._online_tracks[k].get("thumbnail", "")
-                    if thumb: break
-                for row in self._library_all:
-                    if row.get("path") == k and row.get("thumbnail"):
-                        thumb = row.get("thumbnail")
-                        break
+                thumb = self._entry_thumbnail(k, by_path_clicks, id_rows)
                 if thumb: break
             result.append({
                 "name": name,
@@ -1636,6 +1772,8 @@ class MusicBoxBridge(QObject):
         if self._library_playlist:
             self._library_folder = ""
         self._apply_library_view()
+        if self._library_playlist != self._playlist_sugg["playlist"]:
+            self.loadPlaylistSuggestions(self._library_playlist, False)
 
     @Slot(str)
     def downloadAllInPlaylist(self, name):
@@ -2457,7 +2595,7 @@ class MusicBoxBridge(QObject):
         if query:
             rows = [row for row in rows if query in " ".join((row.get("title", ""), row.get("artist", ""),
                                                                row.get("album", ""))).casefold()]
-        self._library = rows
+        self._library = self._sorted_rows(rows)
         self.libraryChanged.emit()
         self.artistPhotosChanged.emit()
 

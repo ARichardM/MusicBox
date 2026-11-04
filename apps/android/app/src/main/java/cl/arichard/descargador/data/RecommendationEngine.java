@@ -33,6 +33,12 @@ public class RecommendationEngine {
     public static final int CACHE_ENTRIES = 3;
     public static final long CACHE_MS = 6L * 3600 * 1000;
     public static final String GENERIC_QUERY = "éxitos música";
+    public static final int PLAYLIST_SEEDS = 4;
+    public static final int PLAYLIST_SONGS = 12;
+    /** Se guardan más de las que se muestran: así sobran al ir agregándolas a la playlist sin volver a consultar. */
+    public static final int PLAYLIST_POOL = 24;
+    public static final int PLAYLIST_CACHE_ENTRIES = 12;
+    private static final String PREF_PLAYLIST_CACHE = "playlist_cache";
     private static final String PREF_CACHE = "cache";
     /** Súbela cuando cambie cómo se arma el resultado, para no mostrar uno guardado con el formato anterior. */
     private static final String CACHE_VERSION = "v2:";
@@ -44,6 +50,13 @@ public class RecommendationEngine {
     }
 
     public interface Clock { long now(); }
+
+    /** Canción de una playlist usada para pedir parecidas, con su peso relativo (1 = la más escuchada). */
+    public static final class PlaylistSeed {
+        public final String videoId;
+        public final double weight;
+        public PlaylistSeed(String videoId, double weight) { this.videoId = videoId; this.weight = weight; }
+    }
 
     /** Lista de relacionadas con el peso de la semilla que la originó. */
     public static final class Weighted {
@@ -73,6 +86,7 @@ public class RecommendationEngine {
     private final Clock clock;
     private final SharedPreferences prefs;
     private final Map<String, Cached> cache = new LinkedHashMap<>();
+    private final Map<String, Cached> playlistCache = new LinkedHashMap<>();
 
     public RecommendationEngine(Fetcher fetcher, Clock clock, SharedPreferences prefs) {
         this.fetcher = fetcher;
@@ -200,6 +214,82 @@ public class RecommendationEngine {
         return result;
     }
 
+    /**
+     * Semillas que mejor representan una playlist: primero las más escuchadas dentro de ella y, a igualdad
+     * (o sin reproducciones), las últimas agregadas. {@code videoIds} va en el orden de la playlist.
+     */
+    public static List<PlaylistSeed> playlistSeeds(List<String> videoIds, java.util.function.ToIntFunction<String> plays, int limit) {
+        List<String> unique = new ArrayList<>(new java.util.LinkedHashSet<>(videoIds));
+        unique.removeIf(id -> id == null || id.isEmpty());
+        Map<String, Integer> counts = new HashMap<>();
+        Map<String, Integer> order = new HashMap<>();
+        for (int i = 0; i < unique.size(); i++) {
+            counts.put(unique.get(i), Math.max(0, plays.applyAsInt(unique.get(i))));
+            order.put(unique.get(i), i);
+        }
+        List<String> ranked = new ArrayList<>(unique);
+        ranked.sort((a, b) -> {
+            int byPlays = Integer.compare(counts.get(b), counts.get(a));
+            return byPlays != 0 ? byPlays : Integer.compare(order.get(b), order.get(a));
+        });
+        if (ranked.size() > limit) ranked = new ArrayList<>(ranked.subList(0, limit));
+        int top = 0;
+        for (String id : ranked) top = Math.max(top, counts.get(id));
+        List<PlaylistSeed> seeds = new ArrayList<>();
+        // Sin reproducciones todas pesan igual; con ellas, las no escuchadas pesan menos que las escuchadas.
+        for (String id : ranked) seeds.add(new PlaylistSeed(id, top == 0 ? 1.0 : Math.max(0.25, counts.get(id) / (double) top)));
+        return seeds;
+    }
+
+    private static List<SearchResult> withoutKnown(List<SearchResult> songs, Set<String> excludeIds, Collection<String> excludeTitles) {
+        Set<String> titles = new HashSet<>();
+        for (String title : excludeTitles) titles.add(ClickStats.normalize(title));
+        List<SearchResult> kept = new ArrayList<>();
+        for (SearchResult song : songs)
+            if (!excludeIds.contains(song.getId()) && !titles.contains(ClickStats.normalize(song.getTitle()))) kept.add(song);
+        return kept;
+    }
+
+    /**
+     * Sugerencias para una playlist (bloqueante: llamar fuera del hilo principal). Se excluye lo que la playlist ya
+     * tiene y se reutiliza la caché de 6 h por conjunto de semillas, filtrada de nuevo con la playlist actual.
+     */
+    public synchronized Result forPlaylist(List<PlaylistSeed> seeds, Set<String> excludeIds, Collection<String> excludeTitles, boolean fresh) {
+        if (seeds.isEmpty()) return new Result(new ArrayList<>(), new ArrayList<>(), "offline");
+        List<String> sorted = new ArrayList<>();
+        Set<String> exclude = new HashSet<>(excludeIds);
+        for (PlaylistSeed seed : seeds) { sorted.add(seed.videoId); exclude.add(seed.videoId); }
+        java.util.Collections.sort(sorted);
+        String signature = "v1:playlist:" + String.join(",", sorted);
+        Cached cached = playlistCache.get(signature);
+        if (cached != null && !fresh && clock.now() - cached.at < CACHE_MS) return shownForPlaylist(cached.result.songs, exclude, excludeTitles);
+        List<Weighted> lists = new ArrayList<>();
+        for (PlaylistSeed seed : seeds) {
+            List<SearchResult> entries = safeRelated(seed.videoId);
+            if (!entries.isEmpty()) lists.add(new Weighted(seed.weight, entries));
+        }
+        if (lists.isEmpty()) {
+            return cached != null ? shownForPlaylist(cached.result.songs, exclude, excludeTitles)
+                    : new Result(new ArrayList<>(), new ArrayList<>(), "offline");
+        }
+        Result pool = combine(lists, exclude, excludeTitles, PLAYLIST_POOL, "playlist");
+        playlistCache.put(signature, new Cached(clock.now(), pool));
+        while (playlistCache.size() > PLAYLIST_CACHE_ENTRIES) {
+            String oldest = null;
+            for (Map.Entry<String, Cached> e : playlistCache.entrySet())
+                if (oldest == null || e.getValue().at < playlistCache.get(oldest).at) oldest = e.getKey();
+            playlistCache.remove(oldest);
+        }
+        save();
+        return shownForPlaylist(pool.songs, exclude, excludeTitles);
+    }
+
+    private static Result shownForPlaylist(List<SearchResult> songs, Set<String> excludeIds, Collection<String> excludeTitles) {
+        List<SearchResult> kept = withoutKnown(songs, excludeIds, excludeTitles);
+        if (kept.size() > PLAYLIST_SONGS) kept = new ArrayList<>(kept.subList(0, PLAYLIST_SONGS));
+        return new Result(kept, new ArrayList<>(), "playlist");
+    }
+
     private List<SearchResult> safeRelated(String videoId) {
         try { List<SearchResult> list = fetcher.related(videoId); return list == null ? new ArrayList<>() : list; }
         catch (Exception e) { return new ArrayList<>(); }
@@ -226,45 +316,51 @@ public class RecommendationEngine {
         return latest == null ? null : latest.result;
     }
 
+    private static JSONObject serialize(Map<String, Cached> source) throws org.json.JSONException {
+        JSONObject root = new JSONObject();
+        for (Map.Entry<String, Cached> e : source.entrySet()) {
+            Result result = e.getValue().result;
+            JSONArray songs = new JSONArray();
+            for (SearchResult song : result.songs)
+                songs.put(new JSONObject().put("id", song.getId()).put("title", song.getTitle())
+                        .put("channel", song.getChannel()).put("seconds", song.getDurationSeconds()));
+            root.put(e.getKey(), new JSONObject().put("at", e.getValue().at).put("mode", result.mode)
+                    .put("artists", new JSONArray(result.artists)).put("songs", songs));
+        }
+        return root;
+    }
+
+    private static void parse(String json, Map<String, Cached> target) throws org.json.JSONException {
+        JSONObject root = new JSONObject(json);
+        java.util.Iterator<String> keys = root.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            JSONObject entry = root.getJSONObject(key);
+            List<SearchResult> songs = new ArrayList<>();
+            JSONArray array = entry.getJSONArray("songs");
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject song = array.getJSONObject(i);
+                songs.add(new SearchResult(song.getString("id"), song.getString("title"), song.optString("channel"),
+                        song.optLong("seconds"), null, null));
+            }
+            List<String> artists = new ArrayList<>();
+            JSONArray names = entry.optJSONArray("artists");
+            if (names != null) for (int i = 0; i < names.length(); i++) artists.add(names.getString(i));
+            target.put(key, new Cached(entry.getLong("at"), new Result(songs, artists, entry.optString("mode", "seeds"))));
+        }
+    }
+
     private void save() {
         if (prefs == null) return;
         try {
-            JSONObject root = new JSONObject();
-            for (Map.Entry<String, Cached> e : cache.entrySet()) {
-                Result result = e.getValue().result;
-                JSONArray songs = new JSONArray();
-                for (SearchResult song : result.songs)
-                    songs.put(new JSONObject().put("id", song.getId()).put("title", song.getTitle())
-                            .put("channel", song.getChannel()).put("seconds", song.getDurationSeconds()));
-                root.put(e.getKey(), new JSONObject().put("at", e.getValue().at).put("mode", result.mode)
-                        .put("artists", new JSONArray(result.artists)).put("songs", songs));
-            }
-            prefs.edit().putString(PREF_CACHE, root.toString()).apply();
+            prefs.edit().putString(PREF_CACHE, serialize(cache).toString())
+                    .putString(PREF_PLAYLIST_CACHE, serialize(playlistCache).toString()).apply();
         } catch (Exception ignored) {}
     }
 
     private void load() {
         if (prefs == null) return;
-        try {
-            JSONObject root = new JSONObject(prefs.getString(PREF_CACHE, "{}"));
-            java.util.Iterator<String> keys = root.keys();
-            while (keys.hasNext()) {
-                String key = keys.next();
-                JSONObject entry = root.getJSONObject(key);
-                List<SearchResult> songs = new ArrayList<>();
-                JSONArray array = entry.getJSONArray("songs");
-                for (int i = 0; i < array.length(); i++) {
-                    JSONObject song = array.getJSONObject(i);
-                    songs.add(new SearchResult(song.getString("id"), song.getString("title"), song.optString("channel"),
-                            song.optLong("seconds"), null, null));
-                }
-                List<String> artists = new ArrayList<>();
-                JSONArray names = entry.optJSONArray("artists");
-                if (names != null) for (int i = 0; i < names.length(); i++) artists.add(names.getString(i));
-                cache.put(key, new Cached(entry.getLong("at"), new Result(songs, artists, entry.optString("mode", "seeds"))));
-            }
-        } catch (Exception ignored) {
-            cache.clear();
-        }
+        try { parse(prefs.getString(PREF_CACHE, "{}"), cache); } catch (Exception ignored) { cache.clear(); }
+        try { parse(prefs.getString(PREF_PLAYLIST_CACHE, "{}"), playlistCache); } catch (Exception ignored) { playlistCache.clear(); }
     }
 }

@@ -147,6 +147,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private RecyclerView recyclerLibrary;
     private View libraryHeader;
     private cl.arichard.descargador.util.CollectionSwipeLayout libraryContentSwipe;
+    private cl.arichard.descargador.util.PlaylistSuggestionsView playlistSuggestionsView;
+    private int playlistSuggestionsGeneration;
+    private String playlistSuggestionsName = "";
     private boolean collectionSwipeAnimating;
     private View libraryLoading;
     private SongAdapter songAdapter;
@@ -419,6 +422,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         txtLibraryContext = findViewById(R.id.txtLibraryContext);
         libraryHeader = findViewById(R.id.libraryHeader);
         libraryContentSwipe = findViewById(R.id.libraryContentSwipe);
+        setupPlaylistSuggestions();
         btnShuffleAll = findViewById(R.id.btnShuffleAll);
         inputSearchLibrary = findViewById(R.id.inputSearchLibrary);
         chipSongs = findViewById(R.id.chipSongs);
@@ -504,7 +508,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             uiState.searchStatus = "";
             uiState.searchFilter = "songs"; uiState.hasMoreResults = true; searchArtists.clear();
             findViewById(R.id.searchFilterRow).setVisibility(View.GONE);
-            layoutSearchArtists.setVisibility(View.GONE);
             uiState.changed();
             return;
         }
@@ -527,7 +530,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         uiState.searchStatus = "";
         uiState.searchFilter = "songs"; uiState.hasMoreResults = true; searchArtists.clear();
         findViewById(R.id.searchFilterRow).setVisibility(View.GONE);
-        layoutSearchArtists.setVisibility(View.GONE);
         inputSearch.setText("");
         inputSearch.requestFocus();
         uiState.changed();
@@ -878,11 +880,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         menu.show();
     }
 
-    /** @param fresh ignora lo guardado y pide todo de nuevo: al abrir la app y con el botón de actualizar. */
-    private void refreshForYou(boolean fresh) {
-        if (uiState == null) return;
-        if (recommender == null) {
-            recommender = new RecommendationEngine(new RecommendationEngine.Fetcher() {
+    private void ensureRecommender() {
+        if (recommender != null) return;
+        recommender = new RecommendationEngine(new RecommendationEngine.Fetcher() {
                 @Override public List<SearchResult> related(String videoId) throws Exception {
                     List<SearchResult> songs = cl.arichard.descargador.util.YtMusicApi.related(videoId, RecommendationEngine.PER_SEED);
                     return songs.isEmpty() ? cl.arichard.descargador.util.YoutubeApi.related(videoId, RecommendationEngine.PER_SEED) : songs;
@@ -891,7 +891,89 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     return cl.arichard.descargador.util.YoutubeApi.search(query, 12);
                 }
             }, System::currentTimeMillis, getSharedPreferences("recommendations", MODE_PRIVATE));
+    }
+
+    private void setupPlaylistSuggestions() {
+        playlistSuggestionsView = findViewById(R.id.playlistSuggestions);
+        if (playlistSuggestionsView == null) return;
+        playlistSuggestionsView.setCollapsed(getSharedPreferences("recommendations", MODE_PRIVATE)
+                .getBoolean("playlist_suggestions_collapsed", false), false, false);
+        playlistSuggestionsView.setListener(new cl.arichard.descargador.util.PlaylistSuggestionsView.Listener() {
+            @Override public void onPlay(SearchResult song) { playOnlineResult(song, false); }
+            @Override public void onAdd(SearchResult song) {
+                if (currentSubListName.isEmpty()) return;
+                PlaylistManager.getInstance(MainActivity.this).addOnlineTrack(currentSubListName, song);
+                refreshPlaylistsView();
+            }
+            @Override public void onRefresh() { refreshPlaylistSuggestions(true); }
+            @Override public void onCollapsedChanged(boolean collapsed) {
+                getSharedPreferences("recommendations", MODE_PRIVATE).edit()
+                        .putBoolean("playlist_suggestions_collapsed", collapsed).apply();
+            }
+        });
+    }
+
+    /** Pide canciones parecidas a las de la playlist abierta (solo de ella) y excluye las que ya tiene. */
+    private void refreshPlaylistSuggestions(boolean fresh) {
+        if (playlistSuggestionsView == null) return;
+        final String name = currentSubListName;
+        final int generation = ++playlistSuggestionsGeneration;
+        if (!(isViewingSubList && currentLibraryMode == 3) || name.isEmpty()) {
+            playlistSuggestionsName = "";
+            playlistSuggestionsView.setLoading(false);
+            playlistSuggestionsView.setSuggestions(new ArrayList<>());
+            updatePlaylistSuggestionsVisibility();
+            return;
         }
+        ensureRecommender();
+        PlaylistManager manager = PlaylistManager.getInstance(this);
+        cl.arichard.descargador.data.ClickStats stats = cl.arichard.descargador.data.ClickStats.getInstance(this);
+        List<String> ids = new ArrayList<>();
+        Set<String> known = new HashSet<>();
+        List<String> titles = new ArrayList<>();
+        for (String entry : manager.getSongPaths(name)) {
+            String id = entry.startsWith("youtube:") ? entry.substring("youtube:".length()) : manager.videoIdFor(entry);
+            if (id != null && !id.isEmpty()) { ids.add(id); known.add(id); }
+            SearchResult online = manager.getOnlineTrack(entry);
+            if (online != null) titles.add(online.getTitle());
+        }
+        for (Song song : manager.resolveSongs(name, allSongs)) titles.add(song.getTitle());
+        List<RecommendationEngine.PlaylistSeed> seeds = RecommendationEngine.playlistSeeds(
+                ids, id -> stats.count("yt:" + id), RecommendationEngine.PLAYLIST_SEEDS);
+        if (!name.equals(playlistSuggestionsName)) playlistSuggestionsView.setSuggestions(new ArrayList<>());
+        playlistSuggestionsName = name;
+        if (seeds.isEmpty()) {
+            playlistSuggestionsView.setLoading(false);
+            updatePlaylistSuggestionsVisibility();
+            return;
+        }
+        playlistSuggestionsView.setLoading(true);
+        updatePlaylistSuggestionsVisibility();
+        DescargadorApp.IO.execute(() -> {
+            RecommendationEngine.Result result = recommender.forPlaylist(seeds, known, titles, fresh);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || generation != playlistSuggestionsGeneration) return;
+                playlistSuggestionsView.setLoading(false);
+                boolean keepPrevious = "offline".equals(result.mode) && playlistSuggestionsView.hasSuggestions();
+                if (!keepPrevious) playlistSuggestionsView.setSuggestions(result.songs);
+                updatePlaylistSuggestionsVisibility();
+            });
+        });
+    }
+
+    /** La tarjeta solo aparece con una playlist abierta y sin búsqueda ni filtro de artista que cambien la lista. */
+    private void updatePlaylistSuggestionsVisibility() {
+        if (playlistSuggestionsView == null || inputSearchLibrary == null || songAdapter == null) return;
+        boolean wanted = isViewingSubList && currentLibraryMode == 3 && currentSubListName.equals(playlistSuggestionsName)
+                && inputSearchLibrary.getText().length() == 0 && songAdapter.getArtistFilter().isEmpty()
+                && playlistSuggestionsView.hasContent();
+        playlistSuggestionsView.setShown(wanted);
+    }
+
+    /** @param fresh ignora lo guardado y pide todo de nuevo: al abrir la app y con el botón de actualizar. */
+    private void refreshForYou(boolean fresh) {
+        if (uiState == null) return;
+        ensureRecommender();
         if (uiState.forYou == null) uiState.forYou = recommender.lastKnown();
         final int generation = ++uiState.forYouGeneration;
         uiState.forYouLoading = true;
@@ -1766,6 +1848,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 applyLibraryFilter(s != null ? s.toString() : "");
                 restoreLibraryPosition();
+                updatePlaylistSuggestionsVisibility();
             }
             @Override public void afterTextChanged(Editable s) {}
         });
@@ -1860,6 +1943,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         size.width = visible ? 0 : LinearLayout.LayoutParams.WRAP_CONTENT;
         size.weight = visible ? 1 : 0;
         sort.setLayoutParams(size);
+        updatePlaylistSuggestionsVisibility();
     }
 
     private void setLibraryMode(int mode) {
@@ -1967,6 +2051,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
         if (mode == 3) showArrivals(name);
+        refreshPlaylistSuggestions(false);
     }
 
     /** Al abrir una playlist, lleva la vista a las canciones recién agregadas y las anima al entrar. */

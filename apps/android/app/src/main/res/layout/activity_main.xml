@@ -537,6 +537,9 @@
                             android:showText="false" android:contentDescription="@string/descarga_automatica"/>
                     </LinearLayout>
                 </LinearLayout>
+                <cl.arichard.descargador.util.PlaylistSuggestionsView android:id="@+id/playlistSuggestions"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp" android:visibility="gone"/>
             </LinearLayout>
 
             <cl.arichard.descargador.util.CollectionSwipeLayout android:id="@+id/libraryContentSwipe"

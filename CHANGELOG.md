@@ -1,5 +1,22 @@
 # Historial de versiones
 
+## 2.3.9 — 4 de noviembre de 2026
+
+### Windows y Android
+
+- Al abrir una playlist aparece arriba una tarjeta compacta, «Para esta playlist», con un carrusel de canciones sugeridas a partir de las de esa misma playlist, sin repetir las que ya tiene. Pasa sola cada pocos segundos, se desliza con el dedo o el mouse, tiene un indicador de puntos, se puede plegar y actualizar, y el botón + agrega la canción a la playlist con una animación. Se oculta con búsqueda o filtro de artista activos.
+- Las sugerencias se guardan por playlist durante 6 horas y, sin conexión, se muestran las últimas guardadas.
+
+### Windows
+
+- Las portadas de las playlists vuelven a aparecer: ahora se buscan en el archivo local, en los datos guardados o en la miniatura de YouTube, igual que la lista de canciones.
+- Los cuadros de diálogo ya no oscurecen el fondo con un velo gris claro: usan el mismo velo oscuro del resto de la aplicación.
+- La biblioteca tiene ordenamiento, como en Android: orden original, título, artista, más recientes, más escuchadas y duración. Un segundo clic invierte el sentido y la elección se recuerda.
+
+### Android
+
+- La pestaña Artistas de la búsqueda ya no queda en negro después de limpiar o reiniciar la búsqueda: la lista de artistas dejaba de mostrarse aunque el contador indicara resultados.
+
 ## 2.3.8 — 1 de noviembre de 2026
 
 ### Windows y Android

@@ -251,6 +251,11 @@ public final class Tr {
         m.put("M\u00e1s tarde", "Later");
         m.put("Omitir", "Skip");
         m.put("Actualizar ahora", "Update now");
+        m.put("Para esta playlist", "For this playlist");
+        m.put("Actualizar sugerencias", "Refresh suggestions");
+        m.put("Mostrar sugerencias", "Show suggestions");
+        m.put("Ocultar sugerencias", "Hide suggestions");
+        m.put("Agregar a la playlist", "Add to playlist");
         m.put("%d canciones guardadas en tu biblioteca", "%d songs saved to your library");
         m.put("¡Hay una versión nueva!", "There's a new version!");
         m.put("LO NUEVO", "WHAT'S NEW");

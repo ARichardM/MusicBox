@@ -21,3 +21,4 @@ Check 1.0 Check.qml
 MbDialog 1.0 MbDialog.qml
 PreviewBar 1.0 PreviewBar.qml
 QueuePanel 1.0 QueuePanel.qml
+PlaylistSuggestions 1.0 PlaylistSuggestions.qml

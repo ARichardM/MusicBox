@@ -19,6 +19,10 @@ MAX_ARTISTS = 8
 MAX_SECONDS = 600
 CACHE_SECONDS = 6 * 3600
 CACHE_ENTRIES = 3
+PLAYLIST_SEEDS = 4
+PLAYLIST_SONGS = 12
+PLAYLIST_POOL = 24  # se guardan más de las que se muestran: así sobran al ir agregándolas a la playlist
+PLAYLIST_CACHE_ENTRIES = 12
 CACHE_VERSION = "v2:"  # súbela cuando cambie el formato del resultado guardado
 GENERIC_QUERY = "éxitos música"
 _TOPIC = re.compile(r"\s*-\s*topic$", re.IGNORECASE)
@@ -106,6 +110,27 @@ def combine(results, exclude_ids=(), exclude_titles=(), limit=MAX_SONGS):
     return {"songs": songs, "artists": artists}
 
 
+def playlist_seeds(video_ids, plays, limit=PLAYLIST_SEEDS):
+    """[(id, peso)] con las canciones de una playlist que mejor la representan.
+
+    Primero las más escuchadas dentro de ella y, a igualdad (o sin reproducciones), las últimas agregadas.
+    ``video_ids`` va en el orden de la playlist y ``plays(id)`` devuelve cuántas veces se escuchó.
+    """
+    unique = list(dict.fromkeys(str(value) for value in video_ids if value))
+    counts = {video_id: max(0, int(plays(video_id) or 0)) for video_id in unique}
+    order = {video_id: index for index, video_id in enumerate(unique)}
+    ranked = sorted(unique, key=lambda video_id: (-counts[video_id], -order[video_id]))[:limit]
+    top = max((counts[video_id] for video_id in ranked), default=0)
+    # Sin reproducciones todas pesan igual; con ellas, las no escuchadas pesan menos que las escuchadas.
+    return [(video_id, 1.0 if top == 0 else max(0.25, counts[video_id] / top)) for video_id in ranked]
+
+
+def _without_known(songs, exclude_ids, exclude_titles):
+    ids = {str(value) for value in exclude_ids}
+    titles = {normalize_title(value) for value in exclude_titles}
+    return [song for song in songs if song["id"] not in ids and normalize_title(song["title"]) not in titles]
+
+
 class Recommender:
     """Calcula "Para ti" con caché de 6 horas por conjunto de semillas.
 
@@ -116,6 +141,7 @@ class Recommender:
         self._related, self._search = fetch_related, fetch_search
         self._clock, self._ttl = clock, ttl
         self._cache: dict[str, tuple[float, dict]] = {}
+        self._playlist_cache: dict[str, tuple[float, list]] = {}
 
     def snapshot(self) -> dict:
         return {signature: {"at": at, "result": result} for signature, (at, result) in self._cache.items()}
@@ -171,6 +197,49 @@ class Recommender:
         for stale in sorted(self._cache, key=lambda name: self._cache[name][0])[:-CACHE_ENTRIES]:
             del self._cache[stale]
         return dict(outcome)
+
+    def snapshot_playlists(self) -> dict:
+        return {signature: {"at": at, "songs": songs} for signature, (at, songs) in self._playlist_cache.items()}
+
+    def restore_playlists(self, data) -> None:
+        if not isinstance(data, dict):
+            return
+        for signature, entry in data.items():
+            try:
+                self._playlist_cache[str(signature)] = (float(entry["at"]), [dict(song) for song in entry["songs"]])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    def for_playlist(self, seeds, exclude_ids=(), exclude_titles=(), fresh=False) -> dict:
+        """Sugerencias para una playlist: ``seeds`` es [(id, peso)] y se excluye lo que la playlist ya tiene.
+
+        Devuelve ``{"songs", "mode"}`` con ``mode`` en playlist u offline. Se guarda un conjunto mayor al que se
+        muestra para poder volver a filtrar con la playlist actual sin consultar de nuevo a YouTube.
+        """
+        seeds = [(str(video_id), float(weight)) for video_id, weight in seeds if video_id]
+        if not seeds:
+            return {"songs": [], "mode": "offline"}
+        signature = "v1:playlist:" + ",".join(sorted(video_id for video_id, _weight in seeds))
+        exclude_ids = {str(value) for value in exclude_ids} | {video_id for video_id, _weight in seeds}
+        cached = self._playlist_cache.get(signature)
+
+        def shown(songs):
+            return {"songs": _without_known(songs, exclude_ids, exclude_titles)[:PLAYLIST_SONGS], "mode": "playlist"}
+
+        if cached and not fresh and self._clock() - cached[0] < self._ttl:
+            return shown(cached[1])
+        results = []
+        for video_id, weight in seeds:
+            entries = self._safe(self._related, video_id)
+            if entries:
+                results.append((weight, entries))
+        if not results:
+            return shown(cached[1]) if cached else {"songs": [], "mode": "offline"}
+        songs = combine(results, exclude_ids, exclude_titles, limit=PLAYLIST_POOL)["songs"]
+        self._playlist_cache[signature] = (self._clock(), songs)
+        for stale in sorted(self._playlist_cache, key=lambda name: self._playlist_cache[name][0])[:-PLAYLIST_CACHE_ENTRIES]:
+            del self._playlist_cache[stale]
+        return shown(songs)
 
     @staticmethod
     def _safe(fetch, argument):

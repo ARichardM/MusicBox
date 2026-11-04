@@ -39,6 +39,11 @@ class PlaylistArtistTests(unittest.TestCase):
         b._current = {}
         b._start_local_track = Mock(side_effect=lambda row: setattr(b, "_current", row))
         b._play_online = Mock(side_effect=lambda row, **_: setattr(b, "_current", row))
+        b._playlist_sugg = {"playlist": "", "songs": [], "loading": False}
+        b._playlist_sugg_generation = 0
+        b._clicks_stats = Mock(count=lambda key: 0)
+        b._recommender = Mock()
+        b._run_in_thread = lambda work: None
         b._apply_library_view()
 
     def test_exact_artist_filter_combines_with_search_and_keeps_all_picker_choices(self):
