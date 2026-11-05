@@ -24,6 +24,7 @@ public class DescargadorApp extends Application {
     @Override public void onCreate() {
         super.onCreate();
         cl.arichard.descargador.util.ScreenRotation.install(this);
+        cl.arichard.descargador.util.EdgeBackLayout.install(this);
         // Immediately enforce saved theme before any activity or layout inflater runs
         SharedPreferences prefs = getSharedPreferences("musicbox_prefs", MODE_PRIVATE);
         boolean isDark = prefs.getBoolean("dark_mode", true);

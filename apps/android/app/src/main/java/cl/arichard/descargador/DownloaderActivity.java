@@ -211,6 +211,12 @@ public class DownloaderActivity extends AppCompatActivity {
         else if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null)
             shared = intent.getData().toString();
         if (shared == null || shared.toString().trim().isEmpty()) return;
+        Intent searchIntent = cl.arichard.descargador.util.SharedSongSearch.searchIntent(this, intent, shared);
+        if (searchIntent != null) {
+            startActivity(searchIntent);
+            finish();
+            return;
+        }
         // Una playlist de Spotify, YouTube o Deezer se importa completa en lugar de pegarse como enlace.
         PlaylistImport.Link playlist = PlaylistImport.find(shared);
         if (playlist != null) { PlaylistImportDialog.start(this, playlist); return; }

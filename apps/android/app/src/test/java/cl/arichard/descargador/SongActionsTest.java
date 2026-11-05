@@ -53,6 +53,17 @@ public class SongActionsTest {
     }
     private AlertDialog dialog() { return (AlertDialog) ShadowDialog.getLatestDialog(); }
 
+    @Test public void importEntryOpensWithoutReadingAndRejectsInvalidLink() {
+        cl.arichard.descargador.util.PlaylistImportDialog.showEntry(activity);
+        AlertDialog entry = dialog();
+        assertTrue(entry.isShowing());
+        entry.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+        assertTrue(entry.isShowing());
+        entry.getButton(AlertDialog.BUTTON_NEGATIVE).performClick();
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
+        assertFalse(entry.isShowing());
+    }
+
     @Test public void successfulDeletionRequiresConfirmationAndRemovesMembership() throws Exception {
         AtomicBoolean changed = new AtomicBoolean();
         SongActions.delete(activity, song, () -> changed.set(true)); finishWork();

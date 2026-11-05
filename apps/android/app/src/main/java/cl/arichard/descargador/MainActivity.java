@@ -1916,6 +1916,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
 
         btnNewPlaylist.setOnClickListener(v -> showCreatePlaylistDialog());
+        ((TextView) findViewById(R.id.btnImportPlaylists)).setText(cl.arichard.descargador.util.Tr.t("Importar playlists"));
+        findViewById(R.id.btnImportPlaylists).setOnClickListener(v -> cl.arichard.descargador.util.PlaylistImportDialog.showEntry(this));
     }
 
 
@@ -2245,6 +2247,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
         if (song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Descargar")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.download(this, song, this::refreshMusicLibrary); return true;
+        });
+        if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Mover a otra playlist")).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongActions.moveToPlaylist(this, currentSubListName, song, this::refreshPlaylistsView);
+            return true;
         });
         if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Quitar de esta playlist")).setOnMenuItemClickListener(item -> {
             PlaylistManager.getInstance(this).removeSongFromPlaylist(currentSubListName, song.getPath());
@@ -2797,10 +2803,33 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 .show();
     }
 
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    public boolean canSwipeBack() {
+        return !currentTabIsSearch && (isViewingSubList || (songAdapter != null && songAdapter.isSelectionMode()));
+    }
+
     private void handleIntent(Intent intent) {
         if (intent == null) return;
         String action = intent.getAction();
         String type = intent.getType();
+
+        if (intent.getBooleanExtra(cl.arichard.descargador.util.SharedSongSearch.EXTRA_SEARCH, false)) {
+            switchTab(true);
+            inputSearch.clearFocus();
+            String query = intent.getStringExtra(Intent.EXTRA_TEXT);
+            inputSearch.setText(query == null ? "" : query);
+            if (pendingLiveSearch != null) liveSearchHandler.removeCallbacks(pendingLiveSearch);
+            pendingLiveSearch = null;
+            uiState.searchFilter = "songs";
+            renderSearchFilter();
+            if (query != null && !query.isEmpty()) performYoutubeSearch(query);
+            return;
+        }
 
         if (Intent.ACTION_SEND.equals(action) && "text/plain".equals(type)) {
             String sharedText = intent.getStringExtra(Intent.EXTRA_TEXT);

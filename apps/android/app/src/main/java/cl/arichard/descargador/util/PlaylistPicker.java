@@ -25,8 +25,13 @@ public final class PlaylistPicker {
     private PlaylistPicker() {}
 
     public static AlertDialog show(Activity activity, String title, boolean allowCreate, Consumer<String> selected) {
+        return show(activity, title, allowCreate, null, selected);
+    }
+
+    public static AlertDialog show(Activity activity, String title, boolean allowCreate, String excluded, Consumer<String> selected) {
         PlaylistManager manager = PlaylistManager.getInstance(activity);
-        List<String> names = manager.getPlaylistNames();
+        List<String> names = new ArrayList<>(manager.getPlaylistNames());
+        names.remove(excluded);
         Map<String, List<Song>> songs = new HashMap<>();
         BaseAdapter adapter = new BaseAdapter() {
             @Override public int getCount() { return names.size() + (allowCreate ? 1 : 0); }

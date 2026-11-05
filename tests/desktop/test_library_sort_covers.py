@@ -34,6 +34,30 @@ class LibrarySortTests(unittest.TestCase):
     def titles(self):
         return [row["title"] for row in self.bridge.library]
 
+    def test_tabs_clear_previous_collection_and_search_filters(self):
+        b = self.bridge
+        for tab in ("songs", "playlists", "folders"):
+            with self.subTest(tab=tab):
+                b._library_folder = "Carpeta anterior"
+                b._library_playlist = "Playlist anterior"
+                b._library_artist = "Otro artista"
+                b.setLibraryQuery("sin coincidencias")
+                self.assertEqual(self.titles(), [])
+                b.setLibraryFilter(tab)
+                self.assertEqual(self.titles(), ["Charlie", "alfa", "Bravo"])
+                self.assertEqual((b._library_folder, b._library_playlist,
+                                  b._library_artist, b._library_query), ("", "", "", ""))
+
+    def test_clearing_search_restores_tracks_without_changing_playlist(self):
+        b = self.bridge
+        b._playlists = {"chill": ["/m/a.mp3"]}
+        b._library_playlist = "chill"
+        b.setLibraryQuery("harukamirai")
+        self.assertEqual(self.titles(), [])
+        b.setLibraryQuery("")
+        self.assertEqual(self.titles(), ["alfa"])
+        self.assertEqual(b._playlists, {"chill": ["/m/a.mp3"]})
+
     def test_each_mode_has_natural_direction_and_second_tap_reverses_it(self):
         b = self.bridge
         expected = {"title": ["alfa", "Bravo", "Charlie"], "artist": ["Bravo", "alfa", "Charlie"],
@@ -92,6 +116,15 @@ class PlaylistCoverTests(unittest.TestCase):
         self.assertEqual(covers["sin datos"], "https://i.ytimg.com/vi/unknown/mqdefault.jpg")
         self.assertEqual(covers["primera sin portada"], "https://img/saved.jpg")
         self.assertEqual(covers["vacía"], "")
+
+    def test_counts_ignore_unresolved_files_and_deduplicate_linked_tracks(self):
+        b = self.bridge
+        b._playlists = {"Favoritos": ["/missing/song.mp3"],
+                        "Mixta": ["/m/a.mp3", "youtube:idA", "youtube:unknown", "/missing/song.mp3"]}
+        rows = {row["name"]: row for row in b.playlists}
+        self.assertEqual(rows["Favoritos"]["count"], 0)
+        self.assertEqual(rows["Mixta"]["count"], 2)
+        self.assertEqual(b._playlists["Favoritos"], ["/missing/song.mp3"])
 
 
 if __name__ == "__main__":

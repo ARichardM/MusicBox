@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="import_playlists">Import playlists</string>
     <string name="lista_canciones_pista">Artist - Song\nAnother song</string>
     <string name="buscar_en_lista">Search in list</string>
     <string name="siguiente">Next</string>

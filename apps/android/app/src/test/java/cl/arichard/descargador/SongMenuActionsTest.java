@@ -20,6 +20,37 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class SongMenuActionsTest {
+    @Test public void moveLinkedSongKeepsOtherPlaylistsAndMetadata() {
+        PlaylistManager manager = fresh();
+        Song song = linkedSong(manager);
+        manager.createPlaylist("Destino");
+        assertTrue(manager.moveSongToPlaylist("Rock", "Destino", song.getPath()));
+        assertTrue(manager.getSongPaths("Rock").isEmpty());
+        assertEquals(Arrays.asList("youtube:abc"), manager.getSongPaths("Destino"));
+        assertEquals(Arrays.asList("youtube:abc"), manager.getSongPaths("Favoritos"));
+        assertNotNull(manager.getOnlineTrack("youtube:abc"));
+    }
+
+    @Test public void moveToExistingEntryDoesNotDuplicateAndInvalidMoveKeepsSource() {
+        PlaylistManager manager = fresh();
+        Song song = linkedSong(manager);
+        assertFalse(manager.moveSongToPlaylist("Rock", "Rock", song.getPath()));
+        assertFalse(manager.moveSongToPlaylist("Rock", "Missing", song.getPath()));
+        assertEquals(Arrays.asList("youtube:abc"), manager.getSongPaths("Rock"));
+        assertTrue(manager.moveSongToPlaylist("Rock", "Favoritos", song.getPath()));
+        assertEquals(Arrays.asList("youtube:abc"), manager.getSongPaths("Favoritos"));
+        assertTrue(manager.getSongPaths("Rock").isEmpty());
+    }
+
+    @Test public void moveLocalSongKeepsItsPath() {
+        PlaylistManager manager = fresh();
+        Song song = local("Local");
+        manager.addSongToPlaylist("Origen", song.getPath());
+        manager.createPlaylist("Destino");
+        assertTrue(manager.moveSongToPlaylist("Origen", "Destino", song.getPath()));
+        assertEquals(Arrays.asList(song.getPath()), manager.getSongPaths("Destino"));
+        assertTrue(manager.getSongPaths("Origen").isEmpty());
+    }
     private static Song local(String title) {
         return new Song(1, title, "Artista", "Album", 1000, "/music/" + title.replace(' ', '_') + ".mp3", "/music", 0);
     }

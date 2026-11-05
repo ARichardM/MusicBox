@@ -386,6 +386,28 @@ public class PlaylistManager {
         return removed;
     }
 
+    /** Mueve una entrada sin borrar archivos ni sus metadatos online. */
+    public synchronized boolean moveSongToPlaylist(String source, String destination, String path) {
+        if (source == null || source.equals(destination) || !playlists.containsKey(destination)) return false;
+        List<String> origin = playlists.get(source);
+        if (origin == null || path == null) return false;
+        String key = null;
+        for (String entry : origin) if (matchesPath(entry, path)) { key = entry; break; }
+        if (key == null) return false;
+        List<String> target = playlists.get(destination);
+        boolean alreadyPresent = false;
+        for (String entry : target) if (matchesPath(entry, path)) { alreadyPresent = true; break; }
+        if (!alreadyPresent) {
+            target.add(key);
+            freshlyAdded.computeIfAbsent(destination, ignored -> new java.util.LinkedHashSet<>()).add(key);
+        }
+        origin.removeIf(entry -> matchesPath(entry, path));
+        Set<String> fresh = freshlyAdded.get(source);
+        if (fresh != null) fresh.removeIf(entry -> matchesPath(entry, path));
+        save();
+        return true;
+    }
+
     /** Nombres de las playlists que contienen esta canción. */
     public synchronized List<String> playlistsContaining(String path) {
         List<String> names = new ArrayList<>();

@@ -7,6 +7,20 @@ from PySide6.QtCore import QLocale, QTranslator
 LANGUAGES = ("auto", "es", "en")
 
 EN = {
+    "Importar playlists": "Import playlists",
+    "Elige una plataforma. Copia el enlace de una playlist pública desde su menú Compartir.": "Choose a platform. Copy a public playlist link from its Share menu.",
+    "En {platform}, abre una playlist pública y elige Compartir → Copiar enlace.": "In {platform}, open a public playlist and choose Share → Copy link.",
+    "Pega el enlace aquí. Podrás revisar la lista antes de importarla.": "Paste the link here. You can review the playlist before importing it.",
+    "Tus favoritas, en un solo lugar": "Your favorites, all together",
+    "Marca canciones con el corazón para guardarlas aquí": "Tap the heart on a song to save it here",
+    "Información de la canción": "Song info",
+    "Mover a otra playlist": "Move to another playlist",
+    "Selecciona la playlist de destino": "Select the destination playlist",
+    "Crea otra playlist para mover la canción": "Create another playlist to move the song",
+    "Archivo": "File",
+    "Tamaño": "Size",
+    "Enlace": "Link",
+    "Duración": "Duration",
     "No se pudieron agregar canciones similares. Toca para reintentar.": "Similar songs could not be added. Tap to retry.",
     "Buscando…": "Searching…",
     "Todos los artistas": "All artists",

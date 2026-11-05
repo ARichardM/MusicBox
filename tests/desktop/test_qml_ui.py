@@ -70,6 +70,15 @@ class QmlUiTests(unittest.TestCase):
             engine.load(QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "Main.qml")))
             self.assertTrue(engine.rootObjects(), "\n".join(errors))
             root = engine.rootObjects()[0]
+            root.setProperty("page", 1)
+            import_button = root.findChild(QObject, "importLinkButton")
+            self.assertEqual(import_button.property("text"), "Importar playlists")
+            QMetaObject.invokeMethod(import_button, "clicked", Qt.DirectConnection)
+            import_dialog = root.findChild(QObject, "importLinkDialog")
+            QTest.qWait(80)
+            self.assertTrue(import_dialog.property("visible"))
+            self.assertIsNotNone(import_dialog.findChild(QObject, "importLinkField"))
+            QMetaObject.invokeMethod(import_dialog, "close", Qt.DirectConnection)
             bridge._library_all = [
                 {"path": "/test/a.mp3", "title": "Primera", "artist": "Ana"},
                 {"path": "/test/b.mp3", "title": "Segunda", "artist": "Otro"}]
@@ -199,6 +208,43 @@ class QmlUiTests(unittest.TestCase):
             bridge._downloading_ids = {"pending"}
             bridge.searchResultsChanged.emit()
             bridge.downloadingIdsChanged.emit()
+            QTest.qWait(100)
+            def visual_items(item):
+                yield item
+                for child in item.childItems():
+                    yield from visual_items(child)
+            for name in ("rowDownloadBadge", "rowDownloadRing"):
+                indicators = [item for item in visual_items(root.contentItem())
+                              if item.objectName() == name and item.property("visible")]
+                self.assertTrue(indicators, name)
+                for indicator in indicators:
+                    subtitle = next((item for item in indicator.parentItem().childItems()
+                                     if item.objectName() == "rowSubtitle"), None)
+                    self.assertIsNotNone(subtitle)
+                    self.assertLessEqual(indicator.property("x") + indicator.property("width"), subtitle.property("x"))
+            info = root.findChild(QObject, "trackInfoDialog")
+            info.setProperty("rows", bridge.trackInfo(bridge._search_results[0]))
+            QMetaObject.invokeMethod(info, "open", Qt.DirectConnection)
+            QTest.qWait(50)
+            self.assertTrue(info.property("visible"))
+            QMetaObject.invokeMethod(info, "close", Qt.DirectConnection)
+            bridge._for_you = {"songs": [dict(bridge._search_results[0], subtitle="Un artista con nombre largo")], "artists": [], "mode": "seeds"}
+            bridge._finish_home_loading()
+            bridge._search_results = []
+            bridge.searchResultsChanged.emit()
+            bridge.forYouChanged.emit()
+            root.setProperty("page", 0)
+            QTest.qWait(500)
+            card = next((item for item in visual_items(root.contentItem()) if item.objectName() == "forYouCard"), None)
+            self.assertIsNotNone(card)
+            self.assertTrue(card.property("visible"))
+            text_box = card.findChild(QObject, "forYouText")
+            actions = card.findChild(QObject, "forYouActions")
+            self.assertLessEqual(text_box.property("y") + text_box.property("height"), actions.property("y"))
+            if preview_dir:
+                self.assertTrue(root.grabWindow().save(str(Path(preview_dir) / "recommendation-actions.png")))
+            bridge._for_you["songs"] = []
+            bridge.forYouChanged.emit()
             bridge._stream_resolving = True
             bridge.playerChanged.emit()
             play_button = root.findChild(QObject, "playerPlayButton")

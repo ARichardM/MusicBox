@@ -1207,6 +1207,7 @@ class MusicBoxBridge(QObject):
         by_path_clicks = {row.get("path"): row for row in self._library_all}
         id_rows = {vid: by_path_clicks[path] for path, vid in self._path_ids.items() if path in by_path_clicks}
         for name, keys in self._playlists.items():
+            keys = self._visible_playlist_keys(keys, by_path_clicks, id_rows)
             thumb = ""
             for k in keys:
                 thumb = self._entry_thumbnail(k, by_path_clicks, id_rows)
@@ -1222,6 +1223,20 @@ class MusicBoxBridge(QObject):
                 "autoDownload": name in self._auto_download_playlists or self.isAutoDownload(f"playlist:{name}")
             })
         return sorted(result, key=lambda x: x["name"].casefold())
+
+    def _visible_playlist_keys(self, keys, by_path, id_rows):
+        """Cuenta las mismas entradas que la vista puede resolver, sin borrar referencias guardadas."""
+        visible, seen = [], set()
+        for key in keys:
+            vid = identity.bare_id(key) or self._path_ids.get(key, "")
+            canonical = vid or key
+            if canonical in seen:
+                continue
+            if (key in by_path or vid in id_rows or vid
+                    or self._online_tracks.get(key)):
+                seen.add(canonical)
+                visible.append(key)
+        return visible
 
     @Property("QVariantList", notify=historyChanged)
     def history(self):
@@ -1722,6 +1737,46 @@ class MusicBoxBridge(QObject):
     @Slot("QVariantMap", result=str)
     def trackVideoId(self, track):
         return str(self._id_of(dict(track or {})) or "")
+
+    @Slot(str, str, "QVariantMap", result=bool)
+    def moveTrackToPlaylist(self, source, destination, track):
+        item = dict(track or {})
+        key = item.get("playlistKey") or self._canonical_key(item)
+        if (source == destination or destination not in self._playlists
+                or key not in self._playlists.get(source, [])):
+            return False
+        self.addTrackToPlaylist(destination, item)
+        if self._canonical_key(item) not in self._playlists[destination]:
+            return False
+        self.removeTrackFromPlaylist(source, key)
+        return True
+
+    @Slot("QVariantMap", result="QVariantList")
+    def trackInfo(self, track):
+        item = dict(track or {})
+        rows = []
+        def add(label, value):
+            if value not in (None, "", []):
+                rows.append({"label": i18n.tr(label), "value": str(value)})
+        add("Título", item.get("title"))
+        add("Artista", item.get("artist") or item.get("subtitle"))
+        add("Álbum", item.get("album"))
+        duration = item.get("duration")
+        if isinstance(duration, (int, float)) and duration > 0:
+            duration = f"{int(duration) // 60}:{int(duration) % 60:02d}"
+        add("Duración", duration)
+        path = item.get("path", "")
+        add("Archivo", path)
+        if path:
+            try:
+                add("Tamaño", f"{Path(path).stat().st_size / (1024 * 1024):.2f} MB")
+            except OSError:
+                pass
+        vid = self._id_of(item)
+        add("Enlace", f"https://www.youtube.com/watch?v={vid}" if vid else item.get("url"))
+        keys = {key for key in (item.get("playlistKey"), path, self._canonical_key(item)) if key}
+        add("Playlists", ", ".join(name for name, entries in self._playlists.items() if keys.intersection(entries)))
+        return rows
 
     def _queues(self):
         return [queue for queue in (self._online_queue, self._queue) if queue]
@@ -2717,6 +2772,7 @@ class MusicBoxBridge(QObject):
                           "thumbnail": next((row["thumbnail"] for row in items if row.get("thumbnail")), "")}
                          for name, items in sorted(grouped.items(), key=lambda pair: pair[0].casefold())]
         self.foldersChanged.emit()
+        self.playlistsChanged.emit()
         self._apply_library_view()
         if self._search_results:
             for item in self._search_results:
@@ -2741,12 +2797,8 @@ class MusicBoxBridge(QObject):
             resolved = []
             by_path = {row.get("path"): row for row in self._library_all}
             id_rows = {vid: by_path[path] for path, vid in self._path_ids.items() if path in by_path}
-            seen = set()
-            for k in keys:
+            for k in self._visible_playlist_keys(keys, by_path, id_rows):
                 vid = identity.bare_id(k) or self._path_ids.get(k, "")
-                if (vid or k) in seen:
-                    continue
-                seen.add(vid or k)
                 row = by_path.get(k) or id_rows.get(vid)
                 if row is not None:
                     item = dict(row)
@@ -2804,10 +2856,11 @@ class MusicBoxBridge(QObject):
     @Slot(str)
     def setLibraryFilter(self, value):
         self._library_filter = value if value in {"songs", "playlists", "folders"} else "songs"
-        if value in {"playlists", "folders"}:
-            self._library_folder = ""
-        if value != "playlists":
-            self._library_playlist = ""
+        # Las pestañas abren la raíz de cada vista, sin filtros de la anterior.
+        self._library_folder = ""
+        self._library_playlist = ""
+        self._library_artist = ""
+        self._library_query = ""
         self._apply_library_view()
 
     @Slot(str)

@@ -26,6 +26,21 @@ public final class SongActions {
         addMultipleToPlaylist(activity, java.util.Collections.singletonList(song), changed);
     }
 
+    public static void moveToPlaylist(Activity activity, String source, Song song, Runnable changed) {
+        PlaylistManager manager = PlaylistManager.getInstance(activity);
+        if (manager.getPlaylistNames().size() < 2) {
+            message(activity, Tr.t("Crea otra playlist para mover la canción"));
+            return;
+        }
+        PlaylistPicker.show(activity, Tr.t("Mover a otra playlist"), false, source, destination -> {
+            if (manager.moveSongToPlaylist(source, destination, song.getPath())) {
+                message(activity, Tr.t("Canción movida a ") + Tr.name(destination));
+                changed.run();
+                if (song.isOnline() && manager.isAutoDownloadEnabled(destination)) download(activity, song, changed);
+            }
+        });
+    }
+
     /** Muestra el selector de playlist para agregar varias canciones de golpe. */
     public static void addMultipleToPlaylist(Activity activity, List<Song> songs, Runnable changed) {
         if (songs == null || songs.isEmpty()) return;

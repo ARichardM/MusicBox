@@ -7,6 +7,7 @@ MbDialog {
     id: dialog
     readonly property var imp: musicbox.playlistImporter
     readonly property string phase: imp.state
+    property string selectedPlatform: ""
     width: 440
     padding: 24
     closePolicy: phase === "importing" ? Popup.NoAutoClose : Popup.CloseOnEscape
@@ -14,6 +15,7 @@ MbDialog {
     // Abre el diálogo; con un enlace empieza a leerlo de inmediato, sin él pide uno.
     function openFor(text) {
         imp.reset()
+        selectedPlatform = ""
         linkField.text = text || ""
         dialog.open()
         if (text && text.length > 0) imp.start(text)
@@ -55,12 +57,40 @@ MbDialog {
         // Pedir el enlace (o mostrar por qué falló).
         Panel {
             shown: dialog.phase === "idle" || dialog.phase === "error"
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 3
+                columnSpacing: 6
+                rowSpacing: 6
+                Repeater {
+                    model: [{name:"Spotify",icon:"spotify"},{name:"YouTube",icon:"youtube"},{name:"Deezer",icon:"deezer"},{name:"Apple Music",icon:"applemusic"},{name:"SoundCloud",icon:"soundcloud"}]
+                    Button {
+                        Layout.fillWidth: true
+                        implicitHeight: 64
+                        Accessible.name: modelData.name
+                        background: Rectangle { radius: 12; color: Theme.card; border.width: 1; border.color: dialog.selectedPlatform === modelData.name ? Theme.accent : Theme.line }
+                        contentItem: ColumnLayout {
+                            spacing: 4
+                            Image { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 22; Layout.preferredHeight: 22; source: "../icons/platforms/" + modelData.icon + ".svg" }
+                            Label { Layout.alignment: Qt.AlignHCenter; text: modelData.name; color: Theme.fg; font.pixelSize: 12 }
+                        }
+                        onClicked: { dialog.selectedPlatform = modelData.name; linkField.forceActiveFocus() }
+                    }
+                }
+            }
             Label {
                 Layout.fillWidth: true
-                text: qsTr("Pega el enlace de una playlist de Spotify, YouTube, Deezer, Apple Music o SoundCloud.")
+                text: dialog.selectedPlatform ? qsTr("En {platform}, abre una playlist pública y elige Compartir → Copiar enlace.").replace("{platform}", dialog.selectedPlatform) : qsTr("Elige una plataforma. Copia el enlace de una playlist pública desde su menú Compartir.")
                 color: Theme.muted
                 wrapMode: Text.WordWrap
                 font.pixelSize: 13
+            }
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Pega el enlace aquí. Podrás revisar la lista antes de importarla.")
+                color: Theme.muted
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
             }
             Label {
                 Layout.fillWidth: true

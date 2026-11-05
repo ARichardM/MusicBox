@@ -61,6 +61,45 @@ def make_bridge():
 
 
 class PlaylistIdentityTest(unittest.TestCase):
+    def test_move_preserves_metadata_and_other_playlists_without_duplicates(self):
+        bridge = make_bridge()
+        bridge._apply_library_view = mock.Mock()
+        bridge._show_notice = mock.Mock()
+        bridge._playlists = {"Origen": ["youtube:n0vo-mLGe6I"], "Destino": [],
+                             "Otra": ["youtube:n0vo-mLGe6I"]}
+        track = dict(bridge._online_tracks["youtube:n0vo-mLGe6I"], playlistKey="youtube:n0vo-mLGe6I")
+        self.assertTrue(bridge.moveTrackToPlaylist("Origen", "Destino", track))
+        self.assertEqual(bridge._playlists["Origen"], [])
+        self.assertEqual(bridge._playlists["Destino"], ["youtube:n0vo-mLGe6I"])
+        self.assertEqual(bridge._playlists["Otra"], ["youtube:n0vo-mLGe6I"])
+        self.assertIn("youtube:n0vo-mLGe6I", bridge._online_tracks)
+        bridge._playlists["Origen"] = ["youtube:n0vo-mLGe6I"]
+        self.assertTrue(bridge.moveTrackToPlaylist("Origen", "Destino", track))
+        self.assertEqual(len(bridge._playlists["Destino"]), 1)
+
+    def test_invalid_move_keeps_source_and_local_files(self):
+        bridge = make_bridge()
+        track = dict(bridge._library_all[0], playlistKey=bridge._library_all[0]["path"])
+        previous = list(bridge._playlists["Favoritos"])
+        for destination in ("Favoritos", "Inexistente"):
+            self.assertFalse(bridge.moveTrackToPlaylist("Favoritos", destination, track))
+            self.assertEqual(bridge._playlists["Favoritos"], previous)
+        bridge._playlists["Destino"] = []
+        bridge._apply_library_view = mock.Mock()
+        bridge._show_notice = mock.Mock()
+        self.assertTrue(bridge.moveTrackToPlaylist("Favoritos", "Destino", track))
+        self.assertEqual(bridge._playlists["Destino"], [track["path"]])
+        self.assertEqual(bridge._library_all[0]["path"], track["path"])
+
+    def test_info_handles_missing_file_and_online_metadata(self):
+        bridge = make_bridge()
+        rows = bridge.trackInfo({"id": "n0vo-mLGe6I", "title": "Tema", "artist": "Autor",
+                                 "duration": 177, "path": "/missing/song.mp3"})
+        values = [row["value"] for row in rows]
+        self.assertIn("2:57", values)
+        self.assertIn("https://www.youtube.com/watch?v=n0vo-mLGe6I", values)
+        self.assertIn("Favoritos", values)
+
     def test_file_and_online_entry_show_once_with_android_titles(self):
         bridge = make_bridge()
         bridge._unify_playlists()

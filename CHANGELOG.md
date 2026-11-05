@@ -1,5 +1,26 @@
 # Historial de versiones
 
+## 2.4.1 — 5 de noviembre de 2026
+
+### Windows y Android
+
+- «Importar playlists» visible en Mi música, con iconos de Spotify, YouTube, Deezer, Apple Music y SoundCloud e instrucciones para importar una playlist pública por enlace.
+- «Mover a otra playlist» permite elegir el destino sin duplicar la canción, borrar archivos ni afectar las demás playlists.
+
+### Windows
+
+- Al cambiar entre Canciones, Playlists y Carpetas se limpian los filtros de la vista anterior, evitando que la biblioteca parezca vacía.
+- Las tarjetas de playlists cuentan las canciones que pueden mostrar, sin duplicados ni referencias a archivos ausentes. Favoritos vacío explica cómo guardar canciones con el corazón.
+- Los indicadores de carpeta, descarga y progreso aparecen junto al artista. El indicador de carga de reproducción conserva su ubicación.
+- Las recomendaciones separan los botones del texto y ofrecen un menú de tres puntos con la opción de descarga.
+- «Información de la canción» en los menús de canciones, recomendaciones y reproductor.
+- Bordes interiores redondeados y unión continua entre la barra lateral y el reproductor. Controles de reproducción, progreso y volumen blancos en el tema oscuro.
+
+### Android
+
+- Compartir una canción desde Shazam abre el buscador con el título y el artista, en lugar de pegar el enlace en Descargas.
+- Deslizar desde el borde izquierdo permite volver en las pantallas secundarias y salir de una playlist o carpeta abierta, respetando los controles y la navegación de la app.
+
 ## 2.4.0 — 5 de noviembre de 2026
 
 ### Windows y Android

@@ -38,6 +38,11 @@ public final class Tr {
         m.put("No se pudieron cargar las alternativas. Toca para reintentar.", "Could not load alternatives. Tap to retry.");
         m.put("No encontramos otras versiones de esta canción.", "We couldn't find other versions of this song.");
         m.put("Importar playlist", "Import playlist");
+        m.put("Importar playlists", "Import playlists");
+        m.put("Elige una plataforma. Copia el enlace de una playlist pública desde su menú Compartir.", "Choose a platform. Copy a public playlist link from its Share menu.");
+        m.put("En {platform}, abre una playlist pública y elige Compartir → Copiar enlace.", "In {platform}, open a public playlist and choose Share → Copy link.");
+        m.put("Pega el enlace aquí. Podrás revisar la lista antes de importarla.", "Paste the link here. You can review the playlist before importing it.");
+        m.put("Pega un enlace de playlist compatible", "Paste a supported playlist link");
         m.put("Leyendo la playlist de %s…", "Reading the %s playlist…");
         m.put("%d canciones de %s", "%d songs from %s");
         m.put(" · se buscan en YouTube y solo entran las coincidencias seguras", " · songs are searched on YouTube and only confident matches are added");
@@ -335,6 +340,9 @@ public final class Tr {
         m.put("Descargar", "Download");
         m.put("Todos", "All");
         m.put("Información de la canción", "Song info");
+        m.put("Mover a otra playlist", "Move to another playlist");
+        m.put("Crea otra playlist para mover la canción", "Create another playlist to move the song");
+        m.put("Canción movida a ", "Song moved to ");
         m.put("En MusicBox", "In MusicBox");
         m.put("Título", "Title");
         m.put("Artista", "Artist");
