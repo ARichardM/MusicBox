@@ -9,6 +9,7 @@
 
 ### Windows
 
+- Los campos de búsqueda ocultan su contorno en reposo y resaltan una sola tarjeta redondeada al escribir, sin marcos rectangulares interiores.
 - Al cambiar entre Canciones, Playlists y Carpetas se limpian los filtros de la vista anterior, evitando que la biblioteca parezca vacía.
 - Las tarjetas de playlists cuentan las canciones que pueden mostrar, sin duplicados ni referencias a archivos ausentes. Favoritos vacío explica cómo guardar canciones con el corazón.
 - Los indicadores de carpeta, descarga y progreso aparecen junto al artista. El indicador de carga de reproducción conserva su ubicación.

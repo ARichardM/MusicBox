@@ -1,10 +1,11 @@
 import QtQuick
 import QtQuick.Controls
 
-// Campo de texto de una línea con borde que reacciona al foco.
+// Un único contorno al editar; los campos integrados usan el contorno de su tarjeta.
 TextField {
     id: field
     property string iconName: ""
+    property bool embedded: false
     implicitHeight: 42
     leftPadding: iconName !== "" ? 40 : 14
     rightPadding: 14
@@ -30,10 +31,11 @@ TextField {
     }
 
     background: Rectangle {
+        visible: !field.embedded
         radius: 14
         color: Theme.field
         border.width: 1
-        border.color: field.activeFocus ? Theme.accent : Theme.line
+        border.color: field.activeFocus ? Theme.accent : "transparent"
         Behavior on border.color { ColorAnimation { duration: 140 } }
         Icon {
             visible: field.iconName !== ""
