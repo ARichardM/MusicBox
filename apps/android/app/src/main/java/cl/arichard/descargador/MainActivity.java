@@ -175,6 +175,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private int scanGeneration;
     private int discoveryGeneration, forYouBindGeneration, topCollectionsGeneration, recentPlaysGeneration, topLibraryGeneration;
     private boolean initialUiSettled;
+    /** Esqueleto del Inicio mientras llegan las recomendaciones y la biblioteca (solo la primera vez). */
+    private cl.arichard.descargador.util.HomeSkeletonView homeSkeleton;
+    private int homeReadyMask;
+    private static final int HOME_FOR_YOU = 1, HOME_COLLECTIONS = 2, HOME_RECENTS = 4, HOME_LIBRARY = 8, HOME_ALL = 15;
     private boolean libraryScanRunning, libraryScanPending;
     // Local music must not wait behind the extractor's network update at startup.
     private static final java.util.concurrent.ExecutorService LIBRARY_IO =
@@ -295,6 +299,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         initViews();
         setupNavigation();
         setupSearchTab();
+        setupHomeSkeleton();
         setupLibraryTab();
         PlaylistManager.getInstance(this).setAutoDownloadListener((playlist, track) ->
                 runOnUiThread(() -> startDownload(track.getUrl(), track.getTitle(), track.getId())));
@@ -874,6 +879,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, false); Toast.makeText(MainActivity.this, cl.arichard.descargador.util.Tr.t("Agregada a la cola"), Toast.LENGTH_SHORT).show(); return true;
         });
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Ver alternativas")).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongAlternativesSheet.show(MainActivity.this, song, MainActivity.this::refreshPlaylistsView); return true;
+        });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongInfo.show(MainActivity.this, song); return true;
         });
@@ -947,6 +955,10 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             updatePlaylistSuggestionsVisibility();
             return;
         }
+        // Mientras carga, la tarjeta queda plegada; al terminar se despliega con animación según la preferencia del usuario.
+        boolean userCollapsed = getSharedPreferences("recommendations", MODE_PRIVATE)
+                .getBoolean("playlist_suggestions_collapsed", false);
+        if (!playlistSuggestionsView.hasSuggestions()) playlistSuggestionsView.setCollapsed(true, false, false);
         playlistSuggestionsView.setLoading(true);
         updatePlaylistSuggestionsVisibility();
         DescargadorApp.IO.execute(() -> {
@@ -956,6 +968,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 playlistSuggestionsView.setLoading(false);
                 boolean keepPrevious = "offline".equals(result.mode) && playlistSuggestionsView.hasSuggestions();
                 if (!keepPrevious) playlistSuggestionsView.setSuggestions(result.songs);
+                if (playlistSuggestionsView.isCollapsed() != userCollapsed && playlistSuggestionsView.hasSuggestions())
+                    playlistSuggestionsView.setCollapsed(userCollapsed, true, false);
                 updatePlaylistSuggestionsVisibility();
             });
         });
@@ -1000,6 +1014,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private void populateForYou() {
         if (sectionForYou == null || layoutForYouCards == null || uiState == null) return;
         if (!initialUiSettled) return;
+        // Lista solo cuando la carga ya empezó y terminó (con o sin resultados); antes de empezar aún no hay nada que mostrar.
+        if ((uiState.forYouStarted || !loadsRecommendationsOnStart()) && !uiState.forYouLoading) markHomeReady(HOME_FOR_YOU);
         RecommendationEngine.Result result = uiState.forYou;
         boolean hasSongs = result != null && !result.songs.isEmpty();
         boolean loading = uiState.forYouLoading;
@@ -1195,6 +1211,42 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         return card;
     }
 
+    /** Muestra el esqueleto sobre el Inicio hasta que cada sección haya resuelto, para no ver la pantalla vacía. */
+    private void setupHomeSkeleton() {
+        if ("robolectric".equals(android.os.Build.FINGERPRINT) || uiState == null || uiState.homeSkeletonDone || containerSearchDiscovery == null) return;
+        if (!(containerSearchDiscovery.getParent() instanceof FrameLayout)) return;
+        FrameLayout host = (FrameLayout) containerSearchDiscovery.getParent();
+        homeSkeleton = new cl.arichard.descargador.util.HomeSkeletonView(this);
+        homeSkeleton.setPadding(0, 0, 0, 0);
+        host.addView(homeSkeleton, host.indexOfChild(containerSearchDiscovery) + 1,
+                new FrameLayout.LayoutParams(-1, -1));
+        containerSearchDiscovery.setAlpha(0f);
+        // Por si alguna sección no llega a resolver (sin red, sin permiso de música): nunca queda el esqueleto para siempre.
+        host.postDelayed(this::hideHomeSkeleton, 12000);
+    }
+
+    private void markHomeReady(int section) {
+        if (homeSkeleton == null) return;
+        homeReadyMask |= section;
+        if (homeReadyMask == HOME_ALL) hideHomeSkeleton();
+    }
+
+    /** El esqueleto se funde y el contenido real entra subiendo suavemente. */
+    private void hideHomeSkeleton() {
+        final cl.arichard.descargador.util.HomeSkeletonView skeleton = homeSkeleton;
+        if (skeleton == null) return;
+        homeSkeleton = null;
+        if (uiState != null) uiState.homeSkeletonDone = true;
+        if (containerSearchDiscovery != null) {
+            containerSearchDiscovery.setTranslationY(dp(14));
+            containerSearchDiscovery.animate().alpha(1f).translationY(0f).setStartDelay(60).setDuration(380)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
+        }
+        skeleton.animate().alpha(0f).setDuration(260).withEndAction(() -> {
+            if (skeleton.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) skeleton.getParent()).removeView(skeleton);
+        }).start();
+    }
+
     private void refreshDiscoveryContent() {
         if (!initialUiSettled) return;
         final int generation = ++discoveryGeneration;
@@ -1298,6 +1350,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private void renderTopCollections(List<CollectionRank> ranked) {
+        markHomeReady(HOME_COLLECTIONS);
         final int generation = topCollectionsGeneration;
         StringBuilder signature = new StringBuilder();
         for (CollectionRank item : ranked) signature.append(item.playlist).append(item.name).append(item.plays);
@@ -1348,6 +1401,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private void renderRecentPlays(List<Song> recents) {
+        markHomeReady(HOME_RECENTS);
         final int generation = recentPlaysGeneration;
         StringBuilder signature = new StringBuilder();
         for (Song song : recents) signature.append(song.getPath()).append(song.getTitle());
@@ -1431,6 +1485,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private void renderTopLibrary(List<Song> topSongs) {
+        markHomeReady(HOME_LIBRARY);
         final int generation = topLibraryGeneration;
         cl.arichard.descargador.data.ClickStats stats = cl.arichard.descargador.data.ClickStats.getInstance(this);
         StringBuilder signature = new StringBuilder();
@@ -1479,7 +1534,14 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     }
 
     private void triggerSearchOrDownload(String query) {
+        // Un enlace de playlist de Spotify, YouTube, Deezer, Apple Music o SoundCloud se importa completo en vez de descargarse.
+        cl.arichard.descargador.util.PlaylistImport.Link playlistLink = cl.arichard.descargador.util.PlaylistImport.find(query);
+        if (playlistLink != null) {
+            cl.arichard.descargador.util.PlaylistImportDialog.start(this, playlistLink);
+            return;
+        }
         SearchHistoryManager.getInstance(this).addSearchQuery(query);
+        hideHomeSkeleton();
         if (containerSearchDiscovery != null) containerSearchDiscovery.setVisibility(View.GONE);
         if (query == null || query.isEmpty()) return;
 
@@ -2193,6 +2255,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
         if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setOnMenuItemClickListener(item -> {
             deleteSongs(java.util.Collections.singletonList(song), this::refreshMusicLibrary); return true;
+        });
+        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Ver alternativas")).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongAlternativesSheet.show(this, song, this::refreshPlaylistsView); return true;
         });
         popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongInfo.show(this, song); return true;

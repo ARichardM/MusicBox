@@ -10,6 +10,14 @@ Item {
     readonly property int rowHeight: 70
     readonly property int current: musicbox.queueIndex
     readonly property var upcoming: current >= 0 && current + 1 < musicbox.queue.length ? musicbox.queue[current + 1] : null
+    // «Artista · 3:45», sin la parte que no se conoce.
+    readonly property string upcomingDetail: {
+        if (!upcoming) return ""
+        var artist = (upcoming.artist || upcoming.channel || upcoming.subtitle || "").split(" · ")[0]
+        var seconds = Math.round(upcoming.duration || 0)
+        var time = seconds > 0 ? Math.floor(seconds / 60) + ":" + ("0" + (seconds % 60)).slice(-2) : ""
+        return artist && time ? artist + " · " + time : artist + time
+    }
     property int dragFrom: -1
     property int dropIndex: -1
 
@@ -84,12 +92,52 @@ Item {
             }
         }
 
-        Label {
+        // Siguiente canción: miniatura, título, artista y duración.
+        RowLayout {
             Layout.fillWidth: true
-            text: panel.upcoming ? qsTr("Siguiente: ") + panel.upcoming.title : qsTr("No hay más canciones en la cola")
-            color: Theme.muted
-            font.pixelSize: 12
-            elide: Text.ElideRight
+            Layout.topMargin: 2
+            spacing: 12
+            Rectangle {
+                visible: panel.upcoming !== null
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 44
+                radius: 10
+                color: Theme.chip
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    source: panel.upcoming ? (panel.upcoming.thumbnail || "") : ""
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                }
+                Icon {
+                    anchors.centerIn: parent
+                    visible: !panel.upcoming || !panel.upcoming.thumbnail
+                    name: "music"
+                    size: 18
+                    tint: Theme.muted
+                }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 1
+                Label {
+                    Layout.fillWidth: true
+                    text: panel.upcoming ? qsTr("Siguiente: ") + (panel.upcoming.title || "") : qsTr("No hay más canciones en la cola")
+                    color: panel.upcoming ? Theme.fg : Theme.muted
+                    font.pixelSize: 13
+                    font.bold: panel.upcoming !== null
+                    elide: Text.ElideRight
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    text: panel.upcomingDetail
+                    color: Theme.muted
+                    font.pixelSize: 11
+                    elide: Text.ElideRight
+                }
+            }
         }
         RowLayout {
             Layout.fillWidth: true

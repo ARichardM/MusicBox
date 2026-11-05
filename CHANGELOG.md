@@ -1,5 +1,23 @@
 # Historial de versiones
 
+## 2.4.0 — 5 de noviembre de 2026
+
+### Windows y Android
+
+- Importar una playlist desde un enlace: pega o abre el enlace de una playlist de Spotify, YouTube o YouTube Music, Deezer, Apple Music o SoundCloud y MusicBox crea la playlist completa. Las de YouTube llegan con sus videos; las de las demás plataformas se buscan en YouTube Music y solo se agregan las coincidencias seguras, así no entran versiones equivocadas. Muestra el avance real, deja elegir el nombre, se puede detener sin perder lo ya encontrado e indica cuántas canciones no tuvieron una coincidencia segura. Las listas de Spotify son las que muestra su página pública, por lo que una lista muy larga puede salir incompleta.
+- «Ver alternativas» en el menú de tres puntos de cada canción: otras versiones de la misma canción (la original, en vivo, otra subida). Cada una se escucha sin tocar la cola, con la reproducción principal en pausa mientras tanto, y puede reemplazar a la actual en todas tus playlists y en la cola, en la misma posición y sin borrar ningún archivo. Si la canción no está en ninguna playlist, el botón la guarda en la que elijas.
+- El Inicio ya no aparece vacío la primera vez: muestra esqueletos con una ola de brillo continua que reproducen las secciones reales (Para ti, artistas, colecciones, recientes y más escuchadas) y el contenido entra con un fundido suave. Solo aparece cuando todavía no hay nada que mostrar.
+- Las sugerencias de una playlist cargan plegadas y se despliegan con una animación suave cuando terminan de llegar, respetando si las habías plegado tú.
+- La cola muestra la siguiente canción con su miniatura, el artista y la duración.
+- El selector MP3 / MP4 funciona de verdad: antes el reproductor pedía siempre solo audio y la opción de video casi nunca aparecía. Ahora, al elegir MP4, una canción de YouTube pasa a un flujo con imagen y sonido, sigue desde el mismo segundo y en el mismo estado (sonando o en pausa); si ese video no ofrece un MP4 con sonido, vuelve al audio y lo avisa. En Windows hay un botón de video en el reproductor y un panel flotante con la imagen.
+
+### Android
+
+- Las portadas de las colecciones más escuchadas vuelven a verse: el mosaico se coloca cuando ya se conoce su tamaño, sin depender del orden de la pantalla.
+- En la cola del reproductor, la pista de arrastre y la reproducción automática solo aparecen al abrir la hoja, con un fundido corto y sin quedar apagadas a medio camino; la vista compacta se ajustó a su contenido.
+- Nuevo ícono con fondo negro y el cubo centrado, como ícono adaptable.
+- Se pueden compartir o abrir con MusicBox los enlaces de playlists de Spotify, YouTube Music, Deezer, Apple Music y SoundCloud.
+
 ## 2.3.9 — 4 de noviembre de 2026
 
 ### Windows y Android

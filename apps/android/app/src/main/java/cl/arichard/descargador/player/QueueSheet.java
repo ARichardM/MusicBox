@@ -47,7 +47,10 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
     private final QueueAdapter adapter = new QueueAdapter();
     private BottomSheetDialog dialog;
     private BottomSheetBehavior<?> behavior;
-    private TextView heading, subheading, empty, autoplayStatus;
+    private TextView heading, subheading, empty, autoplayStatus, hint;
+    private View autoplayView;
+    private ImageView nextCover;
+    private TextView nextMeta;
     private RecyclerView recycler;
     private ItemTouchHelper touchHelper;
     private boolean dragging;
@@ -60,12 +63,44 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         sheet.behavior = behavior;
         container.addView(sheet.build(null), new ViewGroup.LayoutParams(-1, -1));
         sheet.attach();
+        // La pista de reordenar solo aparece con la hoja abierta: en la vista compacta estorba.
+        int state = behavior.getState();
+        sheet.revealNow(state == BottomSheetBehavior.STATE_EXPANDED || state == BottomSheetBehavior.STATE_HALF_EXPANDED);
+        behavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
+            @Override public void onStateChanged(android.view.View view, int newState) {
+                if (newState == BottomSheetBehavior.STATE_EXPANDED || newState == BottomSheetBehavior.STATE_HALF_EXPANDED) sheet.reveal(true);
+                else if (newState == BottomSheetBehavior.STATE_COLLAPSED) sheet.reveal(false);
+            }
+            @Override public void onSlide(android.view.View view, float offset) {
+                // Aparecen completas en cuanto la hoja empieza a abrirse: sin quedar apagadas a medio camino.
+                sheet.reveal(offset > .12f);
+            }
+        });
         return sheet;
     }
 
     private QueueSheet(Activity activity, boolean inline) {
         this.activity = activity;
         this.inline = inline;
+    }
+    private boolean revealed;
+
+    private View[] revealable() { return new View[]{hint, autoplayView, autoplayStatus}; }
+
+    /** La pista de arrastre y la reproducción automática solo importan con la hoja abierta: entran y salen con un fundido corto. */
+    private void reveal(boolean show) {
+        if (revealed == show) return;
+        revealed = show;
+        for (View view : revealable()) {
+            if (view == null) continue;
+            view.animate().cancel();
+            view.animate().alpha(show ? 1f : 0f).setDuration(show ? 180 : 120).start();
+        }
+    }
+
+    private void revealNow(boolean show) {
+        revealed = show;
+        for (View view : revealable()) if (view != null) { view.animate().cancel(); view.setAlpha(show ? 1f : 0f); }
     }
     public void detach() { player.removeListener(this); }
     public void scrollToCurrent() { if (recycler != null) recycler.scrollToPosition(Math.max(0, player.getCurrentIndex())); }
@@ -131,17 +166,37 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         LinearLayout titles = new LinearLayout(activity); titles.setOrientation(LinearLayout.VERTICAL);
         heading = text(Tr.t("Cola de reproducción"), inline ? 17 : 20); heading.setTypeface(null, Typeface.BOLD);
         titles.addView(heading);
-        subheading = text("", 12); subheading.setSingleLine(true); subheading.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        subheading.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary));
-        subheading.setVisibility(inline ? View.VISIBLE : View.GONE);
-        titles.addView(subheading);
-        header.addView(titles, new LinearLayout.LayoutParams(0, dp(inline ? 52 : 56), 1));
+        // Fila de la siguiente canción: miniatura redondeada y su título, visible en la vista compacta.
+        LinearLayout nextRow = new LinearLayout(activity); nextRow.setGravity(Gravity.CENTER_VERTICAL);
+        nextCover = new ImageView(activity); nextCover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        nextCover.setBackgroundResource(R.drawable.bg_cover_fallback);
+        nextCover.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), dp(8));
+            }
+        });
+        nextCover.setClipToOutline(true);
+        nextRow.addView(nextCover, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        LinearLayout nextTexts = new LinearLayout(activity); nextTexts.setOrientation(LinearLayout.VERTICAL);
+        nextTexts.setPadding(dp(12), 0, 0, 0);
+        subheading = text("", 14); subheading.setSingleLine(true); subheading.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        subheading.setTextColor(ContextCompat.getColor(activity, R.color.text_primary));
+        nextMeta = text("", 12); nextMeta.setSingleLine(true); nextMeta.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        nextMeta.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary));
+        nextTexts.addView(subheading); nextTexts.addView(nextMeta);
+        nextRow.addView(nextTexts, new LinearLayout.LayoutParams(0, -2, 1));
+        nextRow.setVisibility(inline ? View.VISIBLE : View.GONE);
+        LinearLayout.LayoutParams nextParams = new LinearLayout.LayoutParams(-1, -2);
+        nextParams.topMargin = dp(inline ? 10 : 0);
+        titles.addView(nextRow, nextParams);
+        header.addView(titles, new LinearLayout.LayoutParams(0, dp(inline ? 76 : 56), 1));
         if (close != null) header.addView(button(Tr.t("Cerrar"), close));
         root.addView(header);
 
-        TextView hint = text(Tr.t("Mantén pulsado y arrastra para cambiar el orden"), 12);
+        hint = text(Tr.t("Mantén pulsado y arrastra para cambiar el orden"), 12);
         hint.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary)); root.addView(hint);
-        root.addView(autoplayRow());
+        autoplayView = autoplayRow();
+        root.addView(autoplayView);
         autoplayStatus = text("", 12);
         autoplayStatus.setPadding(dp(4), dp(4), dp(4), dp(8));
         autoplayStatus.setTextColor(ContextCompat.getColor(activity, R.color.accent));
@@ -208,9 +263,21 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
             heading.setText(Tr.t("Cola · ") + count);
             empty.setVisibility(count == 0 ? View.VISIBLE : View.GONE);
             int next = player.getCurrentIndex() + 1;
-            subheading.setText(next > 0 && next < count
+            boolean hasNext = next > 0 && next < count;
+            subheading.setText(hasNext
                     ? Tr.t("Siguiente: ") + queue.get(next).getTitle() : Tr.t("No hay más canciones en la cola"));
+            nextMeta.setText(hasNext ? nextDetail(queue.get(next)) : "");
+            nextMeta.setVisibility(hasNext ? View.VISIBLE : View.GONE);
+            if (hasNext) CoverArtLoader.getInstance().loadSongCover(queue.get(next).getCoverPath(), nextCover);
+            else { nextCover.setTag(null); nextCover.setImageResource(R.drawable.bg_cover_fallback); }
         });
+    }
+    /** «Artista · 3:45»; sin la parte que no se conoce. */
+    private static String nextDetail(Song song) {
+        String artist = song.getArtist() == null ? "" : song.getArtist().trim();
+        if (artist.equalsIgnoreCase("<unknown>")) artist = "";
+        String duration = song.getDuration() > 0 ? song.getFormattedDuration() : "";
+        return artist.isEmpty() ? duration : duration.isEmpty() ? artist : artist + " · " + duration;
     }
     @Override public void onQueueChanged() { refresh(); }
     @Override public void onTrackChanged(Song song) { refresh(); }

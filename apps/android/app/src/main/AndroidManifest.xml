@@ -17,10 +17,10 @@
     <application
         android:name=".DescargadorApp"
         android:allowBackup="false"
-        android:icon="@drawable/logo_app"
+        android:icon="@mipmap/ic_launcher"
         android:label="MusicBox"
         android:localeConfig="@xml/locales_config"
-        android:roundIcon="@drawable/logo_app"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MusicBox">
 
@@ -70,6 +70,20 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Abrir un enlace de playlist de Spotify, YouTube Music o Deezer con MusicBox lo importa completo. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="open.spotify.com" android:pathPattern=".*/playlist/.*" />
+                <data android:scheme="https" android:host="music.youtube.com" android:path="/playlist" />
+                <data android:scheme="https" android:host="www.youtube.com" android:path="/playlist" />
+                <data android:scheme="https" android:host="www.deezer.com" android:pathPattern=".*/playlist/.*" />
+                <data android:scheme="https" android:host="deezer.com" android:pathPattern=".*/playlist/.*" />
+                <data android:scheme="https" android:host="music.apple.com" android:pathPattern=".*/playlist/.*" />
+                <data android:scheme="https" android:host="soundcloud.com" android:pathPattern=".*/sets/.*" />
+                <data android:scheme="https" android:host="m.soundcloud.com" android:pathPattern=".*/sets/.*" />
             </intent-filter>
         </activity>
 

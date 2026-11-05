@@ -176,10 +176,17 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     }
 
     private void setMediaMode(boolean mp3) {
-        mp3 = mp3 || !PlayerManager.getInstance().hasVideo();
+        PlayerManager player = PlayerManager.getInstance();
+        mp3 = mp3 || !player.canShowVideo();
         isMp3Mode = mp3;
-        if (mp3) PlayerManager.getInstance().detachOnlineWebView();
-        else PlayerManager.getInstance().attachOnlineWebView(videoHostLayout);
+        if (mp3) {
+            player.detachOnlineWebView();
+            player.setVideoMode(false);
+        } else {
+            // La superficie se crea antes de pedir el flujo con imagen, para que el video aparezca al empezar.
+            player.attachOnlineWebView(videoHostLayout);
+            player.setVideoMode(true);
+        }
         int activeText = ContextCompat.getColor(this, R.color.chip_active_text);
         int inactiveText = ContextCompat.getColor(this, R.color.text_secondary);
 
@@ -214,7 +221,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     /** The queue peeks from the bottom edge; dragging it up reveals the full, editable list. */
     private androidx.core.graphics.Insets systemBars = androidx.core.graphics.Insets.NONE;
 
-    private int queuePeek() { return Math.round(84 * getResources().getDisplayMetrics().density); }
+    private int queuePeek() { return Math.round(94 * getResources().getDisplayMetrics().density); }
     private int[] playerPadding;
 
     /**
@@ -344,6 +351,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     @Override
     protected void onDestroy() {
         if (queuePanel != null) queuePanel.detach();
+        // Al salir de la pantalla las próximas canciones vuelven a pedir solo audio (se ahorran datos).
+        if (isFinishing()) PlayerManager.getInstance().leaveVideoMode();
         super.onDestroy();
     }
 
@@ -399,6 +408,9 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         if (!song.isOnline()) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setIcon(R.drawable.ic_delete).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.delete(this, song, deletePrompt, this::finish); return true;
         });
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Ver alternativas")).setIcon(R.drawable.ic_search).setOnMenuItemClickListener(item -> {
+            cl.arichard.descargador.util.SongAlternativesSheet.show(this, song, () -> updateSongInfo(PlayerManager.getInstance().getCurrentSong())); return true;
+        });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongInfo.show(this, song); return true;
         });
@@ -412,9 +424,12 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         menu.show();
     }
     private void updateVideoAvailability() {
-        boolean available = PlayerManager.getInstance().hasVideo();
+        boolean available = PlayerManager.getInstance().canShowVideo();
         tabSelectorMp4.setVisibility(available ? View.VISIBLE : View.GONE);
-        if (!available && !isMp3Mode) setMediaMode(true);
+        if (!available && !isMp3Mode) {
+            setMediaMode(true);
+            Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Esta canción no tiene video disponible"), Toast.LENGTH_SHORT).show();
+        }
     }
     @Override public void onVideoAvailabilityChanged(boolean available) { updateVideoAvailability(); }
 

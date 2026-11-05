@@ -43,6 +43,8 @@ import cl.arichard.descargador.importer.TextImport;
 import cl.arichard.descargador.model.SearchResult;
 import cl.arichard.descargador.player.PlayerManager;
 import cl.arichard.descargador.util.AppNotice;
+import cl.arichard.descargador.util.PlaylistImport;
+import cl.arichard.descargador.util.PlaylistImportDialog;
 import cl.arichard.descargador.util.ImageLoader;
 import cl.arichard.descargador.util.SafeTap;
 import cl.arichard.descargador.util.Tr;
@@ -338,6 +340,8 @@ public class ImporterActivity extends AppCompatActivity {
         ClipData data = clipboard == null ? null : clipboard.getPrimaryClip();
         CharSequence text = data != null && data.getItemCount() > 0 ? data.getItemAt(0).coerceToText(this) : null;
         if (text == null || text.toString().trim().isEmpty()) { AppNotice.info(findViewById(R.id.importerRoot), Tr.t("El portapapeles está vacío")); return; }
+        PlaylistImport.Link playlist = PlaylistImport.find(text);
+        if (playlist != null) { PlaylistImportDialog.start(this, playlist); return; }
         String current = inputList.getText().toString().trim();
         inputList.setText(current.isEmpty() ? text.toString() : current + "\n" + text);
         inputList.setSelection(inputList.getText().length());

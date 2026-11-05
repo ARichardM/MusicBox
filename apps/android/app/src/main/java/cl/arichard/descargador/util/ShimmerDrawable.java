@@ -14,10 +14,13 @@ import cl.arichard.descargador.R;
 
 /** Lightweight animated placeholder used while artwork is being decoded or downloaded. */
 public final class ShimmerDrawable extends Drawable implements Runnable {
+    private static final long PERIOD_MS = 1250L;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.Matrix matrix = new android.graphics.Matrix();
     private final int baseColor;
     private final int highlightColor;
-    private final long startedAt = SystemClock.uptimeMillis();
+    private LinearGradient shader;
+    private int shaderWidth = -1;
 
     public ShimmerDrawable(Context context) {
         baseColor = ContextCompat.getColor(context, R.color.skeleton_base);
@@ -25,12 +28,18 @@ public final class ShimmerDrawable extends Drawable implements Runnable {
     }
 
     @Override public void draw(@NonNull Canvas canvas) {
-        float width = Math.max(1, getBounds().width());
-        float phase = (SystemClock.uptimeMillis() - startedAt) % 1250L / 1250f;
-        float center = -width + phase * width * 3f;
-        paint.setShader(new LinearGradient(center - width, 0, center + width, 0,
-                new int[]{baseColor, baseColor, highlightColor, baseColor, baseColor},
-                new float[]{0f, .28f, .5f, .72f, 1f}, Shader.TileMode.CLAMP));
+        int width = Math.max(1, getBounds().width());
+        // El degradado se crea una sola vez por ancho y solo se desplaza en cada cuadro (antes se reconstruía en cada uno).
+        if (shader == null || shaderWidth != width) {
+            shaderWidth = width;
+            shader = new LinearGradient(-width, 0, width, 0, new int[]{baseColor, baseColor, highlightColor, baseColor, baseColor},
+                    new float[]{0f, .28f, .5f, .72f, 1f}, Shader.TileMode.CLAMP);
+            paint.setShader(shader);
+        }
+        // Reloj global: todos los marcadores de posición brillan a la vez.
+        float phase = SystemClock.uptimeMillis() % PERIOD_MS / (float) PERIOD_MS;
+        matrix.setTranslate(getBounds().left + -width + phase * width * 3f, 0);
+        shader.setLocalMatrix(matrix);
         canvas.drawRect(getBounds(), paint);
         scheduleSelf(this, SystemClock.uptimeMillis() + 16L);
     }

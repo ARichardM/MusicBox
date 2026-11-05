@@ -52,6 +52,12 @@ public class PlayerManager {
     private static final Map<String, CachedStream> STREAM_CACHE = new HashMap<>();
     /** Videos cuyo enlace se está resolviendo por adelantado (protegido por STREAM_CACHE). */
     private static final Set<String> PREFETCHING = new HashSet<>();
+    /** Videos de los que YouTube no ofrece un MP4 con imagen y sonido en un solo archivo. */
+    private static final Set<String> NO_VIDEO = new HashSet<>();
+    /** El usuario eligio ver el video (pestana MP4): el flujo en linea trae imagen ademas de audio. */
+    private boolean videoMode;
+
+    private static String streamKey(String videoId, boolean video) { return video ? videoId + "#v" : videoId; }
     private static PlayerManager instance;
     public static final int REPEAT_OFF = 0, REPEAT_ALL = 1, REPEAT_ONE = 2;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -579,6 +585,142 @@ public class PlayerManager {
         playSong(song, Collections.singletonList(song));
     }
 
+    /** ¿Está esta canción en la cola actual? */
+    public boolean queueContains(String path) {
+        if (path == null) return false;
+        for (Song song : queue) if (path.equals(song.getPath())) return true;
+        return false;
+    }
+
+    /** Cambia en la cola todas las apariciones de [path] por [replacement]; si sonaba, suena la nueva. */
+    public boolean replaceQueueSong(String path, Song replacement) {
+        if (path == null || replacement == null) return false;
+        boolean changed = false, wasCurrent = false;
+        for (int i = 0; i < queue.size(); i++) {
+            if (!path.equals(queue.get(i).getPath())) continue;
+            queue.set(i, replacement);
+            changed = true;
+            if (i == currentIndex) { currentSong = replacement; wasCurrent = true; }
+        }
+        if (!changed) return false;
+        originalQueue = new ArrayList<>(queue);
+        if (wasCurrent) {
+            recoveryPath = ""; playbackFailures.clear();
+            resumePosition = 0; savedDuration = 0;
+            startCurrent();
+        }
+        notifyQueue();
+        return true;
+    }
+
+    public static final int PREVIEW_LOADING = 0, PREVIEW_PLAYING = 1, PREVIEW_PAUSED = 2, PREVIEW_ENDED = 3, PREVIEW_ERROR = 4;
+
+    public interface PreviewListener { void onPreview(String videoId, int state, int position, int duration); }
+
+    /**
+     * Escucha breve de una canción en línea con un reproductor aparte: no toca la cola ni la canción actual.
+     * Pausa la reproducción principal mientras se escucha y puede reanudarla al terminar.
+     */
+    public final class Preview {
+        private final PreviewListener listener;
+        private MediaPlayer media;
+        private String videoId = "";
+        private int token;
+        private boolean prepared, pausedMain;
+        private final Runnable tick = new Runnable() {
+            @Override public void run() {
+                if (media == null || !prepared) return;
+                try { listener.onPreview(videoId, media.isPlaying() ? PREVIEW_PLAYING : PREVIEW_PAUSED, media.getCurrentPosition(), media.getDuration()); }
+                catch (IllegalStateException ignored) { return; }
+                handler.postDelayed(this, 250);
+            }
+        };
+
+        Preview(PreviewListener listener) { this.listener = listener; }
+
+        public String current() { return videoId; }
+
+        /** Reproduce [id]; si ya suena, la pausa o reanuda. */
+        public void toggle(String id) {
+            if (id.equals(videoId) && media != null) {
+                if (!prepared) return;
+                try {
+                    if (media.isPlaying()) { media.pause(); listener.onPreview(id, PREVIEW_PAUSED, media.getCurrentPosition(), media.getDuration()); }
+                    else { media.start(); handler.removeCallbacks(tick); handler.post(tick); }
+                } catch (IllegalStateException ignored) {}
+                return;
+            }
+            start(id);
+        }
+
+        private void start(String id) {
+            String previous = videoId;
+            token++;
+            closeMedia();
+            if (!previous.isEmpty()) listener.onPreview(previous, PREVIEW_ENDED, 0, 0);
+            if (!pausedMain && isPlaying()) { pausedMain = true; pause(); }
+            videoId = id;
+            final int mine = token;
+            listener.onPreview(id, PREVIEW_LOADING, 0, 0);
+            PLAYBACK_IO.execute(() -> {
+                try {
+                    CachedStream stream;
+                    synchronized (STREAM_CACHE) { stream = STREAM_CACHE.get(id); }
+                    if (stream == null || !stream.isFresh()) stream = resolveToCache(id, "https://www.youtube.com/watch?v=" + id);
+                    final CachedStream ready = stream;
+                    handler.post(() -> { if (mine == token) open(ready, id, mine); });
+                } catch (Exception e) {
+                    handler.post(() -> { if (mine == token) fail(id); });
+                }
+            });
+        }
+
+        private void open(CachedStream stream, String id, int mine) {
+            try {
+                MediaPlayer player = new MediaPlayer();
+                media = player;
+                player.setAudioAttributes(new AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA).build());
+                player.setOnPreparedListener(mp -> {
+                    if (mine != token) return;
+                    prepared = true;
+                    mp.start();
+                    handler.removeCallbacks(tick);
+                    handler.post(tick);
+                });
+                player.setOnCompletionListener(mp -> { if (mine == token) { closeMedia(); videoId = ""; listener.onPreview(id, PREVIEW_ENDED, 0, 0); } });
+                player.setOnErrorListener((mp, what, extra) -> { if (mine == token) fail(id); return true; });
+                player.setDataSource(new HeaderHttpDataSource(stream.url, stream.headers));
+                player.prepareAsync();
+            } catch (Exception e) {
+                fail(id);
+            }
+        }
+
+        private void fail(String id) {
+            closeMedia();
+            videoId = "";
+            listener.onPreview(id, PREVIEW_ERROR, 0, 0);
+        }
+
+        private void closeMedia() {
+            handler.removeCallbacks(tick);
+            prepared = false;
+            if (media != null) { try { media.release(); } catch (Exception ignored) {} media = null; }
+        }
+
+        /** Detiene la escucha; con [resumeMain] reanuda lo que sonaba antes. */
+        public void release(boolean resumeMain) {
+            token++;
+            closeMedia();
+            videoId = "";
+            if (resumeMain && pausedMain) play();
+            pausedMain = false;
+        }
+    }
+
+    public Preview newPreview(PreviewListener listener) { return new Preview(listener); }
+
     private void startOnline(Song song) {
         releasePlayer();
         final int requestGeneration = generation;
@@ -594,22 +736,29 @@ public class PlayerManager {
         if (currentIndex >= queue.size() - 1) fetchAutoplay();
         final String target = currentOnlineUrl;
         final String videoId = currentOnlineVideoId;
+        final boolean wantVideo = videoMode && !NO_VIDEO.contains(videoId);
+        final String key = streamKey(videoId, wantVideo);
         CachedStream cached;
-        synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(videoId); }
+        synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(key); }
         if (cached != null && cached.isFresh()) {
             try { prepareSource(cached.url, cached.headers); } catch (Exception e) { fail(e); }
             return;
         }
         PLAYBACK_IO.execute(() -> {
             try {
-                CachedStream resolved = awaitPrefetch(videoId);
-                if (resolved == null) resolved = resolveToCache(videoId, target);
+                CachedStream resolved = awaitPrefetch(key);
+                if (resolved == null) resolved = resolveToCache(key, target, wantVideo);
                 final CachedStream ready = resolved;
                 handler.post(() -> {
                     if (generation != requestGeneration) return;
                     try { prepareSource(ready.url, ready.headers); } catch (Exception e) { fail(e); }
                 });
             } catch (Exception e) {
+                if (wantVideo) {
+                    // Sin MP4 con sonido para este video: se vuelve al audio y la pantalla lo avisa.
+                    handler.post(() -> { if (generation == requestGeneration) videoUnavailable(videoId); });
+                    return;
+                }
                 handler.post(() -> { if (generation == requestGeneration) fail(e); });
             }
         });
@@ -617,22 +766,27 @@ public class PlayerManager {
 
     /** Resuelve el enlace de audio de un video y lo deja en la caché de enlaces. */
     private CachedStream resolveToCache(String videoId, String target) throws Exception {
+        return resolveToCache(videoId, target, false);
+    }
+
+    /** [key] es la clave de la cache; con [video] se pide un MP4 con imagen y sonido en vez de solo audio. */
+    private CachedStream resolveToCache(String key, String target, boolean video) throws Exception {
         final long startedAt = System.currentTimeMillis();
         DescargadorApp app = (DescargadorApp) context;
         if (!app.awaitReady(20)) throw new IllegalStateException(
                 app.getInitError() == null ? cl.arichard.descargador.util.Tr.t("El reproductor todavía se está preparando") : app.getInitError());
-        JSONObject info = resolveOnlineInfo(target);
+        JSONObject info = resolveOnlineInfo(target, video);
         String stream = info.getString("url");
         Map<String, String> headers = new HashMap<>();
         JSONObject http = info.optJSONObject("http_headers");
         if (http != null) {
             Iterator<String> keys = http.keys();
-            while (keys.hasNext()) { String key = keys.next(); headers.put(key, http.getString(key)); }
+            while (keys.hasNext()) { String name = keys.next(); headers.put(name, http.getString(name)); }
         }
         long length = info.optLong("content_length", -1);
         if (length > 0) headers.put(LENGTH_KEY, String.valueOf(length));
         CachedStream resolved = new CachedStream(stream, headers);
-        synchronized (STREAM_CACHE) { STREAM_CACHE.put(videoId, resolved); }
+        synchronized (STREAM_CACHE) { STREAM_CACHE.put(key, resolved); }
         Log.i("MusicBoxPlayer", "Stream resolved in " + (System.currentTimeMillis() - startedAt) + " ms");
         return resolved;
     }
@@ -651,7 +805,7 @@ public class PlayerManager {
         if (next < 0) return;
         Song song = queue.get(next);
         if (song == null || !song.isOnline()) return;
-        prefetchVideo(song.getVideoId());
+        prefetchStream(song.getVideoId(), videoMode && !NO_VIDEO.contains(song.getVideoId()));
     }
 
     /** Si ya hay una resolución anticipada en curso para este video, espera a que termine y devuelve su enlace. */
@@ -667,20 +821,25 @@ public class PlayerManager {
     }
 
     /** Resuelve en segundo plano el enlace de un video, p. ej. los primeros resultados de una búsqueda. */
-    public void prefetchVideo(String videoId) {
+    public void prefetchVideo(String videoId) { prefetchStream(videoId, false); }
+
+    private void prefetchStream(String videoId, boolean video) {
         if (videoId == null || videoId.isEmpty()) return;
+        final String key = streamKey(videoId, video);
         synchronized (STREAM_CACHE) {
-            CachedStream cached = STREAM_CACHE.get(videoId);
-            if ((cached != null && cached.isFresh()) || !PREFETCHING.add(videoId)) return;
+            CachedStream cached = STREAM_CACHE.get(key);
+            if ((cached != null && cached.isFresh()) || !PREFETCHING.add(key)) return;
         }
         PLAYBACK_IO.execute(() -> {
-            try { resolveToCache(videoId, "https://www.youtube.com/watch?v=" + videoId); }
+            try { resolveToCache(key, "https://www.youtube.com/watch?v=" + videoId, video); }
             catch (Exception e) { Log.w("MusicBoxPlayer", "Precarga sin enlace para " + videoId, e); }
-            finally { synchronized (STREAM_CACHE) { PREFETCHING.remove(videoId); STREAM_CACHE.notifyAll(); } }
+            finally { synchronized (STREAM_CACHE) { PREFETCHING.remove(key); STREAM_CACHE.notifyAll(); } }
         });
     }
 
-    private JSONObject resolveOnlineInfo(String target) throws Exception {
+    private JSONObject resolveOnlineInfo(String target) throws Exception { return resolveOnlineInfo(target, false); }
+
+    private JSONObject resolveOnlineInfo(String target, boolean video) throws Exception {
         String[] clients = {"android_vr,android;player_skip=webpage,configs", "android_vr,android", "web,android", "ios,web"};
         Exception lastError = null;
         for (String client : clients) {
@@ -696,7 +855,10 @@ public class PlayerManager {
                 request.addOption("--retries", "2");
                 request.addOption("--extractor-retries", "2");
                 request.addOption("--extractor-args", "youtube:player_client=" + client);
-                request.addOption("-f", "bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/best[ext=mp4][protocol^=http]/best[protocol^=http]");
+                // Con video: un solo archivo con imagen y sonido, porque el reproductor no puede unir pistas separadas.
+                request.addOption("-f", video
+                        ? "best[ext=mp4][height<=720][protocol^=http]/best[ext=mp4][protocol^=http]/best[protocol^=http]"
+                        : "bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/best[ext=mp4][protocol^=http]/best[protocol^=http]");
                 String output = YoutubeDL.getInstance().execute(request).getOut();
                 final long extracted = System.currentTimeMillis() - clientStart;
                 JSONObject info = new JSONObject(output);
@@ -833,7 +995,7 @@ public class PlayerManager {
         if (online && currentSong != null && playWhenReady && !offline && playbackRecoveryAttempts < 1) {
             playbackRecoveryAttempts++;
             resumePosition = position;
-            synchronized (STREAM_CACHE) { STREAM_CACHE.remove(currentOnlineVideoId); }
+            synchronized (STREAM_CACHE) { STREAM_CACHE.remove(streamKey(currentOnlineVideoId, videoMode)); }
             final int requestGeneration = generation;
             loading(true);
             registerNoisyReceiver();
@@ -1268,6 +1430,46 @@ public class PlayerManager {
     private void notifyQueue() { saveSession(); for (PlaybackListener l : new ArrayList<>(listeners)) l.onQueueChanged(); }
     public boolean isPlaying() { return prepared && mediaPlayer != null && mediaPlayer.isPlaying(); }
     public boolean isLoading() { return loading; }
+    /** Se puede ver esta cancion si ya trae imagen, o si es de YouTube y existe un MP4 con sonido. */
+    public boolean canShowVideo() {
+        if (currentSong == null) return false;
+        if (hasVideo()) return true;
+        return online && currentOnlineVideoId != null && !currentOnlineVideoId.isEmpty() && !NO_VIDEO.contains(currentOnlineVideoId);
+    }
+
+    public boolean isVideoMode() { return videoMode; }
+
+    /**
+     * Activa o desactiva la imagen. En linea cambia el flujo (MP4 o solo audio) y sigue desde el mismo segundo,
+     * con el mismo estado de reproduccion o pausa.
+     */
+    public void setVideoMode(boolean value) {
+        if (videoMode == value) return;
+        videoMode = value;
+        if (!online || currentSong == null) return;
+        if (value && hasVideo()) return; // el flujo actual ya trae imagen
+        boolean resume = playWhenReady || isPlaying();
+        int position = getCurrentPosition();
+        playbackRecoveryAttempts = 0;
+        startCurrent();
+        resumePosition = position;
+        playWhenReady = resume;
+    }
+
+    /** Sale del modo video sin tocar lo que suena: las proximas canciones vuelven a pedir solo audio. */
+    public void leaveVideoMode() { videoMode = false; }
+
+    private void videoUnavailable(String videoId) {
+        NO_VIDEO.add(videoId);
+        videoMode = false;
+        int position = resumePosition;
+        boolean resume = playWhenReady;
+        notifyVideo();
+        startCurrent();
+        resumePosition = position;
+        playWhenReady = resume;
+    }
+
     public boolean hasVideo() {
         return prepared && mediaPlayer != null && mediaPlayer.getVideoWidth() > 0 && mediaPlayer.getVideoHeight() > 0;
     }

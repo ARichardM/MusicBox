@@ -11,6 +11,9 @@ Rectangle {
     readonly property int headerHeight: 38
     readonly property int slideHeight: 58
     readonly property bool hasContent: suggestions.length > 0 || loading
+    // Mientras llegan las primeras sugerencias la tarjeta se queda plegada y se despliega sola al terminar,
+    // salvo que el usuario la haya plegado él mismo.
+    readonly property bool shut: collapsed || (loading && suggestions.length === 0)
     signal playRequested(var track)
     signal addRequested(var track)
     signal refreshRequested()
@@ -21,11 +24,11 @@ Rectangle {
     border.width: 1
     border.color: Theme.dark ? "#26282E" : "#D5DCE6"
     clip: true
-    implicitHeight: collapsed ? headerHeight : headerHeight + slideHeight + 10
+    implicitHeight: shut ? headerHeight : headerHeight + slideHeight + 10
     visible: opacity > 0.01
     opacity: hasContent ? 1 : 0
 
-    Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+    Behavior on implicitHeight { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
     Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
     // Sincroniza el modelo sin recrearlo: quitar una sugerencia la desliza hacia afuera y el resto se acomoda.
@@ -147,7 +150,7 @@ Rectangle {
             // Indicador: como mucho 5 puntos, el activo se estira.
             Row {
                 id: dots
-                visible: items.count > 1 && !root.collapsed
+                visible: items.count > 1 && !root.shut
                 spacing: 4
                 readonly property int total: Math.min(items.count, 5)
                 readonly property int active: items.count <= 5 ? carousel.currentIndex
@@ -181,8 +184,9 @@ Rectangle {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            opacity: root.collapsed ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: 180 } }
+            opacity: root.shut ? 0 : 1
+            // Al desplegarse, el contenido entra un instante después de que la tarjeta empiece a abrirse.
+            Behavior on opacity { SequentialAnimation { PauseAnimation { duration: root.shut ? 0 : 140 } NumberAnimation { duration: 240 } } }
 
             // Mientras llegan las primeras sugerencias.
             Shimmer {

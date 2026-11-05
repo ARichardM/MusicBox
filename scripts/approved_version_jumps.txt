@@ -1,0 +1,2 @@
+# Saltos de versión que el usuario ordenó explícitamente: «anterior nueva». Cualquier otro salto sigue bloqueado.
+2.3.9 2.4.0  # nueva versión menor: importar playlists por enlace, alternativas, esqueletos de carga y selector MP4

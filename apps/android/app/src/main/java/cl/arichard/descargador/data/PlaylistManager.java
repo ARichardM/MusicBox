@@ -386,6 +386,35 @@ public class PlaylistManager {
         return removed;
     }
 
+    /** Nombres de las playlists que contienen esta canción. */
+    public synchronized List<String> playlistsContaining(String path) {
+        List<String> names = new ArrayList<>();
+        if (path == null) return names;
+        for (Map.Entry<String, List<String>> playlist : playlists.entrySet())
+            for (String entry : playlist.getValue()) if (matchesPath(entry, path)) { names.add(playlist.getKey()); break; }
+        return names;
+    }
+
+    /**
+     * Cambia la canción por [replacement] en cada playlist, en la misma posición. Si la playlist ya tenía la
+     * nueva versión, solo se quita la anterior. No borra ningún archivo. Devuelve cuántas entradas cambió.
+     */
+    public synchronized int replaceEverywhere(String path, SearchResult replacement) {
+        if (path == null || replacement == null) return 0;
+        String key = "youtube:" + replacement.getId();
+        int changed = 0;
+        for (List<String> entries : playlists.values()) {
+            boolean hasNew = entries.contains(key);
+            for (int i = 0; i < entries.size(); i++) {
+                if (!matchesPath(entries.get(i), path) || entries.get(i).equals(key)) continue;
+                if (hasNew) entries.remove(i--); else { entries.set(i, key); hasNew = true; }
+                changed++;
+            }
+        }
+        if (changed > 0) { onlineTracks.put(replacement.getId(), replacement); save(); }
+        return changed;
+    }
+
     /** ¿La entrada de la playlist corresponde a esta ruta, directamente o por su ID de YouTube? */
     private boolean matchesPath(String entry, String path) {
         if (entry.equals(path)) return true;

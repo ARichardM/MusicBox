@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Outline;
 import android.util.AttributeSet;
 import android.view.Gravity;
+
 import android.view.View;
 import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
@@ -54,29 +55,30 @@ public class CoverCollageView extends FrameLayout {
         for (Song song : top) {
             ImageView image = new ImageView(getContext());
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            covers.add(image); addView(image, new LayoutParams(1, 1));
+            covers.add(image); addView(image, new LayoutParams(-1, -1));
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), image);
         }
         setContentDescription(Tr.t("Portadas de las canciones más escuchadas"));
-        post(this::layoutCovers);
+        // Las posiciones se calculan en onLayout, cuando el tamaño ya se conoce: no depende del orden de los posts.
+        requestLayout();
     }
 
-    @Override protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        super.onSizeChanged(w, h, oldw, oldh); layoutCovers();
-    }
-
-    private void layoutCovers() {
-        int count = covers.size(), w = getWidth(), h = getHeight();
+    /** Coloca el mosaico según la cantidad de portadas: 1 a pantalla completa, 2 en columnas y 3-4 en cuadrícula. */
+    @Override protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        int count = covers.size();
+        if (count == 0) { super.onLayout(changed, left, top, right, bottom); return; }
+        int w = right - left, h = bottom - top;
+        int halfW = w / 2, halfH = h / 2;
         for (int i = 0; i < count; i++) {
-            int left = count == 1 ? 0 : (i % 2) * (w / 2);
-            int top = count <= 2 || (count == 3 && i == 0) ? 0 : (i / 2) * (h / 2);
-            int width = count == 1 || (count == 3 && i == 0) ? w : w / 2;
-            int height = count <= 2 ? h : h / 2;
-            if (count == 3 && i > 0) { left = (i - 1) * (w / 2); top = h / 2; }
-            LayoutParams params = new LayoutParams(left + width == w - 1 ? width + 1 : width,
-                    top + height == h - 1 ? height + 1 : height);
-            params.leftMargin = left; params.topMargin = top;
-            covers.get(i).setLayoutParams(params);
+            int x, y, cw, ch;
+            if (count == 1) { x = 0; y = 0; cw = w; ch = h; }
+            else if (count == 2) { x = i * halfW; y = 0; cw = i == 0 ? halfW : w - halfW; ch = h; }
+            else if (count == 3 && i == 0) { x = 0; y = 0; cw = w; ch = halfH; }
+            else if (count == 3) { x = (i - 1) * halfW; y = halfH; cw = i == 1 ? halfW : w - halfW; ch = h - halfH; }
+            else { x = (i % 2) * halfW; y = (i / 2) * halfH; cw = i % 2 == 0 ? halfW : w - halfW; ch = i / 2 == 0 ? halfH : h - halfH; }
+            ImageView image = covers.get(i);
+            image.measure(View.MeasureSpec.makeMeasureSpec(cw, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(ch, View.MeasureSpec.EXACTLY));
+            image.layout(x, y, x + cw, y + ch);
         }
     }
 }

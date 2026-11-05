@@ -43,6 +43,9 @@ import playlist_sync
 import stream_prefetch
 from version import __version__
 from downloads_controller import DownloadsController
+import playlist_import
+from alternatives_controller import AlternativesController
+from playlist_import_controller import PlaylistImportController
 from importer_controller import ImporterImageProvider
 
 
@@ -116,6 +119,9 @@ class MusicBoxBridge(QObject):
     authChanged = Signal()
     discoveryChanged = Signal()
     forYouChanged = Signal()
+    homeLoadingChanged = Signal()
+    playlistLinkDetected = Signal(str)
+    videoModeChanged = Signal()
     artistChanged = Signal()
     artistPhotosChanged = Signal()
     _artistAvatarReady = Signal(str, object)
@@ -261,6 +267,16 @@ class MusicBoxBridge(QObject):
         self._library_scan_running = False
         self._library_scan_pending = False
         self._library_scan_generation = 0
+        # Esqueleto del Inicio: solo cuando no hay nada que mostrar todavía (primer inicio de sesión o primer arranque).
+        self._home_loading = False
+        self._home_ready = set()
+        self._playlist_importer = PlaylistImportController(self, parent=self)
+        # Modo video (selector MP3 / MP4): el flujo en línea trae imagen además de audio. Los videos que no ofrecen un
+        # MP4 con sonido se recuerdan para no volver a intentarlo.
+        self._video_mode = False
+        self._no_video = set()
+        self.playerChanged.connect(self.videoModeChanged)
+        self._alternatives = AlternativesController(self, parent=self)
         self._auto_download_playlists = set(self._settings.value("autoDownloadPlaylists", [], list) or [])
         try:
             self._playlist_descriptions = json.loads(self._settings.value("playlistDescriptions", "{}", str) or "{}")
@@ -367,6 +383,10 @@ class MusicBoxBridge(QObject):
             threading.Thread(target=stream_prefetch.prune_cache, args=(STREAM_CACHE_DIR,), daemon=True).start()
             self._restore_playback_session()
             self._restore_library_cache()
+            self._home_loading = not self._library_all and not self._recent_paths
+            if self._home_loading:
+                # Nunca se queda el esqueleto para siempre: sin red o sin música, a los 12 s se retira.
+                QTimer.singleShot(12000, self._finish_home_loading)
             self.refresh()
             if self._cloud.refresh_token:
                 threading.Thread(target=self._restore_session, daemon=True).start()
@@ -803,6 +823,78 @@ class MusicBoxBridge(QObject):
     def forYouLoading(self):
         return self._for_you_loading
 
+    @Property(bool, notify=homeLoadingChanged)
+    def homeLoading(self):
+        return self._home_loading
+
+    @Property(bool, notify=videoModeChanged)
+    def videoMode(self):
+        return self._video_mode
+
+    @Property(bool, notify=videoModeChanged)
+    def videoAvailable(self):
+        """¿Se puede ver la canción actual? Solo las de YouTube que ofrecen un MP4 con sonido."""
+        current = self._current or {}
+        return bool(current.get("url") and not current.get("path") and current.get("id")
+                    and current.get("id") not in self._no_video)
+
+    def _wants_video(self, item):
+        return bool(self._video_mode and item.get("url") and not item.get("path")
+                    and item.get("id") not in self._no_video)
+
+    @staticmethod
+    def _stream_key(url, video):
+        return f"{url}#video" if video else url
+
+    def _drop_stream_cache(self, url):
+        self._stream_cache.pop(url, None)
+        self._stream_cache.pop(self._stream_key(url, True), None)
+
+    @Slot(bool)
+    def setVideoMode(self, value):
+        """Activa o desactiva la imagen. En línea cambia el flujo y sigue desde el mismo segundo, en pausa o sonando."""
+        value = bool(value)
+        if value == self._video_mode:
+            return
+        if value and not self.videoAvailable:
+            return
+        self._video_mode = value
+        current = dict(self._current or {})
+        if current.get("url") and not current.get("path"):
+            was_playing = self.playing or bool(getattr(self, "_play_when_ready", True))
+            self._pending_seek = max(int(self._player.position()), int(self._pending_seek))
+            self._play_online(current, recovering=True, autoplay=False)
+            self._play_when_ready = was_playing
+        self.videoModeChanged.emit()
+
+    @Slot(QObject)
+    def attachVideoOutput(self, output):
+        """Conecta la superficie de video de la interfaz al reproductor."""
+        self._player.setVideoOutput(output)
+
+    @Property(QObject, constant=True)
+    def alternatives(self):
+        """«Ver alternativas»: otras versiones de una canción para escucharlas y reemplazar la actual."""
+        return self._alternatives
+
+    @Property(QObject, constant=True)
+    def playlistImporter(self):
+        """Importar una playlist completa desde un enlace de Spotify, YouTube, Deezer, Apple Music o SoundCloud."""
+        return self._playlist_importer
+
+    def _mark_home_ready(self, part):
+        """El esqueleto se retira cuando las recomendaciones y la biblioteca ya resolvieron (con o sin resultados)."""
+        if not self._home_loading:
+            return
+        self._home_ready.add(part)
+        if {"forYou", "library"} <= self._home_ready:
+            self._finish_home_loading()
+
+    def _finish_home_loading(self):
+        if self._home_loading:
+            self._home_loading = False
+            self.homeLoadingChanged.emit()
+
     def _related_songs(self, video_id):
         """Canciones parecidas de YouTube Music (solo audio oficial); si falla, la lista Mix de YouTube."""
         try:
@@ -896,6 +988,8 @@ class MusicBoxBridge(QObject):
         if generation != self._for_you_generation:
             return
         self._for_you_loading = False
+        # Después de aplicar el resultado, para que el contenido real ya esté listo cuando el esqueleto se funda.
+        QTimer.singleShot(0, lambda: self._mark_home_ready("forYou"))
         if outcome.get("mode") == "offline" and self._for_you["songs"]:
             self.forYouChanged.emit()
             return
@@ -1625,6 +1719,108 @@ class MusicBoxBridge(QObject):
         self._schedule_cloud_save()
         self._show_notice(i18n.tr("Agregada a «{name}»" if added else "Ya estaba en «{name}»", name=playlist_name), kind="info")
 
+    @Slot("QVariantMap", result=str)
+    def trackVideoId(self, track):
+        return str(self._id_of(dict(track or {})) or "")
+
+    def _queues(self):
+        return [queue for queue in (self._online_queue, self._queue) if queue]
+
+    @Slot("QVariantMap", result=bool)
+    def isTrackReplaceable(self, track):
+        """¿La canción está en alguna playlist o en la cola? Si no, no hay nada que reemplazar."""
+        keys = self._track_keys(dict(track or {}))
+        if not keys:
+            return False
+        if any(entry in keys for entries in self._playlists.values() for entry in entries):
+            return True
+        return any(self._track_keys(entry) & keys for queue in self._queues() for entry in queue)
+
+    @Slot("QVariantMap", "QVariantMap", result=int)
+    def replaceTrack(self, old, new):
+        """Cambia una canción por otra versión en todas las playlists (misma posición) y en la cola.
+
+        No borra ningún archivo. Devuelve cuántos lugares cambió.
+        """
+        old, new = dict(old or {}), dict(new or {})
+        new_key = self._canonical_key(new)
+        if not new_key or not new.get("id"):
+            return 0
+        old_keys = self._track_keys(old) - {new_key}
+        if not old_keys:
+            return 0
+        changed = 0
+        for entries in self._playlists.values():
+            present = new_key in entries
+            index = 0
+            while index < len(entries):
+                if entries[index] in old_keys:
+                    changed += 1
+                    if present:  # la playlist ya tenía la versión nueva: solo se quita la anterior
+                        entries.pop(index)
+                        continue
+                    entries[index] = new_key
+                    present = True
+                index += 1
+        self._remember_online(new)
+        if changed:
+            self._favorites = set(self._playlists.get("Favoritos", []))
+            self._settings.setValue("favorites", list(self._favorites))
+            self._save_playlists()
+            self.playlistsChanged.emit()
+            self._apply_library_view()
+            self._schedule_cloud_save()
+        active = self._online_queue if self._online_queue_active() else self._queue
+        current_index = self._online_index if active is self._online_queue else self._queue_index
+        restart = None
+        for queue in (self._online_queue, self._queue, self._online_original):
+            for position, entry in enumerate(queue):
+                if self._track_keys(entry) & old_keys:
+                    queue[position] = dict(new)
+                    changed += 1
+                    if queue is active and position == current_index:
+                        restart = queue[position]
+        if restart is not None:
+            self._play_online(restart)  # lo que sonaba pasa a la versión elegida, sin perder la cola
+        elif changed:
+            self.playerChanged.emit()
+        if changed:
+            self._show_notice(i18n.tr("Reemplazada por «{title}»", title=new.get("title", "")), kind="info")
+        return changed
+
+    @Slot(str, "QVariantList", result=int)
+    def addTracksToPlaylist(self, playlist_name, tracks):
+        """Agrega varias canciones de YouTube de una vez: se guarda y se avisa una sola vez. Devuelve cuántas eran nuevas."""
+        playlist_name = (playlist_name or "").strip()
+        if not playlist_name:
+            return 0
+        entries = self._playlists.setdefault(playlist_name, [])
+        added = 0
+        for track in tracks or []:
+            item = dict(track or {})
+            key = self._canonical_key(item)
+            if not key or key in entries:
+                continue
+            entries.append(key)
+            added += 1
+            if playlist_name == "Favoritos":
+                self._favorites.add(key)
+            if self._id_of(item):
+                self._remember_online(item)
+        if not added:
+            return 0
+        self._save_playlists()
+        if playlist_name == "Favoritos":
+            self._settings.setValue("favorites", list(self._favorites))
+            self._settings.setValue("onlineFavoritesMeta", json.dumps(self._online_favorites_meta))
+        self.playlistsChanged.emit()
+        if playlist_name in self._auto_download_playlists:
+            self._reconcile_auto_downloads()
+        if self._library_playlist == playlist_name:
+            self._apply_library_view()
+        self._schedule_cloud_save()
+        return added
+
     @Slot(str, "QVariantList", bool, str, result=int)
     def linkLocalSongs(self, playlist_name, items, add_folder, folder):
         """Une archivos locales con su canción de YouTube y los agrega a una playlist. Devuelve cuántos agregó."""
@@ -2346,7 +2542,7 @@ class MusicBoxBridge(QObject):
         self._player.setSource(QUrl())
         generation = self._stream_generation
         if track.get("url") and not track.get("path"):
-            self._stream_cache.pop(track["url"], None)
+            self._drop_stream_cache(track["url"])
             if self._player.source().isLocalFile():  # La copia precargada falló: no volver a usarla.
                 self._forget_prefetch(track["url"])
             attempt = track.get("_retry_attempt", 0)
@@ -2413,7 +2609,7 @@ class MusicBoxBridge(QObject):
             self._queue_index = index
         item = dict(queue[index])
         item.pop("_retry_attempt", None)
-        self._stream_cache.pop(item.get("url"), None)
+        self._drop_stream_cache(item.get("url"))
         self._play_online(item) if online else self._start_queue_track(item)
 
     def _resume_recovered_track(self):
@@ -2504,6 +2700,7 @@ class MusicBoxBridge(QObject):
         if persist_cache:
             self._settings.setValue("libraryMetadataCache", json.dumps(self._library_all, ensure_ascii=False, separators=(",", ":")))
         self._library_scanned = True
+        QTimer.singleShot(0, lambda: self._mark_home_ready("library"))
         self._unify_playlists()
         files = self._library_all
         self._migrate_legacy_clicks(files)
@@ -2651,6 +2848,11 @@ class MusicBoxBridge(QObject):
         query = " ".join(query.split())
         if not query:
             self.clearSearch()
+            return
+        link = playlist_import.find(query)
+        if link is not None:
+            # Un enlace de playlist no se busca: se ofrece importarla completa.
+            self.playlistLinkDetected.emit(link.url)
             return
         self._search_query = query
         if remember:
@@ -3107,26 +3309,39 @@ class MusicBoxBridge(QObject):
             self._maybe_autoplay(item)
         self._set_status(i18n.tr("Preparando reproducción…"))
         self.playerChanged.emit()
-        prefetched = self._prefetched.get(url)
+        video = self._wants_video(item)
+        # La copia precargada es solo audio: con video se pide el flujo con imagen.
+        prefetched = None if video else self._prefetched.get(url)
         if prefetched and Path(prefetched).is_file():
             self._prefetched.move_to_end(url)
             self._streamReady.emit(item, prefetched)
             return
-        cached = self._stream_cache.get(url)
+        cached = self._stream_cache.get(self._stream_key(url, video))
         if cached and time.monotonic() - cached[0] < 600:
             item.update(cached[2])
             self._streamReady.emit(item, cached[1])
             return
         def resolve():
-            stream, error = "", ""
+            stream, error, use_video = "", "", video
             try:
-                info = youtube_streams.resolve_stream(url, self._extract_info)
+                try:
+                    # El audio usa la llamada de siempre; solo el video añade su opción.
+                    info = (youtube_streams.resolve_stream(url, self._extract_info, video=True) if use_video
+                            else youtube_streams.resolve_stream(url, self._extract_info))
+                except Exception:
+                    if not use_video:
+                        raise
+                    # Sin MP4 con sonido para este video: se vuelve al audio y la interfaz lo refleja.
+                    self._no_video.add(item.get("id", ""))
+                    self._video_mode, use_video = False, False
+                    self.videoModeChanged.emit()
+                    info = youtube_streams.resolve_stream(url, self._extract_info)
                 stream = info.get("url", "")
                 item.update(title=info.get("track") or info.get("title") or item.get("title"),
                                      artist=info.get("artist") or info.get("uploader") or item.get("artist"),
                                      album=info.get("album") or "Streaming")
                 if stream:
-                    self._stream_cache[url] = (time.monotonic(), stream, {
+                    self._stream_cache[self._stream_key(url, use_video)] = (time.monotonic(), stream, {
                         "title": item.get("title", ""), "artist": item.get("artist", ""),
                         "album": item.get("album", "Streaming")})
             except Exception as exc:

@@ -5,6 +5,18 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Saltos de versión ordenados explícitamente por el usuario, una línea «anterior nueva» cada uno. Cualquier otro salto sigue bloqueado.
+APPROVED_JUMPS = ROOT / "scripts" / "approved_version_jumps.txt"
+
+
+def approved_jump(previous, current):
+    if not APPROVED_JUMPS.is_file():
+        return False
+    for line in APPROVED_JUMPS.read_text(encoding="utf-8").splitlines():
+        fields = line.split("#", 1)[0].split()
+        if fields == [previous.lstrip("v"), current]:
+            return True
+    return False
 
 
 def check(previous=None, allow_version_jump=False):
@@ -37,7 +49,7 @@ def check(previous=None, allow_version_jump=False):
         releases = [tuple(map(int, tag[1:].split("."))) for tag in tags if re.fullmatch(r'v\d+\.\d+\.\d+', tag)
                     and tag != "v" + current]
         previous = ".".join(map(str, max(releases))) if releases else None
-    if previous and not allow_version_jump:
+    if previous and not allow_version_jump and not approved_jump(previous, current):
         major, minor, patch = map(int, previous.lstrip("v").split("."))
         if parts != (major, minor, patch + 1):
             raise ValueError(f"Después de {previous} corresponde {major}.{minor}.{patch + 1}; cualquier otro salto requiere una orden explícita")

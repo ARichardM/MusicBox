@@ -11,6 +11,9 @@ from pathlib import Path
 CLIENT_SETS = ("android_vr,android", "web,android", "ios,web")
 AUDIO_FORMAT = ("bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/"
                 "best[ext=mp4][protocol^=http]/best[protocol^=http]")
+# Video: un solo archivo con imagen y sonido, porque el reproductor no puede unir pistas separadas.
+VIDEO_FORMAT = ("best[ext=mp4][height<=720][protocol^=http]/best[ext=mp4][protocol^=http]/"
+                "best[protocol^=http]")
 
 
 def _options(client: str | None, **extra) -> dict:
@@ -31,7 +34,7 @@ def stream_is_reachable(url: str, headers: dict | None, opener=urllib.request.ur
         return False
 
 
-def resolve_stream(url: str, extractor, opener=urllib.request.urlopen) -> dict:
+def resolve_stream(url: str, extractor, opener=urllib.request.urlopen, video: bool = False) -> dict:
     """Devuelve la información de yt-dlp con un enlace validado.
 
     ``extractor(options, url)`` debe devolver el diccionario de información. Se prueba cada
@@ -41,7 +44,7 @@ def resolve_stream(url: str, extractor, opener=urllib.request.urlopen) -> dict:
     last_error: Exception | None = None
     for client in CLIENT_SETS:
         try:
-            info = extractor(_options(client, format=AUDIO_FORMAT), url)
+            info = extractor(_options(client, format=VIDEO_FORMAT if video else AUDIO_FORMAT), url)
             stream = (info or {}).get("url", "")
             if stream and stream_is_reachable(stream, info.get("http_headers"), opener):
                 return info

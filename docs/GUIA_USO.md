@@ -330,6 +330,23 @@ Al enlazar a una playlist, el selector muestra su portada y cantidad de cancione
 
 **Importar carpeta.** Elige una carpeta de tu teléfono: cada archivo se reconoce en YouTube y se enlaza a la playlist que elijas, sin descargar nada.
 
+## Importar una playlist desde un enlace
+
+MusicBox puede crear una playlist completa a partir del enlace público de una playlist de **Spotify**, **YouTube** o **YouTube Music**, **Deezer**, **Apple Music** o **SoundCloud**.
+
+- **Android:** comparte el enlace desde la otra aplicación hacia MusicBox, ábrelo con MusicBox, pégalo en el buscador del Inicio o con **Pegar** en *Importar lista*.
+- **Windows:** pulsa el botón de enlace junto al **+** en *Playlists*, o pega el enlace en el buscador.
+
+Se lee la playlist, eliges su nombre y MusicBox la importa mostrando el avance. Las de YouTube traen sus videos; las de las demás plataformas se buscan en YouTube Music y **solo se agregan las coincidencias seguras** (título, artista y duración), así no entran versiones equivocadas. Al terminar se indica cuántas canciones quedaron fuera. Puedes **Detener** la importación y se conserva lo ya encontrado. Spotify entrega solo lo que muestra su página pública: una lista muy larga puede salir incompleta.
+
+## Ver alternativas de una canción
+
+En el menú de tres puntos de cualquier canción, **Ver alternativas** muestra otras versiones de la misma canción: la original, en vivo u otra subida. Cada una se escucha con su botón de reproducir sin tocar tu cola (la música principal queda en pausa y se reanuda al cerrar). **Reemplazar** cambia la canción por esa versión en todas tus playlists y en la cola, en la misma posición y sin borrar ningún archivo. Si la canción no está en ninguna playlist, el botón es **Guardar** y la agrega a la que elijas.
+
+## Audio o video (MP3 / MP4)
+
+En Android, el selector **MP3 / MP4** del reproductor pasa una canción de YouTube a un flujo con imagen y sonido, y sigue desde el mismo segundo. En Windows, el botón de video del reproductor abre un panel flotante con la imagen. Si un video no ofrece un MP4 con sonido, vuelve al audio y lo avisa. Al salir del reproductor, las siguientes canciones vuelven a pedir solo audio para ahorrar datos.
+
 ## Inicio, Para ti y artistas
 
 En **Inicio**, sin escribir en la búsqueda, ves **Para ti**. Se calcula con lo que escuchas últimamente: se toman tus canciones favoritas del momento, se piden a YouTube Music las parecidas y se mezclan; una canción que aparece en varias listas sube. Son siempre **canciones de audio**, nunca videoclips ni videos subidos por otras personas. El botón de actualizar vuelve a calcularla.

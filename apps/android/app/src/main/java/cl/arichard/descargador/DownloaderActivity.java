@@ -60,6 +60,8 @@ import cl.arichard.descargador.download.LinkParser;
 import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.player.PlayerManager;
 import cl.arichard.descargador.util.AppNotice;
+import cl.arichard.descargador.util.PlaylistImport;
+import cl.arichard.descargador.util.PlaylistImportDialog;
 import cl.arichard.descargador.util.SafeTap;
 import cl.arichard.descargador.util.Tr;
 
@@ -202,9 +204,16 @@ public class DownloaderActivity extends AppCompatActivity {
     }
 
     private void receiveSharedText(Intent intent) {
-        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction()) || !"text/plain".equals(intent.getType())) return;
-        CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (intent == null) return;
+        CharSequence shared = null;
+        if (Intent.ACTION_SEND.equals(intent.getAction()) && "text/plain".equals(intent.getType()))
+            shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        else if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null)
+            shared = intent.getData().toString();
         if (shared == null || shared.toString().trim().isEmpty()) return;
+        // Una playlist de Spotify, YouTube o Deezer se importa completa en lugar de pegarse como enlace.
+        PlaylistImport.Link playlist = PlaylistImport.find(shared);
+        if (playlist != null) { PlaylistImportDialog.start(this, playlist); return; }
         // El usuario revisa formato y enlaces antes de iniciar la descarga.
         inputLinks.setText(shared.toString().trim());
         inputLinks.setSelection(inputLinks.length());

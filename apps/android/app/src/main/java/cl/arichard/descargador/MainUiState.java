@@ -26,6 +26,8 @@ public class MainUiState extends ViewModel {
     boolean forYouLoading;
     /** "Para ti" ya se calculó desde que se abrió la app; volver de otra pantalla no lo recalcula. */
     boolean forYouStarted;
+    /** El esqueleto del Inicio ya se mostró y se retiró: al volver de otra pantalla no reaparece. */
+    boolean homeSkeletonDone;
     int forYouGeneration;
     final Map<String, List<SearchResult>> cache = new LinkedHashMap<String, List<SearchResult>>(8, .75f, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<String, List<SearchResult>> eldest) { return size() > 8; }

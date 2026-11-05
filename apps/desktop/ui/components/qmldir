@@ -22,3 +22,7 @@ MbDialog 1.0 MbDialog.qml
 PreviewBar 1.0 PreviewBar.qml
 QueuePanel 1.0 QueuePanel.qml
 PlaylistSuggestions 1.0 PlaylistSuggestions.qml
+HomeSkeleton 1.0 HomeSkeleton.qml
+ImportLinkDialog 1.0 ImportLinkDialog.qml
+AlternativesDialog 1.0 AlternativesDialog.qml
+VideoPanel 1.0 VideoPanel.qml
