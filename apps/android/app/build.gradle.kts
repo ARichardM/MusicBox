@@ -93,7 +93,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("com.google.android.material:material:1.13.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("androidx.media:media:1.7.0")
+    implementation("androidx.media:media:1.8.0")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
