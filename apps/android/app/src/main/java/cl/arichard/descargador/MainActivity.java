@@ -302,7 +302,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         setupHomeSkeleton();
         setupLibraryTab();
         PlaylistManager.getInstance(this).setAutoDownloadListener((playlist, track) ->
-                runOnUiThread(() -> startDownload(track.getUrl(), track.getTitle(), track.getId())));
+                runOnUiThread(() -> startDownload(track.getUrl(), track.getTitle(), playlist)));
         setupMiniPlayer();
         if (!testRuntime && requiresSignIn()) {
             cloudSync = new CloudSyncManager(this, () -> runOnUiThread(this::refreshCloudLibraryState));
@@ -1669,16 +1669,17 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
     }
     private void startDownload(String targetUrl, String defaultTitle) {
-        startDownload(targetUrl, defaultTitle, extractVideoId(targetUrl));
+        startDownload(targetUrl, defaultTitle, null);
     }
 
-    private void startDownload(String targetUrl, String defaultTitle, String videoId) {
+    private void startDownload(String targetUrl, String defaultTitle, String playlist) {
+        boolean audio = playlist == null ? isMp3 : !"MP4".equals(getSharedPreferences("musicbox_prefs", MODE_PRIVATE).getString("autoFormat", "MP3"));
         cl.arichard.descargador.download.DownloadManager manager = cl.arichard.descargador.download.DownloadManager.get(this);
-        String quality = getSharedPreferences("musicbox_prefs", MODE_PRIVATE).getString(isMp3 ? "quality_mp3" : "quality_mp4", isMp3 ? "192 kbps" : "1080p");
+        String quality = getSharedPreferences("musicbox_prefs", MODE_PRIVATE).getString(audio ? "quality_mp3" : "quality_mp4", audio ? "192 kbps" : "1080p");
         int added = manager.enqueue(Collections.singletonList(targetUrl),
-                new cl.arichard.descargador.download.DownloadOptions(isMp3, quality,
+                new cl.arichard.descargador.download.DownloadOptions(audio, quality,
                         false, "", cl.arichard.descargador.download.DownloadManager.cookiesPath(this),
-                        StorageUtil.getDownloadDir(this).getAbsolutePath()));
+                        StorageUtil.getDownloadDir(this).getAbsolutePath()), defaultTitle, playlist == null ? "manual" : "auto", playlist == null ? "" : playlist);
         if (added == 0) Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Descarga en curso"), Toast.LENGTH_SHORT).show();
         renderManagedDownloads();
     }
@@ -2768,7 +2769,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         int queued = 0;
         for (SearchResult track : missingDownloads(PlaylistManager.getInstance(this).autoDownloadTracks())) {
             if (skipped.contains(track.getId()) || !autoAttempted.add(track.getId())) continue;
-            startDownload(track.getUrl(), track.getTitle(), track.getId());
+            startDownload(track.getUrl(), track.getTitle(), PlaylistManager.getInstance(this).autoPlaylistFor(track.getId()));
             queued++;
         }
     }
@@ -2776,21 +2777,21 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     /** Turns auto-download on and offers to fetch what the playlist already holds. */
     private void enableAutoDownload(String playlist, Runnable done) {
         PlaylistManager manager = PlaylistManager.getInstance(this);
-        manager.setAutoDownloadEnabled(playlist, true);
         List<SearchResult> tracks = new ArrayList<>();
         for (String entry : manager.getSongPaths(playlist)) {
             SearchResult track = manager.getOnlineTrack(entry);
             if (track != null) tracks.add(track);
         }
         List<SearchResult> pending = missingDownloads(tracks);
-        if (pending.isEmpty()) { if (done != null) done.run(); return; }
+        if (pending.isEmpty()) { manager.setAutoDownloadEnabled(playlist, true); if (done != null) done.run(); return; }
         new MaterialAlertDialogBuilder(this)
                 .setTitle(cl.arichard.descargador.util.Tr.t("Descargar las canciones pendientes"))
                 .setMessage(cl.arichard.descargador.util.Tr.f("Esta playlist tiene %d canciones sin descargar. ¿Descargarlas ahora?", pending.size()))
                 .setPositiveButton(cl.arichard.descargador.util.Tr.t("Descargar"), (dialog, which) -> {
-                    for (SearchResult track : pending) {
+                    manager.setAutoDownloadEnabled(playlist, true);
+                        for (SearchResult track : pending) {
                         autoAttempted.add(track.getId());
-                        startDownload(track.getUrl(), track.getTitle(), track.getId());
+                        startDownload(track.getUrl(), track.getTitle(), playlist);
                     }
                 })
                 .setNegativeButton(cl.arichard.descargador.util.Tr.t("Solo las nuevas"), (dialog, which) -> {
@@ -2798,6 +2799,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     Set<String> skipped = new HashSet<>(prefs.getStringSet("skipped", java.util.Collections.emptySet()));
                     for (SearchResult track : pending) skipped.add(track.getId());
                     prefs.edit().putStringSet("skipped", skipped).apply();
+                    manager.setAutoDownloadEnabled(playlist, true);
                 })
                 .setOnDismissListener(dialog -> { if (done != null) done.run(); })
                 .show();

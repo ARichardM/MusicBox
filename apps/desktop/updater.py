@@ -86,19 +86,20 @@ def download_installer(info: dict, folder: Path, progress, cancelled) -> Path:
     partial = target.with_suffix(".part")
     digest = hashlib.sha256()
     request = urllib.request.Request(info["url"], headers=_HEADERS)
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response, open(partial, "wb") as out:
-        total = int(response.headers.get("Content-Length") or 0)
-        done = 0
-        while chunk := response.read(256 * 1024):
-            if cancelled():
-                partial.unlink(missing_ok=True)
-                raise InterruptedError("Descarga cancelada")
-            out.write(chunk)
-            digest.update(chunk)
-            done += len(chunk)
-            progress(done, total)
-    if digest.hexdigest() != expected:
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response, open(partial, "wb") as out:
+            total = int(response.headers.get("Content-Length") or 0)
+            done = 0
+            while chunk := response.read(256 * 1024):
+                if cancelled():
+                    raise InterruptedError("Descarga cancelada")
+                out.write(chunk)
+                digest.update(chunk)
+                done += len(chunk)
+                progress(done, total)
+        if digest.hexdigest() != expected:
+            raise RuntimeError("El instalador descargado no coincide con su suma de verificación.")
+        partial.replace(target)
+    finally:
         partial.unlink(missing_ok=True)
-        raise RuntimeError("El instalador descargado no coincide con su suma de verificación.")
-    partial.replace(target)
     return target

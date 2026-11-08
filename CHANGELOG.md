@@ -1,5 +1,12 @@
 # Historial de versiones
 
+## 2.4.2 — En preparación
+
+- La cuenta guarda el idioma, el tema, el formato y las calidades de descarga. Las carpetas se recuerdan por plataforma.
+- Las descargas automáticas de playlists respetan el formato MP3 o MP4 elegido. En Android, las filas muestran formato y origen, y las listas largas tienen desplazamiento propio.
+- Android reconoce los MP4 de MusicBox en la biblioteca y puede recuperar el video asociado a una canción local al cambiar al modo video.
+- Windows conserva la sesión ante errores de red, protege cambios simultáneos al desconectar dispositivos y limpia las actualizaciones canceladas.
+
 ## 2.4.1 — 5 de noviembre de 2026
 
 ### Windows y Android

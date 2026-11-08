@@ -64,7 +64,7 @@ public final class CloudSyncManager {
         String previousUid = owner.getString("owner_uid", "");
         if (!previousUid.isEmpty() && !previousUid.equals(user.getUid())) {
             playlists.resetForAccount(); history.resetForAccount(); clicks.resetForAccount();
-            owner.edit().remove("playlists_base").apply();
+            owner.edit().remove("playlists_base").remove("preference_changes").apply();
         }
         try {
             String stored = owner.getString("playlists_base", "");
@@ -115,10 +115,7 @@ public final class CloudSyncManager {
             }
             if (root.has("history")) history.importJson(root.optJSONObject("history"));
             needsUpload |= clicks.merge(root.optJSONObject("clicks"));
-            JSONObject preferences = root.optJSONObject("preferences");
-            if (preferences != null && preferences.has("darkMode"))
-                context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE).edit()
-                        .putBoolean("dark_mode", preferences.optBoolean("darkMode", true)).apply();
+            applyPreferences(root, owner);
             owner.edit().putString("devices_json", root.optJSONObject("devices") == null ? "{}" : root.optJSONObject("devices").toString()).apply();
             applying = false;
             boolean first = !stateLoaded;
@@ -133,6 +130,68 @@ public final class CloudSyncManager {
             applying = false;
             android.util.Log.w("MusicBoxSync", "No se pudo leer el estado remoto; se conserva la copia local", errorParsing);
         }
+    }
+
+    private static synchronized JSONObject pendingPreferences(SharedPreferences owner) {
+        try { return new JSONObject(owner.getString("preference_changes", "{}")); }
+        catch (Exception ignored) { return new JSONObject(); }
+    }
+
+    public static synchronized void preferenceChanged(Context context, String key) {
+        SharedPreferences owner = context.getSharedPreferences("musicbox_cloud", Context.MODE_PRIVATE);
+        JSONObject pending = pendingPreferences(owner);
+        try {
+            pending.put(key, java.util.UUID.randomUUID().toString());
+            owner.edit().putString("preference_changes", pending.toString()).apply();
+        } catch (org.json.JSONException ignored) {}
+        requestUpload();
+    }
+
+    private static synchronized void acknowledge(SharedPreferences owner, JSONObject sent) {
+        JSONObject pending = pendingPreferences(owner);
+        java.util.Iterator<String> keys = sent.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (pending.optString(key).equals(sent.optString(key))) pending.remove(key);
+        }
+        owner.edit().putString("preference_changes", pending.toString()).apply();
+    }
+
+    private JSONObject localPreferences() throws org.json.JSONException {
+        SharedPreferences p = context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE);
+        String language = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales().toLanguageTags();
+        return new JSONObject().put("autoFormat", p.getString("autoFormat", "MP3"))
+                .put("darkMode", p.getBoolean("dark_mode", true))
+                .put("language", p.getString("language", language.isEmpty() ? "auto" : language))
+                .put("quality_mp3", p.getString("quality_mp3", "192 kbps"))
+                .put("quality_mp4", p.getString("quality_mp4", "1080p"))
+                .put("androidFolders", new org.json.JSONArray(LibraryFolders.get(context)));
+    }
+
+    private void applyPreferences(JSONObject root, SharedPreferences owner) {
+        JSONObject remote = root.optJSONObject("preferences");
+        if (remote == null) remote = new JSONObject();
+        JSONObject pending = pendingPreferences(owner);
+        SharedPreferences p = context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE);
+        SharedPreferences.Editor edit = p.edit();
+        for (String key : new String[]{"autoFormat", "language", "quality_mp3", "quality_mp4"}) {
+            if (remote.has(key) && !pending.has(key)) edit.putString(key, remote.optString(key));
+        }
+        if (!pending.has("darkMode") && (remote.has("darkMode") || root.has("darkMode")))
+            edit.putBoolean("dark_mode", remote.optBoolean("darkMode", root.optBoolean("darkMode", true)));
+        if (!pending.has("androidFolders") && remote.optJSONArray("androidFolders") != null)
+            edit.putString("library_roots", remote.optJSONArray("androidFolders").toString());
+        edit.apply();
+        handler.post(() -> {
+            if (active != this) return;
+            if (p.contains("language")) {
+                String language = p.getString("language", "auto");
+                androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
+                        androidx.core.os.LocaleListCompat.forLanguageTags("auto".equals(language) ? "" : language));
+            }
+            androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(p.getBoolean("dark_mode", true)
+                    ? androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES : androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO);
+        });
     }
 
     public static void requestUpload() {
@@ -158,7 +217,9 @@ public final class CloudSyncManager {
             final JSONObject base = playlistBase == null ? new JSONObject() : new JSONObject(playlistBase.toString());
             final JSONObject local = playlists.exportJson();
             final JSONObject localHistory = history.exportJson();
-            final boolean dark = context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE).getBoolean("dark_mode", true);
+            final SharedPreferences owner = context.getSharedPreferences("musicbox_cloud", Context.MODE_PRIVATE);
+            final JSONObject changes = pendingPreferences(owner);
+            final JSONObject localPrefs = localPreferences();
             String id = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
             final String deviceId = id == null ? "android" : id;
             FirebaseFirestore.getInstance().runTransaction(transaction -> {
@@ -178,7 +239,12 @@ public final class CloudSyncManager {
                     root.put("clicks", clicks.exportJson());
                     JSONObject preferences = root.optJSONObject("preferences");
                     if (preferences == null) preferences = new JSONObject();
-                    preferences.put("darkMode", dark); root.put("preferences", preferences);
+                    java.util.Iterator<String> keys = localPrefs.keys();
+                    while (keys.hasNext()) {
+                        String key = keys.next();
+                        if (!preferences.has(key) || changes.has(key)) preferences.put(key, localPrefs.get(key));
+                    }
+                    root.put("preferences", preferences).put("darkMode", preferences.optBoolean("darkMode", true));
                     JSONObject devices = root.optJSONObject("devices");
                     if (devices == null) devices = new JSONObject();
                     devices.put(deviceId, new JSONObject().put("name", Build.MANUFACTURER + " " + Build.MODEL)
@@ -194,7 +260,10 @@ public final class CloudSyncManager {
                 }
             }).addOnSuccessListener(ignored -> {
                 uploading = false;
-                if (document == target && needsUpload) scheduleUpload();
+                if (document == target) {
+                    acknowledge(owner, changes);
+                    if (needsUpload || pendingPreferences(owner).length() > 0) scheduleUpload();
+                }
             }).addOnFailureListener(error -> {
                 uploading = false; needsUpload = true;
                 if (document == target) handler.postDelayed(pendingUpload, 5000);

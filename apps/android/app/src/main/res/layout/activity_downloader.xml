@@ -31,7 +31,7 @@
     <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
 
         <!-- Página: Descargar -->
-        <ScrollView android:id="@+id/pageDownload" android:layout_width="match_parent" android:layout_height="match_parent"
+        <androidx.core.widget.NestedScrollView android:id="@+id/pageDownload" android:layout_width="match_parent" android:layout_height="match_parent"
             android:clipToPadding="false" android:scrollbars="none" android:fillViewport="true">
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:orientation="vertical" android:padding="20dp" android:paddingBottom="40dp">
@@ -190,8 +190,10 @@
                             android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp"
                             android:textStyle="bold" android:background="@drawable/bg_text_button"/>
                     </LinearLayout>
+                    <androidx.core.widget.NestedScrollView android:id="@+id/jobsScroll" android:layout_width="match_parent" android:layout_height="wrap_content" android:scrollbars="vertical">
                     <LinearLayout android:id="@+id/layoutJobs" android:layout_width="match_parent"
                         android:layout_height="wrap_content" android:orientation="vertical"/>
+                    </androidx.core.widget.NestedScrollView>
                 </LinearLayout>
 
                 <!-- Archivos listos -->
@@ -201,11 +203,13 @@
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:text="@string/archivos_listos" android:textColor="@color/text_primary"
                         android:textSize="16sp" android:textStyle="bold"/>
+                    <androidx.core.widget.NestedScrollView android:id="@+id/readyScroll" android:layout_width="match_parent" android:layout_height="wrap_content" android:scrollbars="vertical">
                     <LinearLayout android:id="@+id/layoutReady" android:layout_width="match_parent"
                         android:layout_height="wrap_content" android:orientation="vertical"/>
+                    </androidx.core.widget.NestedScrollView>
                 </LinearLayout>
             </LinearLayout>
-        </ScrollView>
+        </androidx.core.widget.NestedScrollView>
 
         <!-- Página: Historial -->
         <LinearLayout android:id="@+id/pageHistory" android:layout_width="match_parent" android:layout_height="match_parent"

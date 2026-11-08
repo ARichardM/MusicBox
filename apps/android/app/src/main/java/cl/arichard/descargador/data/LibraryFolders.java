@@ -11,8 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Folders this device reads music from. The list is local to the device and never synced, because every
- * device keeps its own files. An empty list means "all music on the device".
+ * Folders selected on Android are remembered in account preferences. Files and access permissions
+ * belong to the device. An empty list means "all music on the device".
  */
 public final class LibraryFolders {
     private static final String PREFS = "musicbox_prefs";
@@ -84,6 +84,7 @@ public final class LibraryFolders {
 
     private static void save(Context context, List<String> folders) {
         prefs(context).edit().putString(KEY, new JSONArray(folders).toString()).apply();
+        CloudSyncManager.preferenceChanged(context, "androidFolders");
     }
 
     private static SharedPreferences prefs(Context context) {

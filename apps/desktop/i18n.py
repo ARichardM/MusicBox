@@ -7,6 +7,8 @@ from PySide6.QtCore import QLocale, QTranslator
 LANGUAGES = ("auto", "es", "en")
 
 EN = {
+    "Descarga de playlists": "Playlist downloads",
+    "Formato de descarga": "Download format",
     "Importar playlists": "Import playlists",
     "Elige una plataforma. Copia el enlace de una playlist pública desde su menú Compartir.": "Choose a platform. Copy a public playlist link from its Share menu.",
     "En {platform}, abre una playlist pública y elige Compartir → Copiar enlace.": "In {platform}, open a public playlist and choose Share → Copy link.",
