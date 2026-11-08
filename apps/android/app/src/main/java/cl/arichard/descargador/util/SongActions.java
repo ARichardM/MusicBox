@@ -96,7 +96,7 @@ public final class SongActions {
         message(activity, added ? Tr.t("Agregada a ") + name : Tr.t("La canción ya está en ") + name);
         changed.run();
         if (added && song.isOnline() && manager.isAutoDownloadEnabled(name))
-            copyToFolder(activity, song, StorageUtil.getDownloadDir(activity), changed);
+            copyToFolder(activity, song, StorageUtil.getDownloadDir(activity), changed, name);
     }
 
     /** Descarga una canción online en la carpeta de descargas de MusicBox. */
@@ -105,9 +105,17 @@ public final class SongActions {
     }
 
     private static void copyToFolder(Activity activity, Song song, File folder, Runnable changed) {
+        copyToFolder(activity, song, folder, changed, null);
+    }
+
+    private static void copyToFolder(Activity activity, Song song, File folder, Runnable changed, String playlist) {
+        android.content.SharedPreferences prefs = activity.getSharedPreferences("musicbox_prefs", 0);
+        boolean audio = !"MP4".equals(prefs.getString("autoFormat", "MP3"));
+        String quality = prefs.getString(audio ? "quality_mp3" : "quality_mp4", audio ? "192 kbps" : "1080p");
         int added = DownloadManager.get(activity).enqueue(java.util.Collections.singletonList(
                 "https://www.youtube.com/watch?v=" + song.getVideoId()),
-                new DownloadOptions(true, "192 kbps", false, "", DownloadManager.cookiesPath(activity), folder.getAbsolutePath()));
+                new DownloadOptions(audio, quality, false, "", DownloadManager.cookiesPath(activity), folder.getAbsolutePath()),
+                song.getTitle(), playlist == null ? "manual" : "auto", playlist == null ? "" : playlist);
         message(activity, added > 0 ? Tr.t("Descarga en cola: ") + song.getTitle() : Tr.t("Descarga en curso"));
         changed.run();
     }

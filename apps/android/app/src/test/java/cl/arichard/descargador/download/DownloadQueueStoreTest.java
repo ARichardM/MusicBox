@@ -92,8 +92,13 @@ public class DownloadQueueStoreTest {
 
     @Test public void mp4AndIndividualLinksKeepTheirOwnSettings() throws Exception {
         DownloadOptions options = new DownloadOptions(false, "720p", false, "", "", "/videos");
-        store.save(Collections.singletonList(new DownloadJob("video", "https://youtu.be/example", options, 1, 1)));
+        DownloadJob job = new DownloadJob("video", "https://youtu.be/example", options, 1, 1);
+        job.source = "auto"; job.playlistName = "Favoritos"; job.title = "Canción";
+        store.save(Collections.singletonList(job));
         DownloadJob restored = store.load().get(0);
+        assertEquals("auto", restored.copy().source);
+        assertEquals("Favoritos", restored.copy().playlistName);
+        assertEquals("Canción", restored.title);
         assertFalse(restored.options.mp3);
         assertFalse(restored.options.playlist);
         assertEquals("720p", restored.options.quality);

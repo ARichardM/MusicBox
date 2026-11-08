@@ -139,6 +139,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         findViewById(R.id.btnPlayerMore).setOnClickListener(this::showPlayerMenu);
         btnBack.setOnClickListener(v -> closeWithSlideDown());
 
+        Song openingSong = PlayerManager.getInstance().getCurrentSong();
+        if (openingSong != null && openingSong.getPath().toLowerCase(java.util.Locale.ROOT).endsWith(".mp4")) isMp3Mode = false;
         tabSelectorMp3.setOnClickListener(v -> setMediaMode(true));
         tabSelectorMp4.setOnClickListener(v -> setMediaMode(false));
 

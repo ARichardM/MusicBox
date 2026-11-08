@@ -143,10 +143,13 @@ class FirebaseDesktopClient:
             self.user = {"uid": info["localId"], "name": info.get("displayName", ""),
                          "email": info.get("email", ""), "photo": info.get("photoUrl", "")}
             return self.user
-        except Exception:
-            self.id_token = ""
-            self.user = {}
-            return None
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")
+            if any(code in detail for code in ("INVALID_REFRESH_TOKEN", "TOKEN_EXPIRED", "USER_DISABLED", "USER_NOT_FOUND")):
+                self.id_token = ""
+                self.user = {}
+                return None
+            raise
 
     def _accept(self, response):
         self.id_token = response["idToken"]
@@ -194,12 +197,12 @@ class FirebaseDesktopClient:
         _post_json(self._document_url("revocations") + "?updateMask.fieldPaths=" + field,
                    {"fields": {field: {"integerValue": str(int(now_ms))}}},
                    {"Authorization": "Bearer " + self.id_token}, method="PATCH")
-        state = self.load_state()
-        devices = state.get("devices") if isinstance(state.get("devices"), dict) else {}
-        if device_id in devices:
-            devices.pop(device_id)
-            state["devices"] = devices
-            self.save_state(state)
+        def remove_device(state):
+            devices = state.get("devices")
+            if isinstance(devices, dict):
+                devices.pop(device_id, None)
+            return state
+        self.update_state(remove_device)
 
     def load_state(self):
         if not self.id_token or not self.user:

@@ -130,6 +130,10 @@ public final class DownloadManager {
 
     /** Añade los enlaces a la cola y arranca. Devuelve cuántos eran nuevos (los repetidos y en curso se omiten). */
     public int enqueue(List<String> urls, DownloadOptions options) {
+        return enqueue(urls, options, "", "manual", "");
+    }
+
+    public int enqueue(List<String> urls, DownloadOptions options, String title, String source, String playlistName) {
         int added = 0;
         synchronized (this) {
             int position = 0;
@@ -141,7 +145,11 @@ public final class DownloadManager {
                 if (!duplicate) fresh.add(url);
             }
             for (String url : fresh) {
-                jobs.add(new DownloadJob("dl-" + UUID.randomUUID(), url, options, ++position, fresh.size()));
+                DownloadJob job = new DownloadJob("dl-" + UUID.randomUUID(), url, options, ++position, fresh.size());
+                job.source = source;
+                job.playlistName = playlistName;
+                job.title = title == null ? "" : title;
+                jobs.add(job);
                 added++;
             }
             if (added > 0) addLog("info", Tr.f("Destino: %s · Formato: %s · %s", options.destination, options.format(), options.quality));
@@ -361,7 +369,10 @@ public final class DownloadManager {
             addLog("warn", Tr.t("No se pudo guardar en el historial") + ": " + e.getMessage());
         }
         String id = FileNames.videoId(finished.path);
-        if (id != null) context.getSharedPreferences("downloaded_videos", Context.MODE_PRIVATE).edit().putBoolean(id, true).apply();
+        if (id != null) {
+            context.getSharedPreferences("downloaded_videos", Context.MODE_PRIVATE).edit().putBoolean(id, true).apply();
+            cl.arichard.descargador.data.PlaylistManager.getInstance(context).linkLocalFile(finished.path, id);
+        }
         synchronized (this) {
             if (finished.existing) job.filesExisting++; else job.filesDone++;
             ready.add(new ReadyFile(finished.path, title, job.options.mp3, finished.existing));

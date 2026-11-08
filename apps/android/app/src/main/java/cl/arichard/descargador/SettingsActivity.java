@@ -38,6 +38,21 @@ import java.util.List;
 public final class SettingsActivity extends AppCompatActivity {
     private static final String DEVICES_KEY = "devices_json";
     private SharedPreferences cloudPrefs;
+    private boolean updatingControls;
+    private final SharedPreferences.OnSharedPreferenceChangeListener settingsListener = (prefs, key) -> {
+        updatingControls = true;
+        try {
+            if ("autoFormat".equals(key)) ((MaterialButtonToggleGroup)findViewById(R.id.autoFormat))
+                    .check("MP4".equals(prefs.getString(key, "MP3")) ? R.id.formatMp4 : R.id.formatMp3);
+            else if ("quality_mp3".equals(key) || "quality_mp4".equals(key)) {
+                int audio = qualityValue(prefs.getString("quality_mp3", "192 kbps"), true);
+                int video = qualityValue(prefs.getString("quality_mp4", "1080p"), false);
+                ((MaterialButtonToggleGroup)findViewById(R.id.qualityMp3)).check(audio == 128 ? R.id.qualityMp3Low : audio == 320 ? R.id.qualityMp3High : R.id.qualityMp3Normal);
+                ((MaterialButtonToggleGroup)findViewById(R.id.qualityMp4)).check(video == 480 ? R.id.qualityMp4Low : video == 1080 ? R.id.qualityMp4High : R.id.qualityMp4Normal);
+                updateQualityDetails(audio, video);
+            } else if ("library_roots".equals(key)) renderFolders();
+        } finally { updatingControls = false; }
+    };
     private final java.util.Map<String, View> deviceRows = new java.util.HashMap<>();
     private final long fallbackSeen = System.currentTimeMillis();
     private final SharedPreferences.OnSharedPreferenceChangeListener devicesListener = (prefs, key) -> {
@@ -89,6 +104,7 @@ public final class SettingsActivity extends AppCompatActivity {
             findViewById(R.id.txtSettingsAvatar).setVisibility(View.GONE);
         }
         setupDownloadQuality();
+        getSharedPreferences("musicbox_prefs", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(settingsListener);
 
         cloudPrefs = getSharedPreferences("musicbox_cloud", MODE_PRIVATE);
         cloudPrefs.registerOnSharedPreferenceChangeListener(devicesListener);
@@ -114,6 +130,13 @@ public final class SettingsActivity extends AppCompatActivity {
 
     private void setupDownloadQuality() {
         SharedPreferences prefs = getSharedPreferences("musicbox_prefs", MODE_PRIVATE);
+        MaterialButtonToggleGroup format = findViewById(R.id.autoFormat);
+        format.check("MP4".equals(prefs.getString("autoFormat", "MP3")) ? R.id.formatMp4 : R.id.formatMp3);
+        format.addOnButtonCheckedListener((group, id, checked) -> {
+            if (!checked || updatingControls) return;
+            prefs.edit().putString("autoFormat", id == R.id.formatMp4 ? "MP4" : "MP3").apply();
+            CloudSyncManager.preferenceChanged(this, "autoFormat");
+        });
         MaterialButtonToggleGroup audio = findViewById(R.id.qualityMp3), video = findViewById(R.id.qualityMp4);
         int audioValue = qualityValue(prefs.getString("quality_mp3", "192 kbps"), true);
         int videoValue = qualityValue(prefs.getString("quality_mp4", "1080p"), false);
@@ -121,15 +144,17 @@ public final class SettingsActivity extends AppCompatActivity {
         video.check(videoValue == 480 ? R.id.qualityMp4Low : videoValue == 1080 ? R.id.qualityMp4High : R.id.qualityMp4Normal);
         updateQualityDetails(audioValue, videoValue);
         audio.addOnButtonCheckedListener((group, checkedId, checked) -> {
-            if (!checked) return;
+            if (!checked || updatingControls) return;
             int value = checkedId == R.id.qualityMp3Low ? 128 : checkedId == R.id.qualityMp3High ? 320 : 192;
             prefs.edit().putString("quality_mp3", value + " kbps").apply();
+            CloudSyncManager.preferenceChanged(this, "quality_mp3");
             updateQualityDetails(value, qualityValue(prefs.getString("quality_mp4", "1080p"), false));
         });
         video.addOnButtonCheckedListener((group, checkedId, checked) -> {
-            if (!checked) return;
+            if (!checked || updatingControls) return;
             int value = checkedId == R.id.qualityMp4Low ? 480 : checkedId == R.id.qualityMp4High ? 1080 : 720;
             prefs.edit().putString("quality_mp4", value + "p").apply();
+            CloudSyncManager.preferenceChanged(this, "quality_mp4");
             updateQualityDetails(qualityValue(prefs.getString("quality_mp3", "192 kbps"), true), value);
         });
     }
@@ -258,6 +283,7 @@ public final class SettingsActivity extends AppCompatActivity {
     }
 
     @Override protected void onDestroy() {
+        getSharedPreferences("musicbox_prefs", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(settingsListener);
         if (cloudPrefs != null) cloudPrefs.unregisterOnSharedPreferenceChangeListener(devicesListener);
         super.onDestroy();
     }
@@ -276,7 +302,7 @@ public final class SettingsActivity extends AppCompatActivity {
         toggle.setChecked(prefs.getBoolean("dark_mode", true));
         toggle.setOnCheckedChangeListener((button, dark) -> {
             prefs.edit().putBoolean("dark_mode", dark).apply();
-            CloudSyncManager.requestUpload();
+            CloudSyncManager.preferenceChanged(this, "darkMode");
             AppCompatDelegate.setDefaultNightMode(dark ? AppCompatDelegate.MODE_NIGHT_YES : AppCompatDelegate.MODE_NIGHT_NO);
         });
         findViewById(R.id.rowTheme).setOnClickListener(v -> toggle.toggle());
@@ -291,6 +317,8 @@ public final class SettingsActivity extends AppCompatActivity {
         group.addOnButtonCheckedListener((toggle, id, checked) -> {
             if (!checked) return;
             String language = id == R.id.langEs ? "es" : id == R.id.langEn ? "en" : "";
+            getSharedPreferences("musicbox_prefs", MODE_PRIVATE).edit().putString("language", language.isEmpty() ? "auto" : language).apply();
+            CloudSyncManager.preferenceChanged(this, "language");
             AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language));
         });
     }

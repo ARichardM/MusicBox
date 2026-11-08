@@ -508,6 +508,13 @@ ApplicationWindow {
        }
       }
      }
+     ColumnLayout{Layout.fillWidth:true
+      Label{text:qsTr("Descarga de playlists");color:w.fg;font.bold:true}
+      RowLayout{Layout.fillWidth:true
+       ComboBox{Accessible.name:qsTr("Formato de descarga");model:["MP3","MP4"];currentIndex:model.indexOf(musicbox.downloadPrefs.autoFormat);onActivated:musicbox.setDownloadPref("autoFormat",currentText)}
+       ComboBox{model:musicbox.downloadPrefs.autoFormat==="MP4"?["480p","720p","1080p"]:["128 kbps","192 kbps","256 kbps","320 kbps"];currentIndex:model.indexOf(musicbox.downloadPrefs[musicbox.downloadPrefs.autoFormat==="MP4"?"quality_mp4":"quality_mp3"]);onActivated:musicbox.setDownloadPref(musicbox.downloadPrefs.autoFormat==="MP4"?"quality_mp4":"quality_mp3",currentText)}
+      }
+     }
      RowLayout{Layout.fillWidth:true;Layout.topMargin:10;Layout.leftMargin:6
       Label{Layout.fillWidth:true;text:qsTr("CARPETAS DE MÚSICA");color:w.muted;font.bold:true;font.pixelSize:11;font.letterSpacing:1.2}
       Label{text:qsTr("Restablecer");color:resetHover.containsMouse?w.accent:w.muted;font.pixelSize:11;Behavior on color{ColorAnimation{duration:120}}

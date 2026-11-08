@@ -42,6 +42,11 @@
             android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
         <LinearLayout android:id="@+id/cardDownloadQuality" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="10dp" android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_settings_card">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/auto_format" android:textColor="@color/text_primary"/>
+            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/autoFormat" android:layout_width="match_parent" android:layout_height="wrap_content" app:singleSelection="true" app:selectionRequired="true">
+                <com.google.android.material.button.MaterialButton android:id="@+id/formatMp3" style="?attr/materialButtonOutlinedStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="MP3"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/formatMp4" style="?attr/materialButtonOutlinedStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="MP4"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/formato_mp3"
                 android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"/>
             <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/qualityMp3" android:layout_width="match_parent"

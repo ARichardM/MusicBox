@@ -64,6 +64,9 @@ class UpdaterTests(unittest.TestCase):
             with patch("urllib.request.urlopen", make_open(good)):
                 path = updater.download_installer(info, Path(folder), lambda *_: None, lambda: False)
             self.assertEqual(path.read_bytes(), data)
+            with patch("urllib.request.urlopen", make_open(good)), self.assertRaises(InterruptedError):
+                updater.download_installer(info, Path(folder), lambda *_: None, lambda: True)
+            self.assertFalse(path.with_suffix(".part").exists())
             with patch("urllib.request.urlopen", make_open("0" * 64)):
                 with self.assertRaises(RuntimeError):
                     updater.download_installer(info, Path(folder) / "b", lambda *_: None, lambda: False)

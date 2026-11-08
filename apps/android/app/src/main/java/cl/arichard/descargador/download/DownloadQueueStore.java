@@ -32,6 +32,8 @@ final class DownloadQueueStore {
                         entry.getString("destination"));
                 DownloadJob job = new DownloadJob(entry.getString("id"), entry.getString("url"), options,
                         entry.getInt("position"), entry.getInt("batchSize"));
+                job.source = entry.optString("source", "legacy");
+                job.playlistName = entry.optString("playlistName");
                 job.title = entry.optString("title", "");
                 jobs.add(job);
             }
@@ -48,6 +50,7 @@ final class DownloadQueueStore {
                 if (job.status.isFinished() || job.cancelRequested || job.status == DownloadJob.Status.CANCELLING) continue;
                 DownloadOptions options = job.options;
                 entries.put(new JSONObject().put("id", job.id).put("url", job.url).put("title", job.title)
+                        .put("source", job.source).put("playlistName", job.playlistName)
                         .put("position", job.position).put("batchSize", job.batchSize)
                         .put("mp3", options.mp3).put("quality", options.quality).put("playlist", options.playlist)
                         .put("items", options.items).put("cookies", options.cookies).put("destination", options.destination));

@@ -119,4 +119,8 @@
     <string name="desmarcar">Desmarcar</string>
     <string name="escuchar">Escuchar</string>
     <string name="abrir_en_youtube">Abrir en YouTube</string>
+    <string name="queue_auto">Automática</string>
+    <string name="queue_manual">Manual</string>
+    <string name="queue_legacy">Origen desconocido</string>
+    <string name="auto_format">Formato de descarga de playlists</string>
 </resources>

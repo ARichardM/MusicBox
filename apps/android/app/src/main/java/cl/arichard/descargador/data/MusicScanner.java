@@ -29,6 +29,7 @@ public class MusicScanner {
         try {
             File appMusicDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC);
             scanDirectory(appMusicDir, songs, seenPaths, metadata, edits);
+            scanDirectory(new File(context.getFilesDir(), "Music"), songs, seenPaths, metadata, edits);
         } catch (Exception ignored) {}
         for (String path : metadata.getAll().keySet()) if (!seenPaths.contains(path)) edits.remove(path);
         edits.apply();
@@ -154,7 +155,7 @@ public class MusicScanner {
     private static boolean isAudioFile(String name) {
         if (name == null) return false;
         String lower = name.toLowerCase(java.util.Locale.ROOT);
-        return lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".flac") || lower.endsWith(".ogg");
+        return lower.endsWith(".mp4") || lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".flac") || lower.endsWith(".ogg");
     }
 
     private static String cleanTitle(String title, String filename) {

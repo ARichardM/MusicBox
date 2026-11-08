@@ -249,6 +249,16 @@ public class PlaylistManager {
 
     public synchronized String videoIdFor(String path) { return path == null ? null : pathToId.get(path); }
 
+    public synchronized String localVideoFor(String videoId) {
+        if (videoId == null) return null;
+        for (Map.Entry<String, String> entry : pathToId.entrySet()) {
+            String path = entry.getKey();
+            if (videoId.equals(entry.getValue()) && path.toLowerCase(java.util.Locale.ROOT).endsWith(".mp4")
+                    && new java.io.File(path).isFile()) return path;
+        }
+        return null;
+    }
+
     public synchronized boolean hasLocalCopy(String videoId) { return pathToId.containsValue(videoId); }
 
     /** Declara que un archivo local es la copia de un video de YouTube (importar carpeta). */
@@ -330,6 +340,11 @@ public class PlaylistManager {
             }
         }
         return new ArrayList<>(unique.values());
+    }
+
+    public synchronized String autoPlaylistFor(String videoId) {
+        for (String name : autoDownloadPlaylists) if (isOnlineTrackInPlaylist(name, videoId)) return name;
+        return "";
     }
 
     public synchronized boolean isAutoDownloadEnabled(String playlistName) {

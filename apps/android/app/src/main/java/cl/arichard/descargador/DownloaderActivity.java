@@ -321,6 +321,7 @@ public class DownloaderActivity extends AppCompatActivity {
             chip.setLayoutParams(lp);
             chip.setOnClickListener(v -> {
                 getSharedPreferences("musicbox_prefs", MODE_PRIVATE).edit().putString(mp3 ? "quality_mp3" : "quality_mp4", option).apply();
+                cl.arichard.descargador.data.CloudSyncManager.preferenceChanged(this, mp3 ? "quality_mp3" : "quality_mp4");
                 renderFormat();
             });
             SafeTap.install(chip);
@@ -593,6 +594,9 @@ public class DownloaderActivity extends AppCompatActivity {
         row.cancel.setVisibility(job.status.isFinished() ? View.GONE : View.VISIBLE);
         row.cancel.setOnClickListener(v -> manager.cancel(job.id));
         List<String> parts = new ArrayList<>();
+        parts.add(job.options.format());
+        parts.add(getString("auto".equals(job.source) ? R.string.queue_auto : "legacy".equals(job.source) ? R.string.queue_legacy : R.string.queue_manual));
+        if (!job.playlistName.isEmpty()) parts.add(job.playlistName);
         if (job.status.isActive() && job.status != DownloadJob.Status.PREPARING) {
             if (!job.size.isEmpty()) parts.add(job.size);
             if (!job.speed.isEmpty()) parts.add(job.speed);
@@ -616,6 +620,7 @@ public class DownloaderActivity extends AppCompatActivity {
         String key = jobsKey(jobs);
         if (!key.equals(jobsSignature)) {
             jobsSignature = key;
+            boundList(R.id.jobsScroll, jobs.size(), 3);
             layoutJobs.removeAllViews();
             jobRows.clear();
             for (DownloadJob job : jobs) {
@@ -630,12 +635,21 @@ public class DownloaderActivity extends AppCompatActivity {
         }
     }
 
+    private void boundList(int id, int count, int visibleRows) {
+        View scroller = findViewById(id);
+        ViewGroup.LayoutParams bounds = scroller.getLayoutParams();
+        bounds.height = count > visibleRows ? Math.min(dp(300), getResources().getDisplayMetrics().heightPixels / 2)
+                : ViewGroup.LayoutParams.WRAP_CONTENT;
+        scroller.setLayoutParams(bounds);
+    }
+
     private void renderReady(List<DownloadManager.ReadyFile> files) {
         cardReady.setVisibility(files.isEmpty() ? View.GONE : View.VISIBLE);
         StringBuilder key = new StringBuilder();
         for (DownloadManager.ReadyFile file : files) key.append(file.path).append('|');
         if (key.toString().equals(readySignature)) return;
         readySignature = key.toString();
+        boundList(R.id.readyScroll, files.size(), 6);
         layoutReady.removeAllViews();
         for (int i = files.size() - 1; i >= 0; i--) {
             DownloadManager.ReadyFile file = files.get(i);

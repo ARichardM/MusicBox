@@ -41,6 +41,14 @@ class FirebaseDesktopConfigTests(unittest.TestCase):
                 self.assertEqual(client.refresh_token, "saved-token")
                 network.assert_not_called()
 
+    def test_offline_restore_keeps_credentials_for_the_next_launch(self):
+        with patch.object(musicbox_cloud, "_api_config", return_value=("project", "key")), \
+                patch.object(musicbox_cloud, "urlopen", side_effect=TimeoutError):
+            client = musicbox_cloud.FirebaseDesktopClient("saved-token")
+            with self.assertRaises(TimeoutError):
+                client.restore()
+            self.assertEqual(client.refresh_token, "saved-token")
+
     def test_malformed_configuration_does_not_crash_startup(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "desktop_firebase_config.json"

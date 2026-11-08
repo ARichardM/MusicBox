@@ -15,6 +15,8 @@ public final class DownloadJob {
     /** Posición dentro del lote y tamaño del lote, para numerar los nombres. */
     public final int position, batchSize;
     public volatile Status status = Status.WAITING;
+    public String source = "manual";
+    public String playlistName = "";
     public volatile String title = "";
     public volatile float progress;
     public volatile String speed = "", size = "";
@@ -31,6 +33,7 @@ public final class DownloadJob {
     /** Copia congelada para que la interfaz la lea sin que cambie a mitad de pintar. */
     public DownloadJob copy() {
         DownloadJob copy = new DownloadJob(id, url, options, position, batchSize);
+        copy.source = source; copy.playlistName = playlistName;
         copy.status = status; copy.title = title; copy.progress = progress; copy.speed = speed; copy.size = size;
         copy.etaSeconds = etaSeconds; copy.itemIndex = itemIndex; copy.itemCount = itemCount;
         copy.filesDone = filesDone; copy.filesExisting = filesExisting; copy.error = error;

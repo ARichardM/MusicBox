@@ -22,6 +22,26 @@ APP = QApplication.instance() or QApplication([])
 
 
 class QmlUiTests(unittest.TestCase):
+    def test_remote_format_controls_playlist_download_and_preserves_pending_local_choice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.IniFormat)
+            with patch.object(module, "QSettings", return_value=settings), \
+                    patch.object(module.MusicBoxBridge, "refresh"), \
+                    patch.object(module.MusicBoxBridge, "checkForUpdate"), \
+                    patch.object(module.MusicBoxBridge, "refreshForYou"):
+                bridge = module.MusicBoxBridge()
+            bridge._user = {"uid": "test"}
+            bridge._schedule_cloud_save = lambda: None
+            bridge._apply_preferences({"preferences": {"autoFormat": "MP4", "quality_mp4": "720p"}})
+            settings.setValue("libraryFoldersJson", '["' + Path(directory).as_posix() + '"]')
+            with patch.object(bridge, "startDownload") as enqueue:
+                bridge.downloadOnlineTrack({"id": "ejemplo"})
+                self.assertEqual(enqueue.call_args.args[3:5], ("MP4", "720p"))
+            bridge.setDownloadPref("autoFormat", "MP3")
+            bridge._apply_preferences({"preferences": {"autoFormat": "MP4", "quality_mp3": "320 kbps"}})
+            self.assertEqual(bridge.downloadPrefs["autoFormat"], "MP3")
+            self.assertEqual(bridge.downloadPrefs["quality_mp3"], "320 kbps")
+
     def test_click_metrics_use_headphones_instead_of_play_icon(self):
         source = (module.CODE_DIR / "ui" / "Main.qml").read_text(encoding="utf-8")
         self.assertEqual(source.count('clicks>0?"  ·  🎧 "'), 3)

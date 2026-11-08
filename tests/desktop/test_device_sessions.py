@@ -33,8 +33,7 @@ class DeviceSessionTests(unittest.TestCase):
             return {}
 
         with patch.object(musicbox_cloud, "_post_json", fake_post), \
-                patch.object(instance, "load_state", return_value=state), \
-                patch.object(instance, "save_state", side_effect=saved.update):
+                patch.object(instance, "update_state", side_effect=lambda change: saved.update(change(state))):
             instance.revoke_device("abc", 1700000000000)
 
         url, payload, method = calls[0]

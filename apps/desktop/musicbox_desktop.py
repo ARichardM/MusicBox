@@ -137,6 +137,7 @@ class MusicBoxBridge(QObject):
     playlistsChanged = Signal()
     devicesChanged = Signal()
     noticeChanged = Signal()
+    downloadPrefsChanged = Signal()
     languageChanged = Signal()
     libraryFoldersChanged = Signal()
     updateChanged = Signal()
@@ -171,6 +172,7 @@ class MusicBoxBridge(QObject):
         self._busy = False
         self._settings = settings if settings is not None else QSettings("MusicBox", "Desktop")
         self._library_sort, self._library_sort_ascending = self._read_library_sort()
+        self._applying_preferences = False
         self._language_setting = self._settings.value("language", "auto", str)
         if self._language_setting not in i18n.LANGUAGES: self._language_setting = "auto"
         i18n.set_language(self._language_setting)
@@ -1449,6 +1451,7 @@ class MusicBoxBridge(QObject):
         for root in roots:
             if str(root) not in unique: unique.append(str(root))
         self._settings.setValue("libraryFoldersJson", json.dumps(unique))
+        self._preference_changed("windowsFolders")
         self.libraryFoldersChanged.emit()
         self.refresh()
 
@@ -1466,8 +1469,7 @@ class MusicBoxBridge(QObject):
     def _download_dir(self):
         for root in self._library_roots():
             if root.is_dir(): return root
-        roots = self._library_roots()
-        return roots[0] if roots else ROOT / "Descargas"
+        return ROOT / "Descargas"
 
     @Property("QVariantList", notify=libraryFoldersChanged)
     def libraryFolders(self):
@@ -1488,6 +1490,7 @@ class MusicBoxBridge(QObject):
     @Slot()
     def resetLibraryFolders(self):
         self._settings.remove("libraryFoldersJson")
+        self._preference_changed("windowsFolders")
         self.libraryFoldersChanged.emit()
         self.refresh()
 
@@ -2047,7 +2050,9 @@ class MusicBoxBridge(QObject):
             self.downloadingIdsChanged.emit()
         target = Path(self.defaultDownloadFolder).expanduser().resolve()
         target.mkdir(parents=True, exist_ok=True)
-        self.startDownload(url, False, "", "MP3", "192 kbps", str(target), "")
+        prefs = self.downloadPrefs
+        fmt = prefs["autoFormat"]
+        self.startDownload(url, False, "", fmt, prefs["quality_mp4" if fmt == "MP4" else "quality_mp3"], str(target), "")
 
     @Property(bool, notify=authChanged)
     def authenticated(self): return bool(self._user)
@@ -2151,9 +2156,7 @@ class MusicBoxBridge(QObject):
             devices[self._device_id] = {"name": platform.node() or "Este PC", "platform": "Windows", "lastSeen": int(time.time() * 1000)}
             self._cloud_snapshot["devices"] = devices
             self.devicesChanged.emit()
-            if "darkMode" in state:
-                self._dark_mode = bool(state["darkMode"])
-                self.darkModeChanged.emit()
+            self._apply_preferences(state)
             if "recentPlayed" in state:
                 self._recent_paths = list(state.get("recentPlayed") or [])
                 self._settings.setValue("recentPlayed", self._recent_paths)
@@ -2225,22 +2228,28 @@ class MusicBoxBridge(QObject):
         """Actualiza la lista de dispositivos y comprueba si cerraron esta sesión."""
         if not self._user or self._auth_busy:
             return
+        uid = self._user.get("uid")
+        generation = self._cloud_sync_generation
         def worker():
             try:
                 revoked = self._is_revoked()
-                devices = {} if revoked else (self._cloud.load_state().get("devices") or {})
+                state = {} if revoked else self._cloud.load_state()
             except Exception:
                 return
-            self._devicesPolled.emit(devices, revoked)
+            self._devicesPolled.emit({"uid": uid, "generation": generation, "state": state}, revoked)
         threading.Thread(target=worker, daemon=True).start()
 
     @Slot(object, bool)
-    def _apply_polled_devices(self, devices, revoked):
-        if not self._user:
+    def _apply_polled_devices(self, result, revoked):
+        if not self._user or result["uid"] != self._user.get("uid"):
             return
         if revoked:
             self._sign_out_locally(i18n.tr("Tu sesión se cerró desde otro dispositivo."))
             return
+        state = result["state"]
+        if result["generation"] == self._cloud_sync_generation:
+            self._apply_preferences(state)
+        devices = state.get("devices")
         if isinstance(devices, dict) and devices:
             current = (self._cloud_snapshot.get("devices") or {}).get(self._device_id)
             devices = dict(devices)
@@ -2303,6 +2312,8 @@ class MusicBoxBridge(QObject):
         generation = self._cloud_sync_generation
         uid = self._user.get("uid")
         state = deepcopy(self._cloud_state())
+        changed_prefs = self._pending_prefs()
+        local_prefs = self._all_preferences()
         baseline = deepcopy(self._sync_base_section)
 
         def worker():
@@ -2316,6 +2327,12 @@ class MusicBoxBridge(QObject):
                         merged = dict(remote)
                         for key in ("schema", "darkMode", "library", "recentPlayed", "recentQueries"):
                             merged[key] = state[key]
+                        preferences = dict(remote.get("preferences") or {})
+                        for key, value in local_prefs.items():
+                            if key in changed_prefs or key not in preferences:
+                                preferences[key] = value
+                        merged["preferences"] = preferences
+                        merged["darkMode"] = preferences["darkMode"]
                         merged["playlists"] = playlist_sync.merge_playlists(
                             baseline, state.get("playlists"), remote.get("playlists"))
                         merged["favorites"] = merged["playlists"].get("playlists", {}).get("Favoritos", [])
@@ -2330,7 +2347,7 @@ class MusicBoxBridge(QObject):
 
                     synced = self._cloud.update_state(update)
                     self._remotePlaylists.emit({"syncedPlaylists": synced["playlists"],
-                                               "localSnapshot": state["playlists"], "uid": uid})
+                                               "localSnapshot": state["playlists"], "uid": uid, "sentPrefs": changed_prefs})
                 except Exception:
                     # Se conserva la copia local. La siguiente interacción vuelve a intentar sincronizar.
                     pass
@@ -2343,6 +2360,11 @@ class MusicBoxBridge(QObject):
         incoming = data.get("syncedPlaylists", data)
         if "uid" in data and data["uid"] != self._user.get("uid"):
             return
+        if data.get("sentPrefs"):
+            pending = self._pending_prefs()
+            for key, value in data["sentPrefs"].items():
+                if pending.get(key) == value: pending.pop(key)
+            self._settings.setValue("pendingPrefs/" + self._user["uid"], json.dumps(pending))
         current = self._cloud_state().get("playlists", {})
         baseline = data.get("localSnapshot", self._sync_base_section)
         self._sync_base_section = deepcopy(incoming)
@@ -2377,7 +2399,7 @@ class MusicBoxBridge(QObject):
         self._dark_mode = not self._dark_mode
         self._settings.setValue("darkMode", self._dark_mode)
         self.darkModeChanged.emit()
-        self._schedule_cloud_save()
+        self._preference_changed("darkMode")
 
     @Slot()
     def toggleSidebar(self):
@@ -2397,7 +2419,63 @@ class MusicBoxBridge(QObject):
         self._set_status(i18n.tr("Todo listo"))
         if self._engine is not None: self._engine.retranslate()
         self.languageChanged.emit()
+        self._preference_changed("language")
         self.refresh()
+
+    _download_choices = {"autoFormat": ("MP3", "MP4"),
+                         "quality_mp3": ("192 kbps", "128 kbps", "256 kbps", "320 kbps"),
+                         "quality_mp4": ("1080p", "720p", "480p", "360p", "Mejor disponible")}
+
+    @Property("QVariantMap", notify=downloadPrefsChanged)
+    def downloadPrefs(self):
+        return {key: self._settings.value(key, choices[0], str) for key, choices in self._download_choices.items()}
+
+    @Slot(str, str)
+    def setDownloadPref(self, key, value):
+        if value not in self._download_choices.get(key, ()) or self.downloadPrefs[key] == value:
+            return
+        self._settings.setValue(key, value)
+        self.downloadPrefsChanged.emit()
+        self._preference_changed(key)
+
+    def _pending_prefs(self):
+        uid = self._user.get("uid", "")
+        return json.loads(self._settings.value("pendingPrefs/" + uid, "{}", str))
+
+    def _preference_changed(self, key):
+        if self._applying_preferences or not self._user.get("uid"):
+            return
+        pending = self._pending_prefs()
+        pending[key] = time.time_ns()
+        self._settings.setValue("pendingPrefs/" + self._user["uid"], json.dumps(pending))
+        self._schedule_cloud_save()
+
+    def _all_preferences(self):
+        folders = self._settings.value("libraryFoldersJson", "", str)
+        return dict(self.downloadPrefs, darkMode=self._dark_mode, language=self.language,
+                    windowsFolders=json.loads(folders) if folders else None)
+
+    def _apply_preferences(self, state):
+        prefs = dict(state.get("preferences") or {})
+        if "darkMode" in state: prefs.setdefault("darkMode", state["darkMode"])
+        pending = self._pending_prefs()
+        self._applying_preferences = True
+        try:
+            for key, value in prefs.items():
+                if key in pending: continue
+                if key in self._download_choices:
+                    self.setDownloadPref(key, value)
+                elif key == "language":
+                    self.setLanguage(value)
+                elif key == "darkMode" and isinstance(value, bool) and self._dark_mode != value:
+                    self.toggleTheme()
+                elif key == "windowsFolders" and value != self._all_preferences()[key]:
+                    if value is None:
+                        self.resetLibraryFolders()
+                    elif isinstance(value, list) and all(isinstance(path, str) for path in value):
+                        self._save_library_roots(value)
+        finally:
+            self._applying_preferences = False
 
     def attach_engine(self, engine):
         self._engine = engine
