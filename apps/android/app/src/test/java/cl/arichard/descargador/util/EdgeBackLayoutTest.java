@@ -97,6 +97,16 @@ public class EdgeBackLayoutTest {
         }
     }
 
+    @Test public void attachDoesNotWrapNowPlayingActivity() {
+        try (ActivityController<cl.arichard.descargador.NowPlayingActivity> controller =
+                     Robolectric.buildActivity(cl.arichard.descargador.NowPlayingActivity.class).setup()) {
+            cl.arichard.descargador.NowPlayingActivity activity = controller.get();
+            EdgeBackLayout.attach(activity);
+            FrameLayout content = activity.findViewById(android.R.id.content);
+            assertFalse(content.getChildAt(0) instanceof EdgeBackLayout);
+        }
+    }
+
     private void drag(View root, float x, float y, float endX, float endY, int end) {
         long now = android.os.SystemClock.uptimeMillis();
         int i = 0;

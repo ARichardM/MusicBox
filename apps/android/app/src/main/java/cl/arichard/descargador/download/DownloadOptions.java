@@ -46,7 +46,6 @@ public final class DownloadOptions {
     public List<String[]> args(int queuePosition, int linkCount) {
         List<String[]> args = new ArrayList<>();
         args.add(new String[]{"--no-update"});
-        args.add(new String[]{"--extractor-args", "youtube:player_client=android,web"});
         args.add(new String[]{"--no-mtime"});
         args.add(new String[]{"--windows-filenames"});
         args.add(new String[]{"--ignore-errors"});

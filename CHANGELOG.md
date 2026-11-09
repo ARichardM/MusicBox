@@ -1,17 +1,17 @@
 # Historial de versiones
 
-## 2.4.2 — En preparación
+## 2.4.2 — 8 de noviembre de 2026
 
 - La cuenta guarda el idioma, el tema, el formato y las calidades de descarga. Las carpetas se recuerdan por plataforma.
+- Letras sincronizadas en el reproductor de Windows y Android: lee archivos `.lrc`, consulta LRCLIB y usa las letras oficiales de YouTube Music como respaldo, sigue el verso actual, permite saltar a cualquier línea al tocarla y limpia las marcas de tiempo por palabra del LRC extendido.
 - Las descargas automáticas de playlists respetan el formato MP3 o MP4 elegido. En Android, las filas muestran formato y origen, y las listas largas tienen desplazamiento propio.
 - Android reconoce los MP4 de MusicBox en la biblioteca y puede recuperar el video asociado a una canción local al cambiar al modo video.
 - Windows conserva la sesión ante errores de red, protege cambios simultáneos al desconectar dispositivos y limpia las actualizaciones canceladas.
 - Android: al importar una playlist por enlace se abre una hoja de revisión con portada, título, artista y duración de cada canción, con opciones para escucharla, ver alternativas, descartarla o restaurarla. Las canciones de Spotify, Deezer, Apple Music y SoundCloud se buscan primero en YouTube Music y ninguna se pierde: las dudosas quedan marcadas «Por revisar». Las playlists de YouTube ya incluyen videos y clips.
 - Android: la playlist importada aparece de inmediato en la biblioteca, con animación de rebote.
 - Android: el reproductor muestra la portada cuadrada de YouTube Music con bordes redondeados; en MP4 reproduce el videoclip real de la canción, a todo el ancho, y al tocarlo pasa a pantalla completa con fundido, como YouTube Music. Los resultados de búsqueda usan el mismo marco cuadrado.
-- Android: se arreglan los cortes de streaming (más reintentos con enlace nuevo, tamaño exacto del archivo y descarte de archivos falsos que entrega YouTube), y los anillos de descarga giran desde que la descarga espera turno.
-- Android: las letras sincronizadas ya no muestran las marcas de tiempo por palabra.
-- Android: volver desde el borde sigue a la derecha al cerrar la pantalla, el gesto de volver ya no choca con el de cambiar de playlist, y los gestos entre pestañas y playlists responden más rápido.
+- Android: se arreglan los cortes de streaming y las descargas que quedaban vacías en algunos videos (más reintentos con enlace nuevo, clientes por defecto de yt-dlp, tamaño exacto del archivo y descarte de archivos falsos que entrega YouTube), y los anillos de descarga giran desde que la descarga espera turno.
+- Android: volver desde el borde sigue a la derecha al cerrar las pantallas secundarias, sin interferir con el deslizar entre canciones del reproductor ni con el cambio de playlist, y los gestos entre pestañas y playlists responden más rápido.
 
 ## 2.4.1 — 5 de noviembre de 2026
 

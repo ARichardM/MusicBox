@@ -77,7 +77,7 @@ La validación de laboratorio no sustituye la comprobación física de la ruta B
 | Ruta Bluetooth durante la instrumentación | No concluyente: Android instrumentado reportó `remote-submix` para el reproductor |
 | Ruta fuera de instrumentación | El probe ADB detectó A2DP en `Agustin's Buds2` |
 | Conexión y retiro de audífonos durante reproducción | El usuario confirmó en el Samsung que el audio continúa por los audífonos al conectarlos y se pausa al retirarlos |
-| Cambio directo de `Agustin's Buds2` a `ES-BT10` | Pendiente: no se probó la transición entre dos salidas Bluetooth activas |
+| Cambio directo de `Agustin's Buds2` a `ES-BT10` | Confirmado por el usuario |
 
 El reproductor deja a Android elegir la salida (`USAGE_MEDIA` y ninguna salida
 preferida fijada). En API 28 o posterior confirma la ruta efectiva con
@@ -88,6 +88,5 @@ la salida anterior.
 
 Como la instrumentación desvía el audio a `remote-submix`, la variante `verification`
 incluye un observador ADB que ejecuta la reproducción fuera del runner de pruebas.
-No se publica una versión estable hasta completar con él el cambio físico entre
-dos salidas Bluetooth. Las pruebas siguen usando exclusivamente
+Las pruebas automatizadas siguen usando exclusivamente
 `cl.arichard.descargador.verification`.

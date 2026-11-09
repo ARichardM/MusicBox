@@ -14,6 +14,7 @@ import android.widget.SeekBar;
 import androidx.activity.ComponentActivity;
 import cl.arichard.descargador.LoginActivity;
 import cl.arichard.descargador.MainActivity;
+import cl.arichard.descargador.NowPlayingActivity;
 import java.util.function.BooleanSupplier;
 
 /** Volver desde el borde izquierdo, usando la misma acción que Atrás del sistema. */
@@ -41,7 +42,8 @@ public final class EdgeBackLayout extends FrameLayout {
     private BooleanSupplier contentSwipe = () -> false;
 
     public static void attach(Activity activity) {
-        if (!(activity instanceof ComponentActivity) || activity instanceof LoginActivity || activity.isFinishing()) return;
+        if (!(activity instanceof ComponentActivity) || activity instanceof LoginActivity
+                || activity instanceof NowPlayingActivity || activity.isFinishing()) return;
         ViewGroup content = activity.findViewById(android.R.id.content);
         if (content == null || content.getChildCount() == 0 || content.getChildAt(0) instanceof EdgeBackLayout) return;
         EdgeBackLayout wrapper = new EdgeBackLayout(activity);
