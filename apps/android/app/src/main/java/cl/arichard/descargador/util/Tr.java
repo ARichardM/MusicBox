@@ -567,6 +567,18 @@ public final class Tr {
         m.put("Añadir a la lista", "Add to list");
         m.put("Descarga en cola", "Download queued");
         m.put("%d\u2013%d de %d", "%d\u2013%d of %d");
+        m.put("Letra", "Lyrics");
+        m.put("Ver letra", "Show lyrics");
+        m.put("Ocultar letra", "Hide lyrics");
+        m.put("Sincronizada", "Synced");
+        m.put("Texto", "Plain text");
+        m.put("Archivo LRC", "LRC file");
+        m.put("Buscando letra\u2026", "Searching lyrics\u2026");
+        m.put("Sin letra disponible", "No lyrics available");
+        m.put("No encontramos la letra de esta canci\u00f3n.", "We couldn't find lyrics for this song.");
+        m.put("Pista instrumental", "Instrumental track");
+        m.put("Esta canci\u00f3n no tiene letra cantada.", "This song has no sung lyrics.");
+        m.put("Seguir", "Follow");
     }
 
     private Tr() {}

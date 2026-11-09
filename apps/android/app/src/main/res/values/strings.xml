@@ -123,4 +123,7 @@
     <string name="queue_manual">Manual</string>
     <string name="queue_legacy">Unknown origin</string>
     <string name="auto_format">Playlist download format</string>
+    <string name="letra">Lyrics</string>
+    <string name="buscando_letra">Searching lyrics…</string>
+    <string name="sin_letra_disponible">No lyrics available</string>
 </resources>

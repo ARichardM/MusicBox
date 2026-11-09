@@ -200,4 +200,22 @@ public class YtMusicApiTest {
         assertEquals(java.util.Arrays.asList("taylor swift", "ed sheeran", "future"),
                 YtMusicApi.artistNames("Taylor Swift feat. Ed Sheeran & Future"));
     }
+
+    @Test public void lyricsExtractsBrowseIdFromNextFixtureAndFetchesShelf() throws Exception {
+        JSONObject nextData = fixture("next");
+        String browseId = YtMusicApi.lyricsBrowseId(nextData);
+        assertEquals("MPLYt_AABpmJ0ptEp-1", browseId);
+        responses.put("next", nextData);
+        responses.put(browseId, new JSONObject().put("contents", new JSONObject()
+                .put("sectionListRenderer", new JSONObject().put("contents", new JSONArray()
+                        .put(new JSONObject().put("musicDescriptionShelfRenderer", new JSONObject()
+                                .put("description", new JSONObject().put("runs", new JSONArray()
+                                        .put(new JSONObject().put("text", "Siete y media en la mañana\nMi asiento toca la ventana"))))
+                                .put("footer", new JSONObject().put("runs", new JSONArray()
+                                        .put(new JSONObject().put("text", "Fuente: LyricFind"))))))))));
+        YtMusicApi.Lyrics res = YtMusicApi.lyrics("NgEJ9gMxP90");
+        assertNotNull(res);
+        assertEquals("Siete y media en la mañana\nMi asiento toca la ventana", res.text);
+        assertEquals("Fuente: LyricFind", res.source);
+    }
 }

@@ -362,3 +362,42 @@ def album_page(browse_id: str, api=post) -> dict:
             if track:
                 tracks.append(track)
     return {"browse_id": browse_id, "title": title, "year": year, "artist": artist, "thumbnail": cover, "tracks": tracks}
+
+
+def lyrics_browse_id(data: dict) -> str:
+    """Identificador ``MPLYt_…`` de la pestaña de letra en una respuesta ``next``, o vacío si no está disponible."""
+    for tab in walk(data, "tabRenderer"):
+        if tab.get("unselectable"):
+            continue
+        endpoint = tab.get("endpoint") or {}
+        browse_id = first(endpoint, "browseId", "") or ""
+        page_type = first(endpoint, "pageType", "") or ""
+        if browse_id.startswith("MPLYt") or page_type == "MUSIC_PAGE_TYPE_TRACK_LYRICS":
+            return browse_id
+    return ""
+
+
+def lyrics(video_id: str, api=post) -> dict:
+    """Letra oficial de YouTube Music para ``video_id`` (o su pista de audio equivalente)."""
+    if not video_id:
+        return {"text": "", "source": ""}
+    data = api("next", {"videoId": video_id})
+    browse_id = lyrics_browse_id(data)
+    if not browse_id:
+        for item in walk(data, "playlistPanelVideoRenderer"):
+            seed = track_from_panel(item)
+            if not seed or seed["id"] != video_id or not seed["title"]:
+                continue
+            audio = _audio_counterpart(seed, api)
+            if audio:
+                browse_id = lyrics_browse_id(api("next", {"videoId": audio["id"]}))
+            break
+    if not browse_id:
+        return {"text": "", "source": ""}
+    page = api("browse", {"browseId": browse_id})
+    for shelf in walk(page, "musicDescriptionShelfRenderer"):
+        text = text_of(shelf.get("description")).strip()
+        if text:
+            return {"text": text, "source": text_of(shelf.get("footer")).strip()}
+    return {"text": "", "source": ""}
+

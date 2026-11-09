@@ -26,3 +26,4 @@ HomeSkeleton 1.0 HomeSkeleton.qml
 ImportLinkDialog 1.0 ImportLinkDialog.qml
 AlternativesDialog 1.0 AlternativesDialog.qml
 VideoPanel 1.0 VideoPanel.qml
+LyricsPanel 1.0 LyricsPanel.qml

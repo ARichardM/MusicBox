@@ -61,6 +61,14 @@ public final class YtMusicApi {
         public final List<SearchResult> tracks = new ArrayList<>();
     }
 
+    public static final class Lyrics {
+        public final String text, source;
+        public Lyrics(String text, String source) {
+            this.text = text == null ? "" : text;
+            this.source = source == null || source.isEmpty() ? "YouTube Music" : source;
+        }
+    }
+
     /** Punto de entrada de red; las pruebas lo sustituyen por respuestas guardadas. */
     public interface Transport { JSONObject post(String endpoint, JSONObject body) throws Exception; }
 
@@ -546,5 +554,53 @@ public final class YtMusicApi {
             }
         }
         return page;
+    }
+
+    /** Extrae el browseId de la pestaña de letras («MPLYt_...») desde una respuesta de youtubei/v1/next. */
+    public static String lyricsBrowseId(JSONObject data) {
+        if (data == null) return "";
+        for (JSONObject tab : all(data, "tabRenderer")) {
+            String browseId = firstString(tab.optJSONObject("endpoint"), "browseId");
+            if (browseId.startsWith("MPLYt")) return browseId;
+        }
+        for (JSONObject ep : all(data, "browseEndpoint")) {
+            String browseId = ep.optString("browseId");
+            if (browseId.startsWith("MPLYt")) return browseId;
+        }
+        return "";
+    }
+
+    /** Letra oficial de una canción en YouTube Music a partir de su videoId (o su contraparte de audio). */
+    public static Lyrics lyrics(String videoId) throws Exception {
+        String id = videoId == null ? "" : videoId.trim();
+        if (id.isEmpty()) return null;
+        JSONObject data = post("next", new JSONObject().put("videoId", id));
+        String browseId = lyricsBrowseId(data);
+        if (browseId.isEmpty()) {
+            for (JSONObject seed : all(data, "playlistPanelVideoRenderer")) {
+                if (!id.equals(seed.optString("videoId"))) continue;
+                String title = text(seed.optJSONObject("title"));
+                List<List<JSONObject>> parts = segments(seed.optJSONObject("longBylineText"));
+                String artist = parts.isEmpty() ? "" : join(parts.get(0));
+                if (!title.isEmpty()) {
+                    SearchResult audio = audioCounterpart(id, title, artist);
+                    if (audio != null && !audio.getId().isEmpty()) {
+                        JSONObject audioNext = post("next", new JSONObject().put("videoId", audio.getId()));
+                        browseId = lyricsBrowseId(audioNext);
+                    }
+                }
+                break;
+            }
+        }
+        if (browseId.isEmpty()) return null;
+        JSONObject page = post("browse", new JSONObject().put("browseId", browseId));
+        for (JSONObject shelf : all(page, "musicDescriptionShelfRenderer")) {
+            String body = text(shelf.optJSONObject("description")).trim();
+            if (!body.isEmpty()) {
+                String footer = text(shelf.optJSONObject("footer")).trim();
+                return new Lyrics(body, footer.isEmpty() ? "YouTube Music" : footer);
+            }
+        }
+        return null;
     }
 }

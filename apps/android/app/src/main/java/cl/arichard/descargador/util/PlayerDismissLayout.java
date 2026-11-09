@@ -29,6 +29,11 @@ public class PlayerDismissLayout extends LinearLayout {
     private void begin(MotionEvent event) {
         downX = event.getRawX(); downY = event.getRawY(); downTime = event.getEventTime();
         dragging = false; rejected = false; axis = 0;
+        View lyrics = findViewById(R.id.containerLyrics);
+        if (lyrics != null && lyrics.getVisibility() == View.VISIBLE) {
+            eligible = false;
+            return;
+        }
         View artwork = findViewById(R.id.playerArtworkArea);
         Rect rect = new Rect();
         eligible = artwork != null && artwork.getGlobalVisibleRect(rect) && rect.contains((int) downX, (int) downY);
