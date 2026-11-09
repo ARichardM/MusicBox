@@ -33,12 +33,29 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     private View nowPlayingRoot;
     private ImageView btnBack, btnFavorite;
-    private TextView tabSelectorMp3, tabSelectorMp4;
-    private FrameLayout containerCoverArt, containerVideoPlayer, videoHostLayout;
+    private TextView tabSelectorMp3, tabSelectorMp4, tabSelectorLyrics;
+    private FrameLayout containerCoverArt, containerVideoPlayer, containerLyrics, videoHostLayout;
     private ImageView imgNowPlayingCover;
     private TextView txtTitle, txtArtist;
     private SeekBar seekBar;
     private TextView txtCurrentTime, txtTotalTime;
+
+    // Lyrics UI & State
+    private androidx.recyclerview.widget.RecyclerView recyclerLyrics;
+    private View layoutLyricsLoading, layoutLyricsEmpty, lyricsHeaderRow;
+    private TextView txtLyricsBadge, txtLyricsSource, btnLyricsFollow, txtLyricsEmptyTitle, txtLyricsEmptyDetail, btnLyricsRetry;
+    private LyricsAdapter lyricsAdapter;
+    private boolean isLyricsMode = false;
+    private boolean userScrollingLyrics = false;
+    private String loadedLyricsSongKey = "";
+    private int lyricsRequestToken = 0;
+    private cl.arichard.descargador.util.LyricsFetcher.Result currentLyrics = cl.arichard.descargador.util.LyricsFetcher.Result.empty();
+    private int activeLyricsIndex = -1;
+    private final Runnable resumeLyricsFollowRunnable = () -> {
+        userScrollingLyrics = false;
+        if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.GONE);
+        scrollToActiveLyric(true);
+    };
 
     private ImageView btnShuffle, btnPrevious, btnPlayPauseIcon, btnNext, btnRepeat;
     /** Mientras carga, el anillo ocupa el lugar del icono de reproducir o pausar. */
@@ -98,11 +115,25 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
         tabSelectorMp3 = findViewById(R.id.tabSelectorMp3);
         tabSelectorMp4 = findViewById(R.id.tabSelectorMp4);
+        tabSelectorLyrics = findViewById(R.id.tabSelectorLyrics);
 
         containerCoverArt = findViewById(R.id.containerCoverArt);
         containerVideoPlayer = findViewById(R.id.containerVideoPlayer);
+        containerLyrics = findViewById(R.id.containerLyrics);
         videoHostLayout = findViewById(R.id.videoHostLayout);
         imgNowPlayingCover = findViewById(R.id.imgNowPlayingCover);
+
+        lyricsHeaderRow = findViewById(R.id.lyricsHeaderRow);
+        txtLyricsBadge = findViewById(R.id.txtLyricsBadge);
+        txtLyricsSource = findViewById(R.id.txtLyricsSource);
+        btnLyricsFollow = findViewById(R.id.btnLyricsFollow);
+        recyclerLyrics = findViewById(R.id.recyclerLyrics);
+        layoutLyricsLoading = findViewById(R.id.layoutLyricsLoading);
+        layoutLyricsEmpty = findViewById(R.id.layoutLyricsEmpty);
+        txtLyricsEmptyTitle = findViewById(R.id.txtLyricsEmptyTitle);
+        txtLyricsEmptyDetail = findViewById(R.id.txtLyricsEmptyDetail);
+        btnLyricsRetry = findViewById(R.id.btnLyricsRetry);
+        setupLyricsView();
 
         txtTitle = findViewById(R.id.txtNowPlayingTitle);
         txtArtist = findViewById(R.id.txtNowPlayingArtist);
@@ -141,8 +172,12 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
         Song openingSong = PlayerManager.getInstance().getCurrentSong();
         if (openingSong != null && openingSong.getPath().toLowerCase(java.util.Locale.ROOT).endsWith(".mp4")) isMp3Mode = false;
-        tabSelectorMp3.setOnClickListener(v -> setMediaMode(true));
-        tabSelectorMp4.setOnClickListener(v -> setMediaMode(false));
+        tabSelectorMp3.setOnClickListener(v -> { isLyricsMode = false; setMediaMode(true); });
+        tabSelectorMp4.setOnClickListener(v -> { isLyricsMode = false; setMediaMode(false); });
+        if (tabSelectorLyrics != null) {
+            tabSelectorLyrics.setText(cl.arichard.descargador.util.Tr.t("Letra"));
+            tabSelectorLyrics.setOnClickListener(v -> toggleLyricsMode());
+        }
 
         btnPlayPauseCircle.setOnClickListener(v -> PlayerManager.getInstance().togglePlayPause());
         btnNext.setOnClickListener(v -> PlayerManager.getInstance().playNext());
@@ -192,22 +227,47 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         int activeText = ContextCompat.getColor(this, R.color.chip_active_text);
         int inactiveText = ContextCompat.getColor(this, R.color.text_secondary);
 
-        if (isMp3Mode) {
+        if (isLyricsMode) {
+            tabSelectorMp3.setBackground(null);
+            tabSelectorMp3.setTextColor(inactiveText);
+            tabSelectorMp4.setBackground(null);
+            tabSelectorMp4.setTextColor(inactiveText);
+            if (tabSelectorLyrics != null) {
+                tabSelectorLyrics.setBackgroundResource(R.drawable.bg_chip_active);
+                tabSelectorLyrics.setTextColor(activeText);
+                tabSelectorLyrics.setTypeface(null, android.graphics.Typeface.BOLD);
+            }
+            containerCoverArt.setVisibility(View.GONE);
+            containerVideoPlayer.setVisibility(View.INVISIBLE);
+            if (containerLyrics != null) containerLyrics.setVisibility(View.VISIBLE);
+        } else if (isMp3Mode) {
             tabSelectorMp3.setBackgroundResource(R.drawable.bg_chip_active);
             tabSelectorMp3.setTextColor(activeText);
             tabSelectorMp4.setBackground(null);
             tabSelectorMp4.setTextColor(inactiveText);
+            if (tabSelectorLyrics != null) {
+                tabSelectorLyrics.setBackground(null);
+                tabSelectorLyrics.setTextColor(inactiveText);
+                tabSelectorLyrics.setTypeface(null, android.graphics.Typeface.NORMAL);
+            }
 
             containerCoverArt.setVisibility(View.VISIBLE);
             containerVideoPlayer.setVisibility(View.INVISIBLE); // Keep measured and rendering
+            if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
         } else {
             tabSelectorMp4.setBackgroundResource(R.drawable.bg_chip_active);
             tabSelectorMp4.setTextColor(activeText);
             tabSelectorMp3.setBackground(null);
             tabSelectorMp3.setTextColor(inactiveText);
+            if (tabSelectorLyrics != null) {
+                tabSelectorLyrics.setBackground(null);
+                tabSelectorLyrics.setTextColor(inactiveText);
+                tabSelectorLyrics.setTypeface(null, android.graphics.Typeface.NORMAL);
+            }
 
             containerCoverArt.setVisibility(View.GONE);
             containerVideoPlayer.setVisibility(View.VISIBLE);
+            if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
         }
     }
 
@@ -352,6 +412,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     @Override
     protected void onDestroy() {
+        if (recyclerLyrics != null) recyclerLyrics.removeCallbacks(resumeLyricsFollowRunnable);
         if (queuePanel != null) queuePanel.detach();
         // Al salir de la pantalla las próximas canciones vuelven a pedir solo audio (se ahorran datos).
         if (isFinishing()) PlayerManager.getInstance().leaveVideoMode();
@@ -380,6 +441,185 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         if (imgNowPlayingCover != null) {
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), imgNowPlayingCover);
         }
+
+        String nextKey = songKey(song);
+        if (!nextKey.equals(loadedLyricsSongKey)) {
+            loadedLyricsSongKey = "";
+            activeLyricsIndex = -1;
+            currentLyrics = cl.arichard.descargador.util.LyricsFetcher.Result.empty();
+            if (lyricsAdapter != null) lyricsAdapter.setData(java.util.Collections.emptyList(), false, -1);
+            if (isLyricsMode) {
+                loadLyricsForSong(song, false);
+            }
+        }
+    }
+
+    private static String songKey(Song song) {
+        if (song == null) return "";
+        return (song.getVideoId() == null ? "" : song.getVideoId()) + "|"
+                + (song.getPath() == null ? "" : song.getPath()) + "|"
+                + (song.getTitle() == null ? "" : song.getTitle());
+    }
+
+    private void setupLyricsView() {
+        if (recyclerLyrics == null) return;
+        lyricsAdapter = new LyricsAdapter(line -> {
+            if (line.timeMs >= 0) {
+                userScrollingLyrics = false;
+                if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.GONE);
+                PlayerManager.getInstance().seekTo((int) line.timeMs);
+                updateActiveLyricsLine((int) line.timeMs);
+            }
+        });
+        recyclerLyrics.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(this));
+        recyclerLyrics.setItemAnimator(null);
+        recyclerLyrics.setAdapter(lyricsAdapter);
+        recyclerLyrics.addOnScrollListener(new androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(androidx.recyclerview.widget.RecyclerView rv, int newState) {
+                if (newState == androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_DRAGGING
+                        && currentLyrics != null && currentLyrics.synced) {
+                    userScrollingLyrics = true;
+                    if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.VISIBLE);
+                    rv.removeCallbacks(resumeLyricsFollowRunnable);
+                    rv.postDelayed(resumeLyricsFollowRunnable, 4500L);
+                }
+            }
+        });
+        if (btnLyricsFollow != null) {
+            btnLyricsFollow.setText(cl.arichard.descargador.util.Tr.t("Seguir"));
+            btnLyricsFollow.setOnClickListener(v -> {
+                recyclerLyrics.removeCallbacks(resumeLyricsFollowRunnable);
+                userScrollingLyrics = false;
+                btnLyricsFollow.setVisibility(View.GONE);
+                scrollToActiveLyric(true);
+            });
+        }
+        if (btnLyricsRetry != null) {
+            btnLyricsRetry.setText(cl.arichard.descargador.util.Tr.t("Reintentar"));
+            btnLyricsRetry.setOnClickListener(v -> loadLyricsForSong(PlayerManager.getInstance().getCurrentSong(), true));
+        }
+    }
+
+    private void toggleLyricsMode() {
+        isLyricsMode = !isLyricsMode;
+        setMediaMode(isMp3Mode);
+        if (isLyricsMode) {
+            Song current = PlayerManager.getInstance().getCurrentSong();
+            if (current != null) {
+                if (!songKey(current).equals(loadedLyricsSongKey)) {
+                    loadLyricsForSong(current, false);
+                } else {
+                    updateActiveLyricsLine(PlayerManager.getInstance().getCurrentPosition());
+                    scrollToActiveLyric(false);
+                }
+            }
+        }
+    }
+
+    private void loadLyricsForSong(Song song, boolean force) {
+        if (song == null || recyclerLyrics == null) return;
+        final String key = songKey(song);
+        if (!force && key.equals(loadedLyricsSongKey) && !currentLyrics.isEmpty()) {
+            applyLyricsResult(currentLyrics);
+            return;
+        }
+        if (force) cl.arichard.descargador.util.LyricsFetcher.clearCache();
+        final int token = ++lyricsRequestToken;
+        userScrollingLyrics = false;
+        if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.GONE);
+        if (txtLyricsBadge != null) txtLyricsBadge.setVisibility(View.GONE);
+        if (txtLyricsSource != null) txtLyricsSource.setText("");
+        recyclerLyrics.setVisibility(View.GONE);
+        layoutLyricsEmpty.setVisibility(View.GONE);
+        layoutLyricsLoading.setVisibility(View.VISIBLE);
+
+        new Thread(() -> {
+            cl.arichard.descargador.util.LyricsFetcher.Result result = cl.arichard.descargador.util.LyricsFetcher.find(song);
+            runOnUiThread(() -> {
+                if (isFinishing() || token != lyricsRequestToken) return;
+                loadedLyricsSongKey = key;
+                currentLyrics = result == null ? cl.arichard.descargador.util.LyricsFetcher.Result.empty() : result;
+                applyLyricsResult(currentLyrics);
+            });
+        }, "MusicBoxLyrics").start();
+    }
+
+    private void applyLyricsResult(cl.arichard.descargador.util.LyricsFetcher.Result result) {
+        if (recyclerLyrics == null) return;
+        layoutLyricsLoading.setVisibility(View.GONE);
+        if (result == null || (result.lines.isEmpty() && !result.instrumental)) {
+            recyclerLyrics.setVisibility(View.GONE);
+            layoutLyricsEmpty.setVisibility(View.VISIBLE);
+            txtLyricsEmptyTitle.setText(cl.arichard.descargador.util.Tr.t("Sin letra disponible"));
+            txtLyricsEmptyDetail.setText(cl.arichard.descargador.util.Tr.t("No encontramos la letra de esta canción."));
+            btnLyricsRetry.setVisibility(View.VISIBLE);
+            txtLyricsBadge.setVisibility(View.GONE);
+            txtLyricsSource.setText("");
+            return;
+        }
+        if (result.instrumental && result.lines.isEmpty()) {
+            recyclerLyrics.setVisibility(View.GONE);
+            layoutLyricsEmpty.setVisibility(View.VISIBLE);
+            txtLyricsEmptyTitle.setText(cl.arichard.descargador.util.Tr.t("Pista instrumental"));
+            txtLyricsEmptyDetail.setText(cl.arichard.descargador.util.Tr.t("Esta canción no tiene letra cantada."));
+            btnLyricsRetry.setVisibility(View.GONE);
+            txtLyricsBadge.setVisibility(View.GONE);
+            txtLyricsSource.setText(cl.arichard.descargador.util.Tr.t(result.source));
+            return;
+        }
+        layoutLyricsEmpty.setVisibility(View.GONE);
+        recyclerLyrics.setVisibility(View.VISIBLE);
+        txtLyricsBadge.setVisibility(View.VISIBLE);
+        txtLyricsBadge.setText(cl.arichard.descargador.util.Tr.t(result.synced ? "Sincronizada" : "Texto"));
+        txtLyricsSource.setText(cl.arichard.descargador.util.Tr.t(result.source));
+        int pos = PlayerManager.getInstance().getCurrentPosition();
+        activeLyricsIndex = result.synced ? cl.arichard.descargador.util.LyricsFetcher.activeLineIndex(result.lines, pos) : -1;
+        lyricsAdapter.setData(result.lines, result.synced, activeLyricsIndex);
+        if (result.synced && activeLyricsIndex >= 0) {
+            scrollToActiveLyric(false);
+        } else {
+            recyclerLyrics.scrollToPosition(0);
+        }
+    }
+
+    private void updateActiveLyricsLine(int posMs) {
+        if (currentLyrics == null || !currentLyrics.synced || currentLyrics.lines.isEmpty() || lyricsAdapter == null) return;
+        int next = cl.arichard.descargador.util.LyricsFetcher.activeLineIndex(currentLyrics.lines, posMs);
+        if (next != activeLyricsIndex) {
+            int prev = activeLyricsIndex;
+            activeLyricsIndex = next;
+            lyricsAdapter.setActiveIndex(next, prev);
+            if (isLyricsMode && !userScrollingLyrics && next >= 0) {
+                scrollToActiveLyric(true);
+            }
+        }
+    }
+
+    private void scrollToActiveLyric(boolean smooth) {
+        if (recyclerLyrics == null || activeLyricsIndex < 0) return;
+        androidx.recyclerview.widget.RecyclerView.LayoutManager lm = recyclerLyrics.getLayoutManager();
+        if (!(lm instanceof androidx.recyclerview.widget.LinearLayoutManager)) return;
+        androidx.recyclerview.widget.LinearLayoutManager linear = (androidx.recyclerview.widget.LinearLayoutManager) lm;
+        int offset = Math.max(0, recyclerLyrics.getHeight() / 3);
+        if (!smooth) {
+            linear.scrollToPositionWithOffset(activeLyricsIndex, offset);
+            return;
+        }
+        androidx.recyclerview.widget.LinearSmoothScroller scroller =
+                new androidx.recyclerview.widget.LinearSmoothScroller(this) {
+                    @Override
+                    public int calculateDtToFit(int viewStart, int viewEnd, int boxStart, int boxEnd, int snapPreference) {
+                        return (boxStart + (boxEnd - boxStart) / 2) - (viewStart + (viewEnd - viewStart) / 2);
+                    }
+
+                    @Override
+                    protected float calculateSpeedPerPixel(android.util.DisplayMetrics displayMetrics) {
+                        return 75f / displayMetrics.densityDpi;
+                    }
+                };
+        scroller.setTargetPosition(activeLyricsIndex);
+        linear.startSmoothScroll(scroller);
     }
 
     private void toggleCurrentFavorite() {
@@ -412,6 +652,9 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Ver alternativas")).setIcon(R.drawable.ic_search).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongAlternativesSheet.show(this, song, () -> updateSongInfo(PlayerManager.getInstance().getCurrentSong())); return true;
+        });
+        menu.getMenu().add(cl.arichard.descargador.util.Tr.t(isLyricsMode ? "Ocultar letra" : "Ver letra")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
+            toggleLyricsMode(); return true;
         });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongInfo.show(this, song); return true;
@@ -456,6 +699,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             txtCurrentTime.setText("00:00");
             txtTotalTime.setText("00:00");
         }
+        updateActiveLyricsLine(pos);
     }
 
     private void updateShuffleButton(boolean active) {
@@ -529,6 +773,109 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     public void onProgressUpdate(int currentPos, int duration) {
         if (!isUserSeeking) {
             runOnUiThread(() -> updateProgress(currentPos, duration));
+        }
+    }
+
+    private interface OnLyricClickListener {
+        void onClick(cl.arichard.descargador.util.LyricsFetcher.Line line);
+    }
+
+    private final class LyricsAdapter extends androidx.recyclerview.widget.RecyclerView.Adapter<LyricsAdapter.Holder> {
+        private java.util.List<cl.arichard.descargador.util.LyricsFetcher.Line> lines = java.util.Collections.emptyList();
+        private boolean synced;
+        private int activeIndex = -1;
+        private final OnLyricClickListener listener;
+
+        LyricsAdapter(OnLyricClickListener listener) {
+            this.listener = listener;
+        }
+
+        void setData(java.util.List<cl.arichard.descargador.util.LyricsFetcher.Line> nextLines, boolean isSynced, int active) {
+            this.lines = nextLines == null ? java.util.Collections.emptyList() : nextLines;
+            this.synced = isSynced;
+            this.activeIndex = active;
+            notifyDataSetChanged();
+        }
+
+        void setActiveIndex(int next, int prev) {
+            this.activeIndex = next;
+            if (prev >= 0 && prev < lines.size()) notifyItemChanged(prev);
+            if (next >= 0 && next < lines.size()) notifyItemChanged(next);
+        }
+
+        @Override
+        public Holder onCreateViewHolder(android.view.ViewGroup parent, int viewType) {
+            float density = parent.getResources().getDisplayMetrics().density;
+            TextView tv = new TextView(parent.getContext());
+            androidx.recyclerview.widget.RecyclerView.LayoutParams lp =
+                    new androidx.recyclerview.widget.RecyclerView.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = Math.round(6 * density);
+            tv.setLayoutParams(lp);
+            int padH = Math.round(14 * density);
+            int padV = Math.round(10 * density);
+            tv.setPadding(padH, padV, padH, padV);
+            tv.setLineSpacing(Math.round(3 * density), 1.0f);
+            return new Holder(tv);
+        }
+
+        @Override
+        public void onBindViewHolder(Holder holder, int position) {
+            final cl.arichard.descargador.util.LyricsFetcher.Line line = lines.get(position);
+            TextView tv = holder.textView;
+            if (line.text.isEmpty()) {
+                tv.setText("");
+                tv.setBackground(null);
+                tv.setMinHeight(Math.round(14 * tv.getResources().getDisplayMetrics().density));
+                tv.setOnClickListener(null);
+                tv.setClickable(false);
+                return;
+            }
+            tv.setMinHeight(0);
+            tv.setText(line.text);
+            int primary = ContextCompat.getColor(NowPlayingActivity.this, R.color.text_primary);
+            int secondary = ContextCompat.getColor(NowPlayingActivity.this, R.color.text_secondary);
+            if (!synced) {
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f);
+                tv.setTypeface(null, android.graphics.Typeface.NORMAL);
+                tv.setTextColor(primary);
+                tv.setAlpha(0.90f);
+                tv.setBackground(null);
+                tv.setOnClickListener(null);
+                tv.setClickable(false);
+            } else {
+                boolean isCurrent = (position == activeIndex);
+                boolean isPast = (activeIndex >= 0 && position < activeIndex);
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, isCurrent ? 19.5f : 16f);
+                tv.setTypeface(null, isCurrent ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+                tv.setTextColor(isCurrent ? primary : secondary);
+                tv.setAlpha(isCurrent ? 1.0f : (isPast ? 0.48f : 0.78f));
+                if (isCurrent) {
+                    tv.setBackgroundResource(R.drawable.bg_nav_island);
+                } else {
+                    tv.setBackground(null);
+                }
+                if (line.timeMs >= 0) {
+                    tv.setOnClickListener(v -> listener.onClick(line));
+                } else {
+                    tv.setOnClickListener(null);
+                    tv.setClickable(false);
+                }
+            }
+        }
+
+        @Override
+        public int getItemCount() {
+            return lines.size();
+        }
+
+        final class Holder extends androidx.recyclerview.widget.RecyclerView.ViewHolder {
+            final TextView textView;
+            Holder(TextView itemView) {
+                super(itemView);
+                this.textView = itemView;
+            }
         }
     }
 }

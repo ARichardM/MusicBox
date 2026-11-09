@@ -51,8 +51,8 @@
                 android:id="@+id/tabSelectorMp3"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:paddingStart="18dp"
-                android:paddingEnd="18dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:gravity="center"
                 android:text="MP3"
                 android:textStyle="bold"
@@ -65,10 +65,22 @@
                 android:visibility="gone"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:paddingStart="18dp"
-                android:paddingEnd="18dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:gravity="center"
                 android:text="MP4"
+                android:textSize="13sp"
+                android:textColor="@color/text_secondary"
+                android:background="@null"/>
+
+            <TextView
+                android:id="@+id/tabSelectorLyrics"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:gravity="center"
+                android:text="@string/letra"
                 android:textSize="13sp"
                 android:textColor="@color/text_secondary"
                 android:background="@null"/>
@@ -180,6 +192,165 @@
                     android:id="@+id/videoHostLayout"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"/>
+            </androidx.cardview.widget.CardView>
+        </FrameLayout>
+
+        <!-- Lyrics Mode: Minimalist, reactive, synchronized lyrics card -->
+        <FrameLayout
+            android:id="@+id/containerLyrics"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <androidx.cardview.widget.CardView
+                android:id="@+id/lyricsCardView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                app:cardCornerRadius="26dp"
+                app:cardElevation="2dp"
+                app:cardBackgroundColor="@color/bg_card">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical">
+
+                    <!-- Minimalist Header: Sync Badge, Source & Follow Button -->
+                    <LinearLayout
+                        android:id="@+id/lyricsHeaderRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:paddingStart="18dp"
+                        android:paddingEnd="18dp"
+                        android:paddingTop="14dp"
+                        android:paddingBottom="6dp">
+
+                        <TextView
+                            android:id="@+id/txtLyricsBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/accent"
+                            android:background="@drawable/bg_nav_island"
+                            android:visibility="gone"/>
+
+                        <TextView
+                            android:id="@+id/txtLyricsSource"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="8dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:textSize="11sp"
+                            android:textColor="@color/text_muted"/>
+
+                        <TextView
+                            android:id="@+id/btnLyricsFollow"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:paddingTop="4dp"
+                            android:paddingBottom="4dp"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/chip_active_text"
+                            android:background="@drawable/bg_chip_active"
+                            android:visibility="gone"/>
+                    </LinearLayout>
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="0dp"
+                        android:layout_weight="1">
+
+                        <androidx.recyclerview.widget.RecyclerView
+                            android:id="@+id/recyclerLyrics"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:clipToPadding="false"
+                            android:paddingStart="18dp"
+                            android:paddingEnd="18dp"
+                            android:paddingTop="24dp"
+                            android:paddingBottom="56dp"
+                            android:overScrollMode="never"
+                            android:scrollbars="none"/>
+
+                        <LinearLayout
+                            android:id="@+id/layoutLyricsLoading"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:orientation="vertical"
+                            android:padding="24dp"
+                            android:visibility="gone">
+
+                            <ProgressBar
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:indeterminate="true"/>
+
+                            <TextView
+                                android:id="@+id/txtLyricsLoading"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="12dp"
+                                android:text="@string/buscando_letra"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="14sp"/>
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layoutLyricsEmpty"
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:gravity="center"
+                            android:orientation="vertical"
+                            android:padding="28dp"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:id="@+id/txtLyricsEmptyTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:gravity="center"
+                                android:text="@string/sin_letra_disponible"
+                                android:textColor="@color/text_primary"
+                                android:textSize="16sp"
+                                android:textStyle="bold"/>
+
+                            <TextView
+                                android:id="@+id/txtLyricsEmptyDetail"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center"
+                                android:textColor="@color/text_secondary"
+                                android:textSize="13sp"/>
+
+                            <TextView
+                                android:id="@+id/btnLyricsRetry"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="14dp"
+                                android:paddingStart="16dp"
+                                android:paddingEnd="16dp"
+                                android:paddingTop="7dp"
+                                android:paddingBottom="7dp"
+                                android:textSize="12sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/chip_active_text"
+                                android:background="@drawable/bg_chip_active"/>
+                        </LinearLayout>
+                    </FrameLayout>
+                </LinearLayout>
             </androidx.cardview.widget.CardView>
         </FrameLayout>
     </FrameLayout>

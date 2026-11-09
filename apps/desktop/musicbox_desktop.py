@@ -45,6 +45,7 @@ from version import __version__
 from downloads_controller import DownloadsController
 import playlist_import
 from alternatives_controller import AlternativesController
+from lyrics_controller import LyricsController
 from playlist_import_controller import PlaylistImportController
 from importer_controller import ImporterImageProvider
 
@@ -279,6 +280,7 @@ class MusicBoxBridge(QObject):
         self._no_video = set()
         self.playerChanged.connect(self.videoModeChanged)
         self._alternatives = AlternativesController(self, parent=self)
+        self._lyrics = LyricsController(self, parent=self)
         self._auto_download_playlists = set(self._settings.value("autoDownloadPlaylists", [], list) or [])
         try:
             self._playlist_descriptions = json.loads(self._settings.value("playlistDescriptions", "{}", str) or "{}")
@@ -878,6 +880,11 @@ class MusicBoxBridge(QObject):
     def alternatives(self):
         """«Ver alternativas»: otras versiones de una canción para escucharlas y reemplazar la actual."""
         return self._alternatives
+
+    @Property(QObject, constant=True)
+    def lyrics(self):
+        """Letra de la canción actual: sincronizada (LRC) o completa, con salto al tocar un verso."""
+        return self._lyrics
 
     @Property(QObject, constant=True)
     def playlistImporter(self):

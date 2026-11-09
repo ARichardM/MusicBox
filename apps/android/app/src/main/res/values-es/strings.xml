@@ -123,4 +123,7 @@
     <string name="queue_manual">Manual</string>
     <string name="queue_legacy">Origen desconocido</string>
     <string name="auto_format">Formato de descarga de playlists</string>
+    <string name="letra">Letra</string>
+    <string name="buscando_letra">Buscando letra…</string>
+    <string name="sin_letra_disponible">Sin letra disponible</string>
 </resources>

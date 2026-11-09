@@ -244,5 +244,40 @@ class ParsingHelpersTest(unittest.TestCase):
         self.assertEqual([t["id"] for t in tracks], ["song1", "song2"])
 
 
+class LyricsTest(unittest.TestCase):
+    def test_extracts_lyrics_browse_id_from_next_fixture_and_fetches_shelf(self):
+        next_data = load("next")
+        self.assertEqual(ytmusic.lyrics_browse_id(next_data), "MPLYt_AABpmJ0ptEp-1")
+        shelf = {"contents": {"sectionListRenderer": {"contents": [{"musicDescriptionShelfRenderer": {
+            "description": {"runs": [{"text": "Sube a nacer conmigo hermano\nDame la mano"}]},
+            "footer": {"runs": [{"text": "Fuente: LyricFind"}]}}}]}}}
+        api = fake_api(next=next_data, **{"MPLYt_AABpmJ0ptEp-1": shelf})
+        result = ytmusic.lyrics("NgEJ9gMxP90", api=api)
+        self.assertEqual(result, {"text": "Sube a nacer conmigo hermano\nDame la mano", "source": "Fuente: LyricFind"})
+        self.assertEqual([call[0] for call in api.calls], ["next", "browse"])
+
+    def test_videoclip_without_direct_lyrics_tab_resolves_audio_counterpart(self):
+        def api(endpoint, body):
+            if endpoint == "next" and body["videoId"] == "clip":
+                return {"contents": [{"playlistPanelVideoRenderer": {
+                    "videoId": "clip", "title": {"runs": [{"text": "Tren Al Sur (Video Oficial)"}]},
+                    "longBylineText": {"runs": [{"text": "Los Prisioneros"}]},
+                    "lengthText": {"simpleText": "5:37"}, "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"}}],
+                    "tabs": [{"tabRenderer": {"unselectable": True, "endpoint": {"browseEndpoint": {"browseId": "MPLYt_disabled"}}}}]}
+            if endpoint == "search":
+                return load("search_songs")
+            if endpoint == "next" and body["videoId"] == "NgEJ9gMxP90":
+                return load("next")
+            if endpoint == "browse":
+                return {"musicDescriptionShelfRenderer": {
+                    "description": {"runs": [{"text": "Siete y media en la mañana"}]},
+                    "footer": {"runs": [{"text": "LyricFind"}]}}}
+            return {}
+
+        result = ytmusic.lyrics("clip", api=api)
+        self.assertEqual(result["text"], "Siete y media en la mañana")
+        self.assertEqual(result["source"], "LyricFind")
+
+
 if __name__ == "__main__":
     unittest.main()
