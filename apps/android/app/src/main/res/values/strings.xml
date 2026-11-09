@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="import_playlists">Import playlists</string>
+    <string name="shared_track_searching">Finding the shared song…</string>
+    <string name="shared_track_search_failed">Couldn’t identify the shared song. Try searching its title in MusicBox.</string>
     <string name="lista_canciones_pista">Artist - Song\nAnother song</string>
     <string name="buscar_en_lista">Search in list</string>
     <string name="siguiente">Next</string>
@@ -54,6 +56,7 @@
     <string name="mas_configuraciones">MORE SETTINGS</string>
     <string name="mas_escuchadas_en_tu_biblioteca">Most played in your library</string>
     <string name="mas_opciones_de_la_cancion">More song options</string>
+    <string name="mas_opciones">More options</string>
     <string name="me_gusta">Like</string>
     <string name="mi_musica">My Music</string>
     <string name="musica">Music</string>

@@ -48,6 +48,7 @@ import cl.arichard.descargador.util.Tr;
 /** Single native player shared by the full screen and mini player. */
 public class PlayerManager {
     private static final long STREAM_CACHE_MS = 10 * 60 * 1000L;
+    private static final long AUDIO_ROUTE_CHANGE_GRACE_MS = 1000;
     private static final ExecutorService PLAYBACK_IO = Executors.newCachedThreadPool();
     private static final Map<String, CachedStream> STREAM_CACHE = new HashMap<>();
     /** Videos cuyo enlace se está resolviendo por adelantado (protegido por STREAM_CACHE). */
@@ -78,6 +79,17 @@ public class PlayerManager {
     private boolean noisyReceiverRegistered = false;
     private int routedOutputId = -1;
     private boolean routedPersonalOutput;
+    private boolean audioRouteChangePending;
+    private boolean personalOutputAddedDuringRouteChange;
+    private final Runnable confirmAudioRouteChange = () -> {
+        audioRouteChangePending = false;
+        if (hasPersonalOutputAfterRouteChange()) {
+            personalOutputAddedDuringRouteChange = false;
+            resumePlaybackAfterRouteChange();
+            return;
+        }
+        pause();
+    };
     private boolean autoplayLoading, advanceWhenReady;
     private String autoplayTriedFor = "";
     private int autoplayGeneration;
@@ -86,6 +98,11 @@ public class PlayerManager {
     private final Set<String> playbackFailures = new HashSet<>();
     private String recoveryPath = "";
     private int playbackRecoveryAttempts;
+    private int recoveryStartPosition;
+    /** Cortes de red seguidos que se reintentan (con enlace nuevo) antes de rendirse con la canción. */
+    private static final int MAX_RECOVERY_ATTEMPTS = 4;
+    /** Tras recuperarse, esta cantidad de audio sin fallos devuelve el contador de reintentos a cero. */
+    private static final int RECOVERY_RESET_MS = 15000;
 
     /** Reserved key that carries the stream length next to the headers; it is never sent over HTTP. */
     private static final String LENGTH_KEY = "X-MusicBox-Length";
@@ -253,6 +270,7 @@ public class PlayerManager {
                         lock.notifyAll();
                     }
                 } catch (IOException e) {
+                    Log.w("MusicBoxPlayer", "Chunk " + next + " of " + totalChunks + " failed (length " + contentLength + ")", e);
                     synchronized (lock) { fetchError = e; lock.notifyAll(); }
                     try { Thread.sleep(500); } catch (InterruptedException ie) { return; }
                 }
@@ -264,8 +282,12 @@ public class PlayerManager {
             long end = Math.min(start + CHUNK_BYTES, contentLength) - 1;
             long began = System.currentTimeMillis();
             IOException last = null;
-            for (int attempt = 0; attempt < 2; attempt++) {
+            for (int attempt = 0; attempt < 3; attempt++) {
                 HttpURLConnection conn = null;
+                if (attempt > 0) {
+                    try { Thread.sleep(400L * attempt); } catch (InterruptedException ie) { throw new IOException("Descarga interrumpida"); }
+                    synchronized (lock) { if (closed) throw new IOException("Fuente cerrada"); }
+                }
                 try {
                     conn = (HttpURLConnection) new URL(source).openConnection();
                     conn.setConnectTimeout(12000);
@@ -366,6 +388,8 @@ public class PlayerManager {
         @Override public void run() {
             if (!prepared || mediaPlayer == null) return;
             sampleListening();
+            if (playbackRecoveryAttempts > 0 && mediaPlayer.isPlaying()
+                    && getCurrentPosition() - recoveryStartPosition > RECOVERY_RESET_MS) playbackRecoveryAttempts = 0;
             int second = getCurrentPosition() / 1000;
             if (second % 5 == 0 && second != lastSavedSecond) { savePosition(); lastSavedSecond = second; }
             for (PlaybackListener l : new ArrayList<>(listeners))
@@ -508,13 +532,41 @@ public class PlayerManager {
                 if (mediaPlayer != null) mediaPlayer.setDisplay(null);
             }
         });
+        // El recuadro del video cambia de tamaño (pantalla completa, rotación): la imagen se vuelve a ajustar cada vez.
+        if (videoHost != null && videoHostListener != null) videoHost.removeOnLayoutChangeListener(videoHostListener);
+        videoHost = host;
+        videoHostListener = (v, l, t, r, b, ol, ot, or, ob) -> {
+            if (r - l != or - ol || b - t != ob - ot) fitVideo();
+        };
+        host.addOnLayoutChangeListener(videoHostListener);
         videoView.post(this::fitVideo);
     }
     public void detachOnlineWebView() {
         if (mediaPlayer != null) mediaPlayer.setDisplay(null);
         if (videoView != null && videoView.getParent() instanceof ViewGroup)
             ((ViewGroup) videoView.getParent()).removeView(videoView);
+        if (videoHost != null && videoHostListener != null) videoHost.removeOnLayoutChangeListener(videoHostListener);
+        videoHost = null;
+        videoHostListener = null;
         videoView = null;
+    }
+
+    private ViewGroup videoHost;
+    private android.view.View.OnLayoutChangeListener videoHostListener;
+    /** Con true la imagen llena todo el recuadro recortando lo que sobre; con false se ve entera, con franjas. */
+    private boolean videoFill;
+
+    public void setVideoFill(boolean fill) {
+        if (videoFill == fill) return;
+        videoFill = fill;
+        fitVideo();
+    }
+
+    /** Proporción ancho/alto del video que suena; 16:9 mientras no se sepa. */
+    public float getVideoAspect() {
+        if (prepared && mediaPlayer != null && mediaPlayer.getVideoWidth() > 0 && mediaPlayer.getVideoHeight() > 0)
+            return (float) mediaPlayer.getVideoWidth() / mediaPlayer.getVideoHeight();
+        return 16f / 9f;
     }
 
     private void fitVideo() {
@@ -522,8 +574,12 @@ public class PlayerManager {
         ViewGroup host = (ViewGroup) videoView.getParent();
         int width = mediaPlayer.getVideoWidth(), height = mediaPlayer.getVideoHeight();
         if (host == null || width <= 0 || height <= 0 || host.getWidth() <= 0 || host.getHeight() <= 0) return;
-        float scale = Math.min((float) host.getWidth() / width, (float) host.getHeight() / height);
-        videoView.setLayoutParams(new FrameLayout.LayoutParams(Math.round(width * scale), Math.round(height * scale), Gravity.CENTER));
+        float fit = (float) host.getWidth() / width, fitHeight = (float) host.getHeight() / height;
+        float scale = videoFill ? Math.max(fit, fitHeight) : Math.min(fit, fitHeight);
+        int w = Math.round(width * scale), h = Math.round(height * scale);
+        ViewGroup.LayoutParams current = videoView.getLayoutParams();
+        if (current != null && current.width == w && current.height == h) return;
+        videoView.setLayoutParams(new FrameLayout.LayoutParams(w, h, Gravity.CENTER));
     }
 
     public void playSong(Song song, List<Song> newQueue) {
@@ -751,18 +807,23 @@ public class PlayerManager {
         loading(true);
         advanceWhenReady = false;
         if (currentIndex >= queue.size() - 1) fetchAutoplay();
-        final String target = currentOnlineUrl;
         final String videoId = currentOnlineVideoId;
         final boolean wantVideo = videoMode;
-        final String key = streamKey(videoId, wantVideo);
-        CachedStream cached;
-        synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(key); }
-        if (cached != null && cached.isFresh()) {
-            try { prepareSource(cached.url, cached.headers); } catch (Exception e) { fail(e); }
-            return;
+        // En modo video una pista de audio de YouTube Music (portada fija) se reemplaza por su videoclip, si lo tiene.
+        final String knownSource = streamSourceId(videoId, wantVideo, false);
+        if (knownSource != null) {
+            CachedStream cached;
+            synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(streamKey(knownSource, wantVideo)); }
+            if (cached != null && cached.isFresh()) {
+                try { prepareSource(cached.url, cached.headers); } catch (Exception e) { fail(e); }
+                return;
+            }
         }
         PLAYBACK_IO.execute(() -> {
             try {
+                final String source = streamSourceId(videoId, wantVideo, true);
+                final String key = streamKey(source, wantVideo);
+                final String target = "https://www.youtube.com/watch?v=" + source;
                 CachedStream resolved = awaitPrefetch(key);
                 if (resolved == null) resolved = resolveToCache(key, target, wantVideo);
                 final CachedStream ready = resolved;
@@ -779,6 +840,30 @@ public class PlayerManager {
                 handler.post(() -> { if (generation == requestGeneration) fail(e); });
             }
         });
+    }
+
+    /** Videoclip de cada pista de audio ya consultada; "" si no tiene (se consulta una sola vez por canción). */
+    private static final Map<String, String> VIDEO_COUNTERPARTS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * ID del que sale el flujo: en modo audio siempre el propio video; en modo video, el videoclip de la canción si
+     * existe y, si no, el mismo video. Con [network] false devuelve null cuando aún no se sabe (hay que consultarlo).
+     */
+    private static String streamSourceId(String videoId, boolean video, boolean network) {
+        if (!video || videoId == null) return videoId;
+        String known = VIDEO_COUNTERPARTS.get(videoId);
+        if (known == null) {
+            if (!network) return null;
+            try {
+                String clip = cl.arichard.descargador.util.YtMusicApi.videoCounterpart(videoId);
+                VIDEO_COUNTERPARTS.put(videoId, clip == null ? "" : clip);
+                known = clip == null ? "" : clip;
+            } catch (Exception error) {
+                Log.w("MusicBoxPlayer", "No se pudo buscar el videoclip de " + videoId, error);
+                return videoId;   // sin red: se usa el video tal cual y se vuelve a intentar la próxima vez
+            }
+        }
+        return known.isEmpty() ? videoId : known;
     }
 
     /** Resuelve el enlace de audio de un video y lo deja en la caché de enlaces. */
@@ -823,7 +908,10 @@ public class PlayerManager {
         if (next < 0) return;
         Song song = queue.get(next);
         if (song == null || !song.isOnline()) return;
-        prefetchStream(song.getVideoId(), videoMode);
+        final String nextId = song.getVideoId();
+        if (!videoMode) { prefetchStream(nextId, false); return; }
+        // En modo video se precarga el videoclip de la siguiente canción, que puede ser otro ID.
+        PLAYBACK_IO.execute(() -> prefetchStream(streamSourceId(nextId, true, true), true));
     }
 
     /** Si ya hay una resolución anticipada en curso para este video, espera a que termine y devuelve su enlace. */
@@ -858,7 +946,12 @@ public class PlayerManager {
     private JSONObject resolveOnlineInfo(String target) throws Exception { return resolveOnlineInfo(target, false); }
 
     private JSONObject resolveOnlineInfo(String target, boolean video) throws Exception {
-        String[] clients = {"android_vr,android;player_skip=webpage,configs", "android_vr,android", "web,android", "ios,web"};
+        // El audio sale rápido con android_vr, pero el MP4 con imagen y sonido que da ese cliente responde 403: para video
+        // se prueban primero los que sí entregan un enlace abierto, en vez de perder medio minuto en clientes que fallan.
+        String[] clients = video
+                ? new String[]{"android", "web,android", "android_vr,android;player_skip=webpage,configs", "ios,web", ""}
+                : new String[]{"android_vr,android;player_skip=webpage,configs", "android_vr,android", "web,android", "ios,web", ""};
+        // "" = clientes por defecto de yt-dlp: a veces son los únicos que entregan el audio real de un video.
         Exception lastError = null;
         for (String client : clients) {
             final long clientStart = System.currentTimeMillis();
@@ -872,7 +965,7 @@ public class PlayerManager {
                 request.addOption("--socket-timeout", "12");
                 request.addOption("--retries", "2");
                 request.addOption("--extractor-retries", "2");
-                request.addOption("--extractor-args", "youtube:player_client=" + client);
+                if (!client.isEmpty()) request.addOption("--extractor-args", "youtube:player_client=" + client);
                 // Con video: un solo archivo con imagen y sonido, porque el reproductor no puede unir pistas separadas.
                 request.addOption("-f", video
                         ? "best[ext=mp4][height<=720][protocol^=http]/best[protocol^=m3u8]/best[ext=mp4][protocol^=http]/best[protocol^=http]"
@@ -890,6 +983,13 @@ public class PlayerManager {
                     Log.i("MusicBoxTiming", "client=" + client + " yt-dlp=" + extracted + "ms probe="
                             + (System.currentTimeMillis() - clientStart - extracted) + "ms length=" + length);
                     if (length >= 0) {
+                        // Un archivo de unos pocos KB para una canción de minutos es un señuelo de YouTube: no se puede reproducir.
+                        if (isImpossiblySmall(length, info.optDouble("duration", 0))) {
+                            Log.w("MusicBoxPlayer", "Stream descartado con client " + client + ": " + length + " bytes para "
+                                    + info.optDouble("duration", 0) + " s");
+                            lastError = new IllegalStateException("YouTube entregó un archivo incompleto");
+                            continue;
+                        }
                         if (length > 0) info.put("content_length", length);
                         return info;
                     }
@@ -903,16 +1003,22 @@ public class PlayerManager {
         throw lastError == null ? new IllegalStateException("YouTube no devolvió un enlace reproducible") : lastError;
     }
 
+    /** Menos de ~3 KB por segundo (24 kbps) en un video de más de 30 s no puede ser el audio real. */
+    static boolean isImpossiblySmall(long length, double durationSeconds) {
+        return length > 0 && durationSeconds > 30 && length < durationSeconds * 3000;
+    }
+
     /** Tamaño del archivo según yt-dlp o el parámetro clen del enlace; 0 si no se conoce. */
     static long knownLength(JSONObject info, String stream) {
         long size = info.optLong("filesize", 0);
-        if (size <= 0) size = info.optLong("filesize_approx", 0);
         if (size <= 0) {
             try {
                 String clen = Uri.parse(stream).getQueryParameter("clen");
                 if (clen != null) size = Long.parseLong(clen);
             } catch (Exception ignored) {}
         }
+        // filesize_approx es una estimación: solo sirve si no hay nada exacto, y se verifica con el probe.
+        Log.i("MusicBoxTiming", "sizes filesize=" + info.optLong("filesize", 0) + " approx=" + info.optLong("filesize_approx", 0) + " chosen=" + size);
         return Math.max(0, size);
     }
 
@@ -966,7 +1072,7 @@ public class PlayerManager {
             notifyVideo();
             if (resumePosition > 0) { mp.seekTo(Math.min(resumePosition, Math.max(0, mp.getDuration() - 1))); resumePosition = 0; }
             loading(false);
-            if (playWhenReady) {
+            if (playWhenReady && !audioRouteChangePending) {
                 if (requestAudioFocus()) {
                     mp.start();
                     registerNoisyReceiver();
@@ -978,6 +1084,7 @@ public class PlayerManager {
             notifyState();
             handler.post(progressUpdater);
             prefetchNextStream();
+            recoveryStartPosition = mp.getCurrentPosition();
             Log.i("MusicBoxPlayer", "Prepared: duration=" + mp.getDuration() + " video=" + mp.getVideoWidth() + "x" + mp.getVideoHeight());
         });
         player.setOnErrorListener((mp, what, extra) -> {
@@ -1016,10 +1123,12 @@ public class PlayerManager {
         prepared = false;
         releasePlayer();
         boolean offline = online && context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork();
-        if (online && currentSong != null && playWhenReady && !offline && playbackRecoveryAttempts < 1) {
+        if (online && currentSong != null && playWhenReady && !offline && playbackRecoveryAttempts < MAX_RECOVERY_ATTEMPTS) {
             playbackRecoveryAttempts++;
+            final int backoff = 500 * playbackRecoveryAttempts;
             resumePosition = position;
-            synchronized (STREAM_CACHE) { STREAM_CACHE.remove(streamKey(currentOnlineVideoId, videoMode)); }
+            String failedSource = streamSourceId(currentOnlineVideoId, videoMode, false);
+            synchronized (STREAM_CACHE) { STREAM_CACHE.remove(streamKey(failedSource == null ? currentOnlineVideoId : failedSource, videoMode)); }
             final int requestGeneration = generation;
             loading(true);
             registerNoisyReceiver();
@@ -1027,7 +1136,7 @@ public class PlayerManager {
                 if (requestGeneration != generation) return;
                 if (playWhenReady) startCurrent();
                 else loading(false);
-            }, 500);
+            }, backoff);
             return;
         }
         loading(false);
@@ -1138,13 +1247,18 @@ public class PlayerManager {
     private final BroadcastReceiver noisyReceiver = new BroadcastReceiver() {
         @Override public void onReceive(android.content.Context ctx, Intent intent) {
             if (AudioManager.ACTION_AUDIO_BECOMING_NOISY.equals(intent.getAction())) {
-                // Also cancel an upcoming start or a resume after temporary focus loss.
-                pause();
+                scheduleAudioRouteChangeCheck();
             }
         }
     };
 
     private final AudioDeviceCallback audioDeviceCallback = new AudioDeviceCallback() {
+        @Override public void onAudioDevicesAdded(AudioDeviceInfo[] devices) {
+            for (AudioDeviceInfo device : devices)
+                onAudioOutputAdded(device.getType(), device.isSink());
+            rememberRoutedOutput();
+        }
+
         @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] devices) {
             for (AudioDeviceInfo device : devices)
                 onAudioOutputRemoved(device.getId(), device.getType(), device.isSink());
@@ -1161,8 +1275,55 @@ public class PlayerManager {
     }
 
     void onAudioOutputRemoved(int id, int type, boolean sink) {
-        // Unknown route while preparing: prefer pausing over spilling audio to the speaker.
-        if (sink && (id == routedOutputId || (routedOutputId < 0 && isPersonalOutput(type)))) pause();
+        if (sink && (id == routedOutputId || (routedOutputId < 0 && isPersonalOutput(type))))
+            scheduleAudioRouteChangeCheck();
+    }
+
+    void onAudioOutputAdded(int type, boolean sink) {
+        if (audioRouteChangePending && sink && isPersonalOutput(type))
+            personalOutputAddedDuringRouteChange = true;
+    }
+
+    private void scheduleAudioRouteChangeCheck() {
+        if (!audioRouteChangePending) personalOutputAddedDuringRouteChange = false;
+        resumeOnFocusGain = false;
+        advanceWhenReady = false;
+        audioRouteChangePending = true;
+        handler.removeCallbacks(confirmAudioRouteChange);
+        handler.postDelayed(confirmAudioRouteChange, AUDIO_ROUTE_CHANGE_GRACE_MS);
+    }
+
+    private boolean hasPersonalOutputAfterRouteChange() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && prepared && mediaPlayer != null) {
+            AudioDeviceInfo device = mediaPlayer.getRoutedDevice();
+            if (device != null) {
+                if (!isPersonalOutput(device.getType())) return false;
+                return isAudioOutputConnected(device.getId());
+            }
+        }
+        if (personalOutputAddedDuringRouteChange) return true;
+        if (audioManager == null) return false;
+        for (AudioDeviceInfo available : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            if (available.isSink() && isPersonalOutput(available.getType())) return true;
+        return false;
+    }
+
+    private boolean isAudioOutputConnected(int id) {
+        if (audioManager == null) return true;
+        for (AudioDeviceInfo available : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            if (available.getId() == id) return true;
+        return false;
+    }
+
+    private void resumePlaybackAfterRouteChange() {
+        if (!playWhenReady || !prepared || mediaPlayer == null || mediaPlayer.isPlaying()) return;
+        if (requestAudioFocus()) {
+            mediaPlayer.start();
+            registerNoisyReceiver();
+        } else {
+            playWhenReady = false;
+        }
+        notifyState();
     }
 
     private void rememberRoutedOutput() {
@@ -1173,7 +1334,15 @@ public class PlayerManager {
             boolean stillConnected = false;
             for (AudioDeviceInfo available : audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS))
                 if (available.getId() == routedOutputId) stillConnected = true;
-            if (!stillConnected) pause();
+            if (!stillConnected) {
+                if (isPersonalOutput(device.getType())) {
+                    handler.removeCallbacks(confirmAudioRouteChange);
+                    audioRouteChangePending = false;
+                    personalOutputAddedDuringRouteChange = false;
+                } else {
+                    scheduleAudioRouteChangeCheck();
+                }
+            }
         }
         routedOutputId = device.getId();
         routedPersonalOutput = isPersonalOutput(device.getType());
@@ -1189,6 +1358,9 @@ public class PlayerManager {
     }
 
     private void unregisterNoisyReceiver() {
+        handler.removeCallbacks(confirmAudioRouteChange);
+        audioRouteChangePending = false;
+        personalOutputAddedDuringRouteChange = false;
         if (!noisyReceiverRegistered) return;
         try { context.unregisterReceiver(noisyReceiver); } catch (Exception ignored) {}
         if (audioManager != null) audioManager.unregisterAudioDeviceCallback(audioDeviceCallback);
@@ -1477,7 +1649,23 @@ public class PlayerManager {
         if (videoMode == value) return;
         videoMode = value;
         if (currentSong == null || playbackVideoId() == null) return;
-        if (value && hasVideo()) return; // el flujo actual ya trae imagen
+        if (value && hasVideo()) {
+            // El flujo actual ya trae imagen. Si es una pista de audio de YouTube Music, esa imagen es solo la portada
+            // fija: se busca su videoclip y, si existe, se cambia a él; si no, se deja lo que suena.
+            if (!currentSong.isOnline()) return;
+            final String id = playbackVideoId();
+            final int requestGeneration = generation;
+            PLAYBACK_IO.execute(() -> {
+                String source = streamSourceId(id, true, true);
+                if (id.equals(source)) return;
+                handler.post(() -> { if (requestGeneration == generation && videoMode) restartKeepingPosition(); });
+            });
+            return;
+        }
+        restartKeepingPosition();
+    }
+
+    private void restartKeepingPosition() {
         boolean resume = playWhenReady || isPlaying();
         int position = getCurrentPosition();
         playbackRecoveryAttempts = 0;

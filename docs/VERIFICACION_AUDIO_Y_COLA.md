@@ -18,10 +18,11 @@ Se mantienen los cambios de seguimiento de salida del sistema, volumen multimedi
 búsqueda automática de Windows, indicadores de carga y marca de descarga.
 
 Al perder la salida activa en Windows, ambos reproductores pausan antes de elegir
-otra salida. Android combina el aviso de salida ruidosa con callbacks de dispositivos
-y de enrutamiento para cubrir audífonos con cable, USB y Bluetooth. La desconexión
-cancela también el arranque de audio pendiente, la reanudación por foco y el avance
-automático. Reconectar los audífonos no reanuda la música por sí solo.
+otra salida. Android espera 1000 ms a que se estabilice el enrutamiento: si el sistema
+cambia a otra salida personal, la reproducción continúa; si cae al altavoz o no hay
+reemplazo, pausa para evitar que el audio salga inesperadamente. La desconexión
+cancela también el arranque pendiente, la reanudación por foco y el avance automático.
+Reconectar los audífonos no reanuda la música por sí solo.
 
 ## Resultado comprobado
 
@@ -53,3 +54,40 @@ Falta cerrar esos resultados y la reproducción online de Android en un emulador
 estable o un dispositivo físico de verificación. Tampoco se ha comprobado un cambio
 de salida con audífonos Bluetooth físicos. No se ha publicado ni etiquetado una
 versión estable con estos cambios.
+
+## Actualización — 7 de noviembre de 2026
+
+| Comprobación | Resultado |
+| --- | --- |
+| Cambio entre salidas Bluetooth y desconexión sin reemplazo | Pruebas JVM aprobadas en API 24 y API 28 |
+| Suite Android `verification`, lint y APK de app/tests | 256 pruebas aprobadas; compilación correcta; lint sin errores |
+| Enlaces compartidos de artista, canción y playlist | Prueba instrumentada aprobada en emulador API 35 |
+| Carga de QML de escritorio | 2 pruebas aprobadas |
+| Cambio de salida con audífonos Bluetooth físicos | Pendiente: el emulador validó los intents, pero no había audífonos/dispositivo Bluetooth físico |
+
+La validación de laboratorio no sustituye la comprobación física de la ruta Bluetooth.
+
+## Actualización — 8 de noviembre de 2026
+
+| Comprobación | Resultado |
+| --- | --- |
+| Suite JVM `verification`, lint y APK de app/tests tras el ajuste Bluetooth | 256 pruebas aprobadas; compilación correcta; lint sin errores |
+| Enlaces compartidos | `SharedMusicDeviceTest` aprobado en Samsung SM-G985F, Android 13 |
+| Reproductor Android en dispositivo físico | `PlaybackRecoveryDeviceTest` aprobado con audio sintético privado |
+| Ruta Bluetooth durante la instrumentación | No concluyente: Android instrumentado reportó `remote-submix` para el reproductor |
+| Ruta fuera de instrumentación | El probe ADB detectó A2DP en `Agustin's Buds2` |
+| Conexión y retiro de audífonos durante reproducción | El usuario confirmó en el Samsung que el audio continúa por los audífonos al conectarlos y se pausa al retirarlos |
+| Cambio directo de `Agustin's Buds2` a `ES-BT10` | Pendiente: no se probó la transición entre dos salidas Bluetooth activas |
+
+El reproductor deja a Android elegir la salida (`USAGE_MEDIA` y ninguna salida
+preferida fijada). En API 28 o posterior confirma la ruta efectiva con
+`MediaPlayer.getRoutedDevice()`; en versiones anteriores usa el inventario de
+salidas conectadas. Los callbacks de dispositivo y `ACTION_AUDIO_BECOMING_NOISY`
+inician una comprobación diferida, en vez de pausar inmediatamente al desconectar
+la salida anterior.
+
+Como la instrumentación desvía el audio a `remote-submix`, la variante `verification`
+incluye un observador ADB que ejecuta la reproducción fuera del runner de pruebas.
+No se publica una versión estable hasta completar con él el cambio físico entre
+dos salidas Bluetooth. Las pruebas siguen usando exclusivamente
+`cl.arichard.descargador.verification`.

@@ -47,8 +47,21 @@ public final class SharedSongSearch {
     public static Intent searchIntent(Context context, Intent original, CharSequence shared) {
         String query = query(shared, original.getCharSequenceExtra(Intent.EXTRA_SUBJECT));
         if (query == null) return null;
-        return new Intent(context, MainActivity.class).setAction(Intent.ACTION_SEND).setType("text/plain")
+        return searchTarget(context).setAction(Intent.ACTION_SEND).setType("text/plain")
                 .putExtra(Intent.EXTRA_TEXT, query).putExtra(EXTRA_SEARCH, true)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    }
+
+    /** Abre directamente la búsqueda para enlaces musicales ya identificados. */
+    public static Intent searchIntent(Context context, String query) {
+        return searchTarget(context).setAction(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, query == null ? "" : query).putExtra(EXTRA_SEARCH, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    }
+
+    private static Intent searchTarget(Context context) {
+        if (context.getPackageName().endsWith(".verification"))
+            return new Intent().setClassName(context, "cl.arichard.descargador.PreviewMainActivity");
+        return new Intent(context, MainActivity.class);
     }
 }

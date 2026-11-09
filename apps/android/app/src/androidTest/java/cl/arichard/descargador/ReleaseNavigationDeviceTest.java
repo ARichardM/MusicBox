@@ -10,6 +10,7 @@ import android.widget.EditText;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.uiautomator.UiDevice;
 import cl.arichard.descargador.util.EdgeBackLayout;
 import cl.arichard.descargador.util.SharedSongSearch;
 import org.junit.Test;
@@ -36,21 +37,19 @@ public class ReleaseNavigationDeviceTest {
                 scenario.onActivity(activity -> {
                     ViewGroup content = activity.findViewById(android.R.id.content);
                     assertTrue(screen.getSimpleName(), content.getChildAt(0) instanceof EdgeBackLayout);
-                    EdgeBackLayout root = (EdgeBackLayout) content.getChildAt(0);
-                    float density = activity.getResources().getDisplayMetrics().density;
-                    long now = SystemClock.uptimeMillis();
-                    for (int step = 0; step < 3; step++) {
-                        int action = step == 0 ? MotionEvent.ACTION_DOWN : step == 1 ? MotionEvent.ACTION_MOVE : MotionEvent.ACTION_UP;
-                        MotionEvent event = MotionEvent.obtain(now, now + step * 150, action,
-                                step == 0 ? 8 * density : root.getWidth() * .7f, root.getHeight() * .85f, 0);
-                        root.dispatchTouchEvent(event); event.recycle();
-                    }
                 });
-                // Android 13 entrega el cierre de Atrás mediante una llamada asíncrona del sistema.
+                UiDevice device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
+                int y = device.getDisplayHeight() / 2;
+                assertTrue("Gesto físico inyectado en " + screen.getSimpleName(),
+                        device.swipe(120, y, Math.min(700, device.getDisplayWidth() - 40), y, 18));
+                // Android 13 entrega Atrás de forma asíncrona. Cuando ActivityScenario
+                // inicia una pantalla como raíz de tarea, Atrás puede mandarla al fondo
+                // (STARTED) en vez de destruirla; en ambos casos ya fue descartada.
                 long closeDeadline = SystemClock.uptimeMillis() + 5000;
-                while (scenario.getState() != androidx.lifecycle.Lifecycle.State.DESTROYED
+                while (scenario.getState() == androidx.lifecycle.Lifecycle.State.RESUMED
                         && SystemClock.uptimeMillis() < closeDeadline) SystemClock.sleep(30);
-                assertEquals("Atrás en " + screen.getSimpleName(), androidx.lifecycle.Lifecycle.State.DESTROYED, scenario.getState());
+                assertNotEquals("Atrás en " + screen.getSimpleName(),
+                        androidx.lifecycle.Lifecycle.State.RESUMED, scenario.getState());
             }
         }
     }

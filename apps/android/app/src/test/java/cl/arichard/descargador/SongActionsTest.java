@@ -64,6 +64,14 @@ public class SongActionsTest {
         assertFalse(entry.isShowing());
     }
 
+    @Test public void everyPlaylistImportPlatformIconLoadsOnAndroid() {
+        for (int icon : new int[]{R.drawable.ic_platform_spotify, R.drawable.ic_platform_youtube,
+                R.drawable.ic_platform_deezer, R.drawable.ic_platform_applemusic,
+                R.drawable.ic_platform_soundcloud}) {
+            assertNotNull(androidx.appcompat.content.res.AppCompatResources.getDrawable(activity, icon));
+        }
+    }
+
     @Test public void successfulDeletionRequiresConfirmationAndRemovesMembership() throws Exception {
         AtomicBoolean changed = new AtomicBoolean();
         SongActions.delete(activity, song, () -> changed.set(true)); finishWork();

@@ -118,7 +118,7 @@ public final class PlaylistImport {
 
     /** Lee una playlist de YouTube con el cliente de YouTube Music: los videos llegan con su ID, sin buscar. */
     private static Playlist fetchYouTube(String id) throws Exception {
-        List<SearchResult> songs = YtMusicApi.playlist("VL" + id, "");
+        List<SearchResult> songs = YtMusicApi.playlist("VL" + id, "", true);
         if (songs.isEmpty()) throw new IllegalStateException("La playlist de YouTube está vacía, es privada o no está disponible.");
         List<Track> tracks = new ArrayList<>();
         for (SearchResult song : songs) {
@@ -239,20 +239,54 @@ public final class PlaylistImport {
         }
     }
 
-    /**
-     * Busca cada canción que no viene con video y devuelve el video de la mejor coincidencia segura.
-     * Null si no hay ninguna que sea segura: en ese caso la canción no se agrega.
-     */
-    static SearchResult match(Track track) throws Exception {
-        String query = TextImport.songQuery(track.title, track.artist);
-        List<SearchResult> usable = VideoSearchSheet.usable(YoutubeApi.search(query, 5));
+    /** El video elegido para una canción de otra plataforma y qué tan segura es la coincidencia. */
+    public static final class Resolved {
+        public final SearchResult video;
+        /** False cuando es solo el mejor candidato: se incluye, pero el usuario debe revisarlo. */
+        public final boolean confident;
+        Resolved(SearchResult video, boolean confident) { this.video = video; this.confident = confident; }
+    }
+
+    /** Mejor candidato de [pool] para la canción, o null si no hay ninguno utilizable. */
+    private static Resolved pick(String query, Track track, List<SearchResult> pool, String duration) {
+        List<SearchResult> usable = VideoSearchSheet.usable(pool);
         if (usable.isEmpty()) return null;
         List<SongMatcher.Candidate> candidates = new ArrayList<>();
         for (SearchResult r : usable) candidates.add(new SongMatcher.Candidate(r.getId(), r.getTitle(), r.getChannel(), r.getDurationSeconds()));
-        String duration = track.seconds > 0 ? String.format(Locale.ROOT, "%d:%02d", track.seconds / 60, track.seconds % 60) : "";
         int best = SongMatcher.best(query, candidates, track.title, track.artist, duration);
+        if (best < 0) return null;
         SongMatcher.Match score = SongMatcher.score(query, candidates.get(best), track.title, track.artist, duration);
-        return score.autoSelect ? usable.get(best) : null;
+        return new Resolved(usable.get(best), score.autoSelect);
+    }
+
+    /**
+     * Busca el video de una canción que no viene con él. Primero en el catálogo de YouTube Music (pistas oficiales de
+     * audio, la mejor calidad); si ahí no hay una coincidencia segura, también en YouTube. Nunca se descarta una
+     * canción por dudosa: se devuelve el mejor candidato marcado como no seguro. Null solo si no hay ningún resultado.
+     * Lanza la excepción de red si ninguna de las dos búsquedas respondió, para poder reintentar.
+     */
+    public static Resolved resolve(Track track) throws Exception {
+        String query = TextImport.songQuery(track.title, track.artist);
+        String duration = track.seconds > 0 ? String.format(Locale.ROOT, "%d:%02d", track.seconds / 60, track.seconds % 60) : "";
+        List<SearchResult> pool = new ArrayList<>();
+        Exception failure = null;
+        boolean answered = false;
+        try { pool.addAll(YtMusicApi.searchPage(query, "songs", null, 8).songs); answered = true; }
+        catch (Exception error) { failure = error; }
+        Resolved best = pick(query, track, pool, duration);
+        if (best != null && best.confident) return best;
+        try { pool.addAll(YoutubeApi.search(query, 8)); answered = true; }
+        catch (Exception error) { failure = error; }
+        if (!answered && failure != null) throw failure;
+        Resolved overall = pick(query, track, pool, duration);
+        // Un candidato seguro siempre gana; si ninguno lo es, el mejor del conjunto completo.
+        return overall != null ? overall : best;
+    }
+
+    /** Video de la mejor coincidencia para la canción, aunque no sea segura; null si YouTube no devolvió nada. */
+    static SearchResult match(Track track) throws Exception {
+        Resolved resolved = resolve(track);
+        return resolved == null ? null : resolved.video;
     }
 
     /** Crea la playlist (o agrega a una existente con ese nombre) y devuelve cuántas canciones entraron. */

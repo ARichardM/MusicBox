@@ -50,8 +50,8 @@ public class TabSwipeLayout extends RelativeLayout {
         if (event.getPointerCount() != 1) protectedGesture = true;
         if (protectedGesture || vertical) return false;
         float dx = Math.abs(event.getRawX() - downX), dy = Math.abs(event.getRawY() - downY);
-        if (!horizontal && Math.max(dx, dy) > slop * 2) {
-            if (dx > dy * 1.5f) horizontal = true;
+        if (!horizontal && Math.max(dx, dy) > slop * 1.1f) {
+            if (dx > dy * 1.25f) horizontal = true;
             else vertical = true;
         }
         return horizontal;
@@ -71,7 +71,7 @@ public class TabSwipeLayout extends RelativeLayout {
                 float dx = event.getRawX() - downX;
                 boolean handled = horizontal && !protectedGesture && !vertical;
                 horizontal = false;
-                if (handled && Math.abs(dx) > 48 * getResources().getDisplayMetrics().density) {
+                if (handled && Math.abs(dx) > 36 * getResources().getDisplayMetrics().density) {
                     Runnable action = dx < 0 ? left : right;
                     if (action != null) action.run();
                 } else if (handled && dragListener != null) dragListener.onCancel();

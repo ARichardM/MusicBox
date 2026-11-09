@@ -27,6 +27,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -220,10 +221,55 @@ public class DownloaderActivity extends AppCompatActivity {
         // Una playlist de Spotify, YouTube o Deezer se importa completa en lugar de pegarse como enlace.
         PlaylistImport.Link playlist = PlaylistImport.find(shared);
         if (playlist != null) { PlaylistImportDialog.start(this, playlist); return; }
+        cl.arichard.descargador.util.SharedMusicLink.Kind kind =
+                cl.arichard.descargador.util.SharedMusicLink.kind(shared);
+        CharSequence subject = intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT);
+        if (kind == cl.arichard.descargador.util.SharedMusicLink.Kind.ARTIST) {
+            CharSequence artistShare = shared;
+            String immediate = cl.arichard.descargador.util.SharedMusicLink.artistQuery(artistShare, subject);
+            if (!immediate.isEmpty() && !immediate.matches("[A-Za-z0-9]{18,}")) {
+                openSharedSearch(immediate);
+                return;
+            }
+            cl.arichard.descargador.DescargadorApp.IO.execute(() -> {
+                String query = cl.arichard.descargador.util.SharedMusicLink.resolveArtistQuery(artistShare, subject);
+                runOnUiThread(() -> openSharedSearch(query));
+            });
+            return;
+        }
+        if (cl.arichard.descargador.util.SharedMusicLink.requiresTrackSearch(shared)) {
+            CharSequence trackShare = shared;
+            String immediate = cl.arichard.descargador.util.SharedMusicLink.trackQuery(trackShare, subject);
+            if (!immediate.isEmpty()) {
+                openSharedSearch(immediate);
+                return;
+            }
+            Toast.makeText(this, R.string.shared_track_searching, Toast.LENGTH_SHORT).show();
+            cl.arichard.descargador.DescargadorApp.IO.execute(() -> {
+                String query = cl.arichard.descargador.util.SharedMusicLink.resolveTrackQuery(trackShare, subject);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    if (query.isEmpty()) {
+                        inputLinks.setText(trackShare.toString().trim());
+                        inputLinks.setSelection(inputLinks.length());
+                        Toast.makeText(this, R.string.shared_track_search_failed, Toast.LENGTH_LONG).show();
+                    } else {
+                        openSharedSearch(query);
+                    }
+                });
+            });
+            return;
+        }
         // El usuario revisa formato y enlaces antes de iniciar la descarga.
         inputLinks.setText(shared.toString().trim());
         inputLinks.setSelection(inputLinks.length());
         selectTab(0, false);
+    }
+
+    private void openSharedSearch(String query) {
+        if (isFinishing() || isDestroyed()) return;
+        startActivity(cl.arichard.descargador.util.SharedSongSearch.searchIntent(this, query));
+        finish();
     }
 
     @Override protected void onStop() {

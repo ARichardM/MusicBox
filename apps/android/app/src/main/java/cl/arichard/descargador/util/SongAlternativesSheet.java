@@ -65,6 +65,17 @@ public final class SongAlternativesSheet {
         new SongAlternativesSheet(activity, song, onReplaced).open();
     }
 
+    /** Si no es null, la hoja solo deja elegir una versión y la entrega aquí (revisión de una playlist importada). */
+    private java.util.function.Consumer<SearchResult> picker;
+
+    /** Muestra las versiones de {@code song} y entrega la que el usuario elija, sin tocar playlists ni cola. */
+    public static void pick(Activity activity, Song song, java.util.function.Consumer<SearchResult> onPick) {
+        if (activity == null || activity.isFinishing() || song == null || onPick == null) return;
+        SongAlternativesSheet sheet = new SongAlternativesSheet(activity, song, null);
+        sheet.picker = onPick;
+        sheet.open();
+    }
+
     private SongAlternativesSheet(Activity activity, Song song, Runnable onReplaced) {
         this.activity = activity; this.song = song; this.onReplaced = onReplaced;
     }
@@ -73,8 +84,8 @@ public final class SongAlternativesSheet {
     private int color(int id) { return ContextCompat.getColor(activity, id); }
 
     private void open() {
-        replaceable = !PlaylistManager.getInstance(activity).playlistsContaining(song.getPath()).isEmpty()
-                || player.queueContains(song.getPath());
+        replaceable = picker == null && (!PlaylistManager.getInstance(activity).playlistsContaining(song.getPath()).isEmpty()
+                || player.queueContains(song.getPath()));
         preview = player.newPreview(this::onPreview);
         dialog = new BottomSheetDialog(activity);
         LinearLayout root = new LinearLayout(activity);
@@ -276,6 +287,7 @@ public final class SongAlternativesSheet {
     }
 
     private void onAction(SearchResult alternative) {
+        if (picker != null) { preview.release(false); picker.accept(alternative); dialog.dismiss(); return; }
         if (!replaceable) { OnlineTrackMenu.addToPlaylist(activity, alternative); return; }
         new MaterialAlertDialogBuilder(activity)
                 .setTitle(Tr.t("¿Reemplazar la canción?"))
@@ -377,7 +389,7 @@ public final class SongAlternativesSheet {
             h.play.setContentDescription(Tr.t(active && activeState == PlayerManager.PREVIEW_PLAYING ? "Pausar" : "Escuchar"));
             bar(h, item);
             boolean done = replacedIds.contains(item.getId());
-            h.action.setText(done ? Tr.t("✓ Lista") : replaceable ? Tr.t("Reemplazar") : Tr.t("Guardar"));
+            h.action.setText(done ? Tr.t("✓ Lista") : picker != null ? Tr.t("Elegir") : replaceable ? Tr.t("Reemplazar") : Tr.t("Guardar"));
             h.action.setEnabled(!done);
             h.action.setTextColor(color(done ? R.color.text_secondary : R.color.accent));
             h.action.setBackgroundResource(R.drawable.bg_chip_inactive);

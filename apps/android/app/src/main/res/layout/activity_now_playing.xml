@@ -12,6 +12,8 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/bg_primary"
+    android:clipChildren="false"
+    android:clipToPadding="false"
     android:paddingStart="20dp"
     android:paddingEnd="20dp"
     android:paddingTop="16dp"
@@ -19,6 +21,7 @@
 
     <!-- Top Bar: Back Chevron, Centered MP3/MP4 Pill, Favorite and Download -->
     <LinearLayout
+        android:id="@+id/playerTopBar"
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:gravity="center_vertical">
@@ -146,6 +149,7 @@
         android:layout_weight="1"
         android:layout_marginTop="16dp"
         android:layout_marginBottom="16dp"
+        android:clipChildren="false"
         android:background="@android:color/transparent">
 
         <!-- MP3 Mode: Full Album Cover Art -->
@@ -155,6 +159,7 @@
             android:layout_height="match_parent"
             android:visibility="visible">
 
+            <!-- Marco cuadrado: el tamaño lo fija la pantalla (el menor lado libre), siempre 1:1. -->
             <androidx.cardview.widget.CardView
                 android:id="@+id/discContainer"
                 android:layout_width="match_parent"
@@ -178,13 +183,16 @@
             android:id="@+id/containerVideoPlayer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            android:clipChildren="false"
             android:visibility="invisible">
 
+            <!-- El tamaño y la posición los fija la pantalla: la proporción real del video, a todo el ancho, o la
+                 pantalla completa al tocarlo. -->
             <androidx.cardview.widget.CardView
                 android:id="@+id/videoCardView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                app:cardCornerRadius="20dp"
+                app:cardCornerRadius="0dp"
                 app:cardElevation="10dp"
                 app:cardBackgroundColor="#000000">
 
@@ -192,6 +200,20 @@
                     android:id="@+id/videoHostLayout"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"/>
+
+                <!-- Pantalla completa: sombra bajo la barra superior y fundido hacia el fondo en la base. -->
+                <View android:id="@+id/videoFadeTop"
+                    android:layout_width="match_parent"
+                    android:layout_height="120dp"
+                    android:layout_gravity="top"
+                    android:alpha="0"
+                    android:background="@drawable/bg_video_fade_top"/>
+                <View android:id="@+id/videoFadeBottom"
+                    android:layout_width="match_parent"
+                    android:layout_height="190dp"
+                    android:layout_gravity="bottom"
+                    android:alpha="0"
+                    android:background="@drawable/bg_video_fade_bottom"/>
             </androidx.cardview.widget.CardView>
         </FrameLayout>
 

@@ -49,6 +49,20 @@ public class LyricsFetcherTest {
     }
 
     @Test
+    public void wordTimestampsOfExtendedLrcAreNotShownInTheLyrics() {
+        // LRCLIB entrega a veces el LRC extendido, con una marca de tiempo antes de cada palabra.
+        String raw = "[00:22.82] <00:22.82>You <00:23.23>know <00:23.48>the <00:23.76>rules\n"
+                + "[00:24.58]<00:24.58>and <00:24.83>so <00:25.34>do <00:25.61>I\n";
+        List<LyricsFetcher.Line> lines = LyricsFetcher.parseLrc(raw);
+        assertEquals(2, lines.size());
+        assertEquals("You know the rules", lines.get(0).text);
+        assertEquals("and so do I", lines.get(1).text);
+        assertEquals(22820L, lines.get(0).timeMs);
+        List<LyricsFetcher.Line> plain = LyricsFetcher.plainLines("<00:22.82>You <00:23.23>know");
+        assertEquals("You know", plain.get(0).text);
+    }
+
+    @Test
     public void cleansNoisyTitlesAndArtists() {
         String[] pair = LyricsFetcher.cleanQuery(
                 "Los Prisioneros - Tren Al Sur (Video Oficial) [HD]",

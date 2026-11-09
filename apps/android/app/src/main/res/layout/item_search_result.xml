@@ -10,16 +10,17 @@
     android:paddingTop="10dp" android:paddingBottom="10dp"
     android:background="?attr/selectableItemBackground">
 
+    <!-- Marco con esquinas redondeadas: cuadrado para canciones, 16:9 para videos (lo fija el adaptador). -->
     <FrameLayout
-        android:layout_width="110dp"
+        android:id="@+id/thumbFrame"
+        android:layout_width="62dp"
         android:layout_height="62dp">
         <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:id="@+id/imgThumbnail" android:layout_width="match_parent"
             android:layout_height="match_parent" android:scaleType="centerCrop"
             android:background="@drawable/bg_thumbnail"/>
-        <ImageView android:id="@+id/btnPlayResult" android:layout_width="28dp"
-            android:layout_height="28dp" android:layout_gravity="center"
-            android:padding="5dp" android:src="@drawable/ic_play_arrow"
-            android:background="@drawable/bg_play_circle" app:tint="#000000"
+        <!-- Sin ícono visible: la portada completa sigue siendo el botón de reproducir (sin abrir el reproductor). -->
+        <ImageView android:id="@+id/btnPlayResult" android:layout_width="match_parent"
+            android:layout_height="match_parent"
             android:contentDescription="@string/reproducir"/>
         <ImageView android:id="@+id/imgDownloadedResult" android:layout_width="24dp"
             android:layout_height="24dp" android:layout_gravity="top|end"

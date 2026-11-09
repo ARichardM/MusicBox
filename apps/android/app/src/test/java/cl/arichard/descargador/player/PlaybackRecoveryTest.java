@@ -47,16 +47,19 @@ public class PlaybackRecoveryTest {
     private void set(String name, Object value) throws Exception {
         Field field = PlayerManager.class.getDeclaredField(name); field.setAccessible(true); field.set(player, value);
     }
-    private void idle() { Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600)); }
-    @Test public void transientErrorRetriesOnceAndKeepsPositionAndQueue() throws Exception {
+    private void idle() { Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(2100)); }   // cubre la espera creciente entre reintentos (hasta 2 s)
+    @Test public void transientErrorRetriesSeveralTimesKeepingPositionAndQueueBeforeSkipping() throws Exception {
         set("resumePosition", 4250);
         player.fail(new IllegalStateException("expired stream"));
         assertTrue(player.isLoading()); idle();
         assertEquals(Arrays.asList(first.getPath()), player.starts);
         assertEquals(4250, player.getCurrentPosition());
         assertEquals(2, player.getQueue().size());
+        // Un corte aislado no debe saltar la canción: se reintenta con la misma antes de rendirse.
+        for (int retry = 0; retry < 3; retry++) { player.fail(new IllegalStateException("network cut")); idle(); }
+        assertEquals(Arrays.asList(first.getPath(), first.getPath(), first.getPath(), first.getPath()), player.starts);
         player.fail(new IllegalStateException("malformed audio")); idle();
-        assertEquals(Arrays.asList(first.getPath(), next.getPath()), player.starts);
+        assertEquals(Arrays.asList(first.getPath(), first.getPath(), first.getPath(), first.getPath(), next.getPath()), player.starts);
         assertEquals(next.getPath(), player.getCurrentSong().getPath());
         assertEquals(1, player.getCurrentIndex());
         assertEquals(2, player.getQueue().size());

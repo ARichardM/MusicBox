@@ -43,7 +43,22 @@ public class Song implements Serializable {
     public boolean isOnline() { return path != null && path.startsWith("youtube:"); }
     public String getVideoId() { return isOnline() ? path.substring(8) : null; }
     public String getCoverPath() {
-        return isOnline() ? "https://i.ytimg.com/vi/" + getVideoId() + "/hqdefault.jpg" : path;
+        if (!isOnline()) return path;
+        String art = ART.get(getVideoId());
+        return art != null ? art : "https://i.ytimg.com/vi/" + getVideoId() + "/hqdefault.jpg";
+    }
+
+    /** Portada cuadrada de YouTube Music de cada canción vista (la miniatura de video trae franjas negras). */
+    private static final java.util.Map<String, String> ART = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Recuerda la portada cuadrada de una canción en línea para mostrarla en el reproductor, la cola y las listas.
+     * Solo sirve la imagen de álbum (googleusercontent); las miniaturas de video (ytimg) se descartan.
+     */
+    public static void rememberArt(String videoId, String url) {
+        if (videoId == null || videoId.isEmpty() || url == null) return;
+        if (!url.contains("googleusercontent.com") && !url.contains("ggpht.com")) return;
+        ART.put(videoId, url.replaceFirst("=w\\d+-h\\d+", "=w600-h600"));
     }
 
     public String getFormattedDuration() {

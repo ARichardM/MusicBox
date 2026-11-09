@@ -49,18 +49,31 @@ public class PlayerManagerTest {
     }
     private void prepared() { Shadows.shadowOf(Looper.getMainLooper()).idle(); }
 
-    @Test public void bluetoothHeadphonesBeingStoredPausesAndPreservesTheQueue() throws Exception {
+    @Test public void disconnectingBluetoothHeadphonesPausesAfterTheRouteChangeAndPreservesTheQueue() throws Exception {
         player.togglePlayPause(); prepared();
         assertTrue(player.isPlaying());
         java.lang.reflect.Field route = PlayerManager.class.getDeclaredField("routedOutputId");
         route.setAccessible(true); route.setInt(player, 77);
         player.onAudioOutputRemoved(77, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, true);
+        assertTrue(player.isPlaying());
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
         assertFalse(player.isPlaying());
-        assertEquals(4200, player.getCurrentPosition());
+        int pausedPosition = player.getCurrentPosition();
         assertEquals(3, player.getQueue().size());
-        prepared();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(350));
+        assertEquals(pausedPosition, player.getCurrentPosition());
         assertFalse(player.isPlaying());
         player.play();
+        assertTrue(player.isPlaying());
+    }
+
+    @Test @Config(sdk = 24) public void switchingBluetoothOutputsKeepsPlaybackRunning() throws Exception {
+        player.togglePlayPause(); prepared();
+        java.lang.reflect.Field route = PlayerManager.class.getDeclaredField("routedOutputId");
+        route.setAccessible(true); route.setInt(player, 77);
+        player.onAudioOutputRemoved(77, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, true);
+        player.onAudioOutputAdded(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, true);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
         assertTrue(player.isPlaying());
     }
 
@@ -68,7 +81,7 @@ public class PlayerManagerTest {
         ShadowMediaPlayer.addMediaInfo(DataSource.toDataSource(a.getPath()), new ShadowMediaPlayer.MediaInfo(20000, 500));
         player.playSong(a, Arrays.asList(a, b, c));
         player.onAudioOutputRemoved(77, AudioDeviceInfo.TYPE_BLE_HEADSET, true);
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
         assertFalse(player.isPlaying());
         assertEquals(3, player.getQueue().size());
     }
@@ -86,8 +99,10 @@ public class PlayerManagerTest {
         player.togglePlayPause(); prepared();
         java.lang.reflect.Field advance = PlayerManager.class.getDeclaredField("advanceWhenReady");
         advance.setAccessible(true); advance.setBoolean(player, true);
-        context.sendBroadcast(new Intent(AudioManager.ACTION_AUDIO_BECOMING_NOISY)); prepared();
+        context.sendBroadcast(new Intent(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+        prepared();
         assertFalse(advance.getBoolean(player));
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
         assertFalse(player.isPlaying());
     }
 
@@ -96,7 +111,7 @@ public class PlayerManagerTest {
         player.playSong(a, Arrays.asList(a, b, c));
         assertTrue(player.isLoading());
         context.sendBroadcast(new Intent(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
-        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1100));
         assertFalse(player.isLoading());
         assertFalse(player.isPlaying());
         player.play();
@@ -111,9 +126,11 @@ public class PlayerManagerTest {
         AudioManager.OnAudioFocusChangeListener focus = (AudioManager.OnAudioFocusChangeListener) field.get(player);
         focus.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT);
         assertFalse(player.isPlaying());
-        context.sendBroadcast(new Intent(AudioManager.ACTION_AUDIO_BECOMING_NOISY)); prepared();
+        context.sendBroadcast(new Intent(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
+        prepared();
         focus.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN);
         assertFalse(player.isPlaying());
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(600));
         player.play();
         assertTrue(player.isPlaying());
     }

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="import_playlists">Importar playlists</string>
+    <string name="shared_track_searching">Buscando la canción compartida…</string>
+    <string name="shared_track_search_failed">No se pudo identificar la canción compartida. Busca su título en MusicBox.</string>
     <string name="lista_canciones_pista">Artista - Canción\nOtra canción</string>
     <string name="buscar_en_lista">Buscar en la lista</string>
     <string name="siguiente">Siguiente</string>
@@ -63,6 +65,7 @@
     <string name="mas_configuraciones">MÁS CONFIGURACIONES</string>
     <string name="mas_escuchadas_en_tu_biblioteca">Más escuchadas en tu biblioteca</string>
     <string name="mas_opciones_de_la_cancion">Más opciones de la canción</string>
+    <string name="mas_opciones">Más opciones</string>
     <string name="me_gusta">Me gusta</string>
     <string name="mi_musica">Mi Música</string>
     <string name="musica">Música</string>

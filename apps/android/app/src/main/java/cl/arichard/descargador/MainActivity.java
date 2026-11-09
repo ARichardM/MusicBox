@@ -13,9 +13,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.text.style.ForegroundColorSpan;
 import android.view.View;
+import android.view.MenuItem;
 import android.view.animation.AnimationUtils;
 import cl.arichard.descargador.util.CoverArtLoader;
 import android.view.inputmethod.EditorInfo;
@@ -617,7 +621,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         navTabSearch.setSelected(isSearch); navTabLibrary.setSelected(!isSearch);
         navIconSearch.setColorFilter(isSearch ? primary : muted); navLabelSearch.setTextColor(isSearch ? primary : muted);
         navIconLibrary.setColorFilter(isSearch ? muted : primary); navLabelLibrary.setTextColor(isSearch ? muted : primary);
-        if (!isSearch && libraryContentDirty) rebuildLibraryContent();
+        if (!isSearch && !pendingPlaylistArrival.isEmpty() && !isViewingSubList) revealImportedPlaylist();
+        else if (!isSearch && libraryContentDirty) rebuildLibraryContent();
         settleTabs();
         if (changed && isSearch) refreshDiscoveryContent();
     }
@@ -1653,6 +1658,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         boolean resultsChanged = renderedSearchResults != uiState.results;
         if (resultsChanged) { searchResultAdapter.setResults(uiState.results); renderedSearchResults = uiState.results; }
         // Spinner al final de la lista mientras llega la página siguiente de resultados.
+        searchResultAdapter.setFilter(uiState.searchFilter);
         searchResultAdapter.setLoadingMore(uiState.loadingMore && !"artists".equals(uiState.searchFilter));
         renderSearchFilter();
         searchLoading.setVisibility(uiState.searchLoading ? View.VISIBLE : View.GONE);
@@ -1697,8 +1703,12 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 activeDownloadingVideoIds.add(id);
                 searchResultAdapter.addDownloadingId(id);
                 songAdapter.setDownloadStarted(id);
-                searchResultAdapter.setDownloadProgress(id, job.progress);
-                songAdapter.setDownloadProgress(id, job.progress);
+                // En espera o preparándose todavía no hay porcentaje real: el anillo gira en vez de quedar quieto en 0 %.
+                boolean noProgressYet = job.status == cl.arichard.descargador.download.DownloadJob.Status.WAITING
+                        || job.status == cl.arichard.descargador.download.DownloadJob.Status.PREPARING;
+                float ringProgress = noProgressYet ? -1f : job.progress;
+                searchResultAdapter.setDownloadProgress(id, ringProgress);
+                songAdapter.setDownloadProgress(id, ringProgress);
             } else if (finishedDownloadJobs.add(job.id)) {
                 boolean success = job.status == cl.arichard.descargador.download.DownloadJob.Status.DONE;
                 searchResultAdapter.removeDownloadingId(id);
@@ -1747,17 +1757,18 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private void showPlaylistSettingsMenu(String name, View anchor) {
         PlaylistManager manager = PlaylistManager.getInstance(this);
         PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Editar nombre y descripción")).setOnMenuItemClickListener(item -> {
+        menuAction(menu, cl.arichard.descargador.util.Tr.t("Editar nombre y descripción"), R.drawable.ic_edit, false).setOnMenuItemClickListener(item -> {
             showEditPlaylistDialog(name); return true;
         });
         boolean auto = manager.isAutoDownloadEnabled(name);
-        menu.getMenu().add(auto ? cl.arichard.descargador.util.Tr.t("Desactivar descarga automática") : cl.arichard.descargador.util.Tr.t("Activar descarga automática"))
+        menuAction(menu, auto ? cl.arichard.descargador.util.Tr.t("Desactivar descarga automática") : cl.arichard.descargador.util.Tr.t("Activar descarga automática"),
+                auto ? R.drawable.ic_downloaded_badge : R.drawable.ic_download, false)
                 .setOnMenuItemClickListener(item -> {
                     if (auto) { manager.setAutoDownloadEnabled(name, false); refreshPlaylistsView(); }
                     else enableAutoDownload(name, this::refreshPlaylistsView);
                     return true;
                 });
-        if (!"Favoritos".equals(name)) menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar playlist")).setOnMenuItemClickListener(item -> {
+        if (!"Favoritos".equals(name)) menuAction(menu, cl.arichard.descargador.util.Tr.t("Eliminar playlist"), R.drawable.ic_delete, true).setOnMenuItemClickListener(item -> {
             new MaterialAlertDialogBuilder(this).setTitle(cl.arichard.descargador.util.Tr.t("Eliminar playlist"))
                     .setMessage(cl.arichard.descargador.util.Tr.t("¿Eliminar \"") + name + cl.arichard.descargador.util.Tr.t("\"? Las canciones descargadas se conservarán."))
                     .setNegativeButton(cl.arichard.descargador.util.Tr.t("Cancelar"), null)
@@ -1885,7 +1896,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         chipFolders.setOnClickListener(v -> setLibraryMode(2));
         chipPlaylists.setOnClickListener(v -> setLibraryMode(3));
 
-        findViewById(R.id.btnLocatePlaying).setOnClickListener(v -> locatePlayingSong());
+        View btnLibraryMore = findViewById(R.id.btnLibraryMore);
+        btnLibraryMore.setOnClickListener(v -> showLibraryMoreMenu(btnLibraryMore));
         recyclerLibrary.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrollStateChanged(RecyclerView view, int state) {
                 if (state == RecyclerView.SCROLL_STATE_IDLE) saveLibraryPosition();
@@ -1917,8 +1929,26 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
 
         btnNewPlaylist.setOnClickListener(v -> showCreatePlaylistDialog());
-        ((TextView) findViewById(R.id.btnImportPlaylists)).setText(cl.arichard.descargador.util.Tr.t("Importar playlists"));
-        findViewById(R.id.btnImportPlaylists).setOnClickListener(v -> cl.arichard.descargador.util.PlaylistImportDialog.showEntry(this));
+    }
+
+    private void showLibraryMoreMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        final int locate = 1;
+        final int importPlaylists = 2;
+        menuAction(menu, locate, 0, cl.arichard.descargador.util.Tr.t("Ir a la canción actual"), R.drawable.ic_locate_playing, false);
+        menuAction(menu, importPlaylists, 1, cl.arichard.descargador.util.Tr.t("Importar playlists"), R.drawable.ic_playlist, false);
+        menu.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == locate) {
+                locatePlayingSong();
+                return true;
+            }
+            if (item.getItemId() == importPlaylists) {
+                cl.arichard.descargador.util.PlaylistImportDialog.showEntry(this);
+                return true;
+            }
+            return false;
+        });
+        menu.show();
     }
 
 
@@ -2036,6 +2066,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             }
         }
         btnNewPlaylist.setVisibility(currentLibraryMode == 3 && !isViewingSubList ? View.VISIBLE : View.GONE);
+        findViewById(R.id.layoutLibraryModeChips).setVisibility(isViewingSubList ? View.GONE : View.VISIBLE);
         if (layoutLibraryTools != null) layoutLibraryTools.setVisibility(currentLibraryMode == 0 || isViewingSubList ? View.VISIBLE : View.GONE);
         if (switchLibraryAutoDownload != null) {
             boolean canAutoDl = isViewingSubList && currentLibraryMode == 3;
@@ -2100,6 +2131,39 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         saveLibraryPosition(); rebuildLibraryContent(); restoreLibraryPosition();
     }
 
+    /** Playlist recién creada por una importación que debe aparecer (con rebote) en la biblioteca. */
+    private String pendingPlaylistArrival = "";
+
+    /**
+     * Una importación terminó de crear [name]. Si la biblioteca está a la vista, la lista se actualiza al instante y la
+     * nueva entra con rebote; en la pestaña de inicio o dentro de una lista, se muestra al volver a la lista de playlists.
+     */
+    public void onPlaylistImported(String name) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed() || name == null || name.isEmpty()) return;
+            cl.arichard.descargador.util.PlaylistImportReviewSheet.pendingReveal = "";
+            pendingPlaylistArrival = name;
+            libraryContentDirty = true;
+            if (!currentTabIsSearch && !isViewingSubList) revealImportedPlaylist();
+        });
+    }
+
+    private void revealImportedPlaylist() {
+        final String name = pendingPlaylistArrival;
+        pendingPlaylistArrival = "";
+        if (name.isEmpty() || songAdapter == null || playlistAdapter == null) return;
+        if (currentLibraryMode != 3) setLibraryMode(3); else refreshPlaylistsView();
+        libraryContentDirty = false;
+        final int index = playlistAdapter.highlightArrival(name);
+        if (index < 0) return;
+        recyclerLibrary.post(() -> {
+            LinearLayoutManager layout = (LinearLayoutManager) recyclerLibrary.getLayoutManager();
+            if (layout != null && (index < layout.findFirstCompletelyVisibleItemPosition()
+                    || index > layout.findLastCompletelyVisibleItemPosition()))
+                recyclerLibrary.smoothScrollToPosition(index);
+        });
+    }
+
     private void showPlaylistSongs(String playlistName) {
         showCollection(3, playlistName);
     }
@@ -2151,9 +2215,15 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         });
     }
 
+    /** Una animación en curso no bloquea el siguiente deslizamiento: se interrumpe (ver interruptCollectionSwipe). */
     private boolean canSwipeCollections() {
-        return !collectionSwipeAnimating && isViewingSubList && (currentLibraryMode == 2 || currentLibraryMode == 3)
+        return isViewingSubList && (currentLibraryMode == 2 || currentLibraryMode == 3)
                 && collectionNames().size() > 1 && (songAdapter == null || !songAdapter.isSelectionMode());
+    }
+
+    /** ¿Hay una playlist/carpeta anterior a la que ir deslizando a la derecha? Lo usa el gesto de volver para cederle el paso. */
+    public boolean hasPreviousCollection() {
+        return canSwipeCollections() && adjacentCollection(-1) != null;
     }
 
     private List<String> collectionNames() {
@@ -2170,8 +2240,22 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         return index < 0 || target < 0 || target >= names.size() ? null : names.get(target);
     }
 
+    /** Destino de un cambio que ya salió de pantalla pero todavía no se mostró; se muestra si algo lo interrumpe. */
+    private String pendingCollectionTarget;
+
+    /** Un deslizamiento nuevo corta la animación anterior: completa el cambio pendiente y deja las vistas en su sitio. */
+    private void interruptCollectionSwipe() {
+        libraryHeader.animate().cancel(); libraryContentSwipe.animate().cancel();
+        String target = pendingCollectionTarget;
+        pendingCollectionTarget = null;
+        collectionSwipeAnimating = false;
+        if (target != null) showCollection(currentLibraryMode, target);
+        libraryHeader.setTranslationX(0); libraryContentSwipe.setTranslationX(0);
+        libraryHeader.setAlpha(1f); libraryContentSwipe.setAlpha(1f);
+    }
+
     private void previewCollectionSwipe(float distance, boolean destinationAvailable) {
-        if (collectionSwipeAnimating) return;
+        if (collectionSwipeAnimating) interruptCollectionSwipe();
         float width = Math.max(1f, libraryContentSwipe.getWidth());
         float offset = Math.max(-width * .72f, Math.min(width * .72f,
                 distance * (destinationAvailable ? 1f : .18f)));
@@ -2186,19 +2270,22 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         String target = committed ? adjacentCollection(direction) : null;
         if (target == null) { settleCollectionViews(); return; }
         collectionSwipeAnimating = true;
+        pendingCollectionTarget = target;
         float width = Math.max(1f, libraryContentSwipe.getWidth());
         float exit = direction > 0 ? -width : width;
-        libraryHeader.animate().translationX(exit * .32f).alpha(0f).setDuration(150)
+        // Más corto que antes (110 + 170 ms): el cambio se siente inmediato y se puede encadenar otro deslizamiento.
+        libraryHeader.animate().translationX(exit * .32f).alpha(0f).setDuration(110)
                 .setInterpolator(new android.view.animation.AccelerateInterpolator()).start();
-        libraryContentSwipe.animate().translationX(exit).alpha(0f).setDuration(150)
+        libraryContentSwipe.animate().translationX(exit).alpha(0f).setDuration(110)
                 .setInterpolator(new android.view.animation.AccelerateInterpolator()).withEndAction(() -> {
+                    pendingCollectionTarget = null;
                     showCollection(currentLibraryMode, target);
                     float entrance = direction > 0 ? width * .28f : -width * .28f;
                     libraryHeader.setTranslationX(entrance * .32f); libraryContentSwipe.setTranslationX(entrance);
                     libraryHeader.setAlpha(.25f); libraryContentSwipe.setAlpha(.25f);
-                    libraryHeader.animate().translationX(0).alpha(1f).setDuration(220)
+                    libraryHeader.animate().translationX(0).alpha(1f).setDuration(170)
                             .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
-                    libraryContentSwipe.animate().translationX(0).alpha(1f).setDuration(220)
+                    libraryContentSwipe.animate().translationX(0).alpha(1f).setDuration(170)
                             .setInterpolator(new android.view.animation.DecelerateInterpolator())
                             .withEndAction(() -> collectionSwipeAnimating = false).start();
                 }).start();
@@ -2237,43 +2324,66 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
     private void showSongMenu(Song song, View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Reproducir a continuación")).setOnMenuItemClickListener(item -> {
+        menuAction(popup, cl.arichard.descargador.util.Tr.t("Reproducir a continuación"), R.drawable.ic_skip_next, false).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, true); return true;
         });
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a la cola")).setOnMenuItemClickListener(item -> {
+        menuAction(popup, cl.arichard.descargador.util.Tr.t("Agregar a la cola"), R.drawable.ic_queue, false).setOnMenuItemClickListener(item -> {
             PlayerManager.getInstance().enqueue(song, false); return true;
         });
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setOnMenuItemClickListener(item -> {
+        menuAction(popup, cl.arichard.descargador.util.Tr.t("Agregar a playlist"), R.drawable.ic_playlist, false).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToPlaylist(this, song, this::refreshPlaylistsView); return true;
         });
-        if (song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Descargar")).setOnMenuItemClickListener(item -> {
+        if (song.isOnline()) menuAction(popup, cl.arichard.descargador.util.Tr.t("Descargar"), R.drawable.ic_download, false).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.download(this, song, this::refreshMusicLibrary); return true;
         });
-        if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Mover a otra playlist")).setOnMenuItemClickListener(item -> {
+        if (currentLibraryMode == 3 && isViewingSubList) menuAction(popup, cl.arichard.descargador.util.Tr.t("Mover a otra playlist"), R.drawable.ic_move, false).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.moveToPlaylist(this, currentSubListName, song, this::refreshPlaylistsView);
             return true;
         });
-        if (currentLibraryMode == 3 && isViewingSubList) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Quitar de esta playlist")).setOnMenuItemClickListener(item -> {
-            PlaylistManager.getInstance(this).removeSongFromPlaylist(currentSubListName, song.getPath());
-            refreshPlaylistsView(); return true;
-        });
-        if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Compartir archivo")).setOnMenuItemClickListener(item -> {
+        if (!song.isOnline()) menuAction(popup, cl.arichard.descargador.util.Tr.t("Compartir archivo"), R.drawable.ic_share, false).setOnMenuItemClickListener(item -> {
             shareSong(song); return true;
         });
-        if (!song.isOnline()) popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo")).setOnMenuItemClickListener(item -> {
-            deleteSongs(java.util.Collections.singletonList(song), this::refreshMusicLibrary); return true;
-        });
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Ver alternativas")).setOnMenuItemClickListener(item -> {
+        menuAction(popup, cl.arichard.descargador.util.Tr.t("Ver alternativas"), R.drawable.ic_sparkle, false).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongAlternativesSheet.show(this, song, this::refreshPlaylistsView); return true;
         });
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setOnMenuItemClickListener(item -> {
+        menuAction(popup, cl.arichard.descargador.util.Tr.t("Información de la canción"), R.drawable.ic_info, false).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongInfo.show(this, song); return true;
         });
-        popup.getMenu().add(cl.arichard.descargador.util.Tr.t("Seleccionar canciones")).setOnMenuItemClickListener(item -> {
+        menuAction(popup, cl.arichard.descargador.util.Tr.t("Seleccionar canciones"), R.drawable.ic_check, false).setOnMenuItemClickListener(item -> {
             if (songAdapter != null) songAdapter.activateSelectionMode(song);
             return true;
         });
+        if (currentLibraryMode == 3 && isViewingSubList) menuAction(popup, cl.arichard.descargador.util.Tr.t("Quitar de esta playlist"), R.drawable.ic_close, true).setOnMenuItemClickListener(item -> {
+            PlaylistManager.getInstance(this).removeSongFromPlaylist(currentSubListName, song.getPath());
+            refreshPlaylistsView(); return true;
+        });
+        if (!song.isOnline()) menuAction(popup, cl.arichard.descargador.util.Tr.t("Eliminar del dispositivo"), R.drawable.ic_delete, true).setOnMenuItemClickListener(item -> {
+            deleteSongs(java.util.Collections.singletonList(song), this::refreshMusicLibrary); return true;
+        });
         popup.show();
+    }
+
+    private MenuItem menuAction(PopupMenu popup, String title, int icon, boolean critical) {
+        return menuAction(popup, 0, popup.getMenu().size(), title, icon, critical);
+    }
+
+    private MenuItem menuAction(PopupMenu popup, int id, int order, String title, int icon, boolean critical) {
+        popup.setForceShowIcon(true);
+        CharSequence label = title;
+        if (critical) {
+            SpannableString red = new SpannableString(title);
+            red.setSpan(new ForegroundColorSpan(android.graphics.Color.rgb(255, 69, 58)), 0, red.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            label = red;
+        }
+        MenuItem item = popup.getMenu().add(0, id, order, label);
+        android.graphics.drawable.Drawable drawable = ContextCompat.getDrawable(this, icon);
+        if (drawable != null) {
+            drawable = drawable.mutate();
+            drawable.setTint(critical ? android.graphics.Color.rgb(255, 69, 58)
+                    : ContextCompat.getColor(this, R.color.text_secondary));
+            item.setIcon(drawable);
+        }
+        return item;
     }
 
     // --- Selección múltiple ---
@@ -2866,6 +2976,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         PlayerManager.getInstance().addListener(this);
         updateMiniPlayer();
         if (songAdapter != null) songAdapter.notifyDataSetChanged();
+        // Una importación hecha desde otra pantalla (Importar, Descargas): la playlist nueva aparece al volver.
+        String imported = cl.arichard.descargador.util.PlaylistImportReviewSheet.pendingReveal;
+        if (!imported.isEmpty()) onPlaylistImported(imported);
     }
 
     private void updateMiniPlayer() {

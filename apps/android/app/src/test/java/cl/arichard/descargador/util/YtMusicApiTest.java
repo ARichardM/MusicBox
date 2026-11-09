@@ -56,6 +56,31 @@ public class YtMusicApiTest {
                 new JSONObject().put("continuationCommand", new JSONObject().put("token", token))));
     }
 
+    private static JSONObject panelVideo(String id, String type) throws Exception {
+        return new JSONObject().put("videoId", id)
+                .put("title", new JSONObject().put("runs", new JSONArray().put(new JSONObject().put("text", "Canción"))))
+                .put("navigationEndpoint", new JSONObject().put("watchEndpoint", new JSONObject()
+                        .put("watchEndpointMusicSupportedConfigs", new JSONObject().put("watchEndpointMusicConfig",
+                                new JSONObject().put("musicVideoType", type)))));
+    }
+
+    private static JSONObject panel(JSONObject seed) throws Exception {
+        return new JSONObject().put("contents", new JSONObject().put("playlistPanelRenderer", new JSONObject()
+                .put("contents", new JSONArray().put(new JSONObject().put("playlistPanelVideoRenderer", seed)))));
+    }
+
+    @Test public void songTrackFindsItsMusicVideoThroughTheCounterpart() throws Exception {
+        JSONObject seed = panelVideo("AUDIO1", "MUSIC_VIDEO_TYPE_ATV").put("counterpart", new JSONArray().put(new JSONObject()
+                .put("counterpartRenderer", new JSONObject().put("playlistPanelVideoRenderer", panelVideo("CLIP1", "MUSIC_VIDEO_TYPE_OMV")))));
+        responses.put("next", panel(seed));
+        assertEquals("CLIP1", YtMusicApi.videoCounterpart("AUDIO1"));
+    }
+
+    @Test public void aMusicVideoNeedsNoCounterpart() throws Exception {
+        responses.put("next", panel(panelVideo("CLIP1", "MUSIC_VIDEO_TYPE_OMV")));
+        assertNull(YtMusicApi.videoCounterpart("CLIP1"));
+    }
+
     @Test public void radioReturnsOnlySongsWithArtistAndAlbum() throws Exception {
         responses.put("next", fixture("next"));
         List<SearchResult> songs = YtMusicApi.related("NgEJ9gMxP90", 25);

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Funde el video con el fondo del reproductor: del color de fondo abajo a transparente arriba. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="90"
+        android:startColor="@color/bg_primary"
+        android:endColor="#00000000"/>
+</shape>

@@ -2,5 +2,10 @@
     xmlns:tools="http://schemas.android.com/tools">
     <application android:label="MusicBox verificación" tools:replace="android:label">
         <activity android:name=".PreviewMainActivity" android:exported="true" android:screenOrientation="portrait" />
+        <activity
+            android:name=".BluetoothRouteProbeActivity"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:screenOrientation="portrait" />
     </application>
 </manifest>

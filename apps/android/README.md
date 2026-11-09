@@ -78,6 +78,33 @@ Las pruebas de dispositivo usan exclusivamente `verification`
 (`cl.arichard.descargador.verification`), sin cuenta ni configuración Firebase real.
 Esta variante incluye x86_64 para ejecutar Python y FFmpeg de forma nativa en el
 emulador; las arquitecturas de publicación para teléfonos se mantienen iguales.
+
+## Enlaces compartidos y audio Bluetooth
+
+Android recibe los enlaces con `ACTION_SEND` y los deriva según su contenido:
+artistas y canciones abren la búsqueda, playlists entran al importador, y los
+enlaces directos de YouTube o SoundCloud conservan el flujo de descarga. Las
+canciones de Spotify, Deezer y Apple Music se resuelven mediante búsqueda en vez
+de enviar sus URLs al descargador.
+
+La reproducción usa la ruta de audio elegida por Android (`USAGE_MEDIA`, sin fijar
+una salida preferida). Al cambiar la ruta, espera a que el sistema se estabilice y
+mantiene la reproducción si hay otra salida personal; pausa si termina en el
+altavoz o no queda una salida de reemplazo. En Android 9 o posterior consulta la
+ruta efectiva del reproductor; en versiones anteriores usa las salidas conectadas.
+La instrumentación Android redirige el audio a `remote-submix`, así que no sirve
+para verificar la ruta física. Para la prueba real, conecta la primera salida e
+inicia este observador exclusivo de `verification`; cambia a la segunda cuando la
+pantalla indique que está reproduciendo:
+
+```powershell
+adb shell am start -n cl.arichard.descargador.verification/cl.arichard.descargador.BluetoothRouteProbeActivity
+adb logcat -s BluetoothRouteProbe
+```
+
+La prueba usa audio sintético silencioso en almacenamiento privado y requiere un
+dispositivo físico con dos salidas Bluetooth disponibles. La comprobación sigue
+siendo necesaria antes de publicar una versión estable.
 Con un dispositivo de verificación preparado, ejecuta `connectedVerificationAndroidTest`.
 Las pruebas de biblioteca necesitan audios sintéticos en la carpeta privada Music
 de ese paquete; las de red necesitan conexión y permisos de notificaciones.
@@ -137,6 +164,14 @@ con música local y permisos de biblioteca concedidos.
 OCR, reproducción automática online, continuidad de descargas y cierre desde recientes.
 Ambas clases abren `PreviewMainActivity`, disponible exclusivamente en **verification**
 (`cl.arichard.descargador.verification`), sin configuración Firebase ni sincronización.
+`SharedMusicDeviceTest` comprueba con intents `ACTION_SEND` que artistas, canciones de
+Spotify y playlists abren su flujo correspondiente sin descargar ni importar datos.
+Para ejecutarla en un emulador o dispositivo de verificación:
+
+```powershell
+.\gradlew.bat :app:connectedVerificationAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=cl.arichard.descargador.SharedMusicDeviceTest'
+```
+
 La variante **preview** puede tener una sesión real guardada; no se utiliza para estas
 pruebas. La prueba
 de eliminación solo acepta `/storage/emulated/0/Music/zz_prueba_borrar_[123].mp3`:

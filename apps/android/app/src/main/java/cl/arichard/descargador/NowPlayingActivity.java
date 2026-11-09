@@ -72,6 +72,13 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private cl.arichard.descargador.player.QueueSheet queuePanel;
     private final cl.arichard.descargador.util.SongDeleter.SystemPrompt deletePrompt = cl.arichard.descargador.util.SongDeleter.prompter(this);
 
+    private View playerTopBar, artworkArea, discContainer, videoFadeTop, videoFadeBottom, playingFromBlock;
+    private androidx.cardview.widget.CardView videoCardView;
+    /** Pantalla completa del video (como en YouTube Music): llena la parte alta y se funde con el fondo. */
+    private boolean immersive;
+    private float immersiveProgress;
+    private android.animation.ValueAnimator immersiveAnimator;
+
     private boolean isMp3Mode = true;
     private boolean isUserSeeking = false;
     private boolean isDownloading = false;
@@ -98,6 +105,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         setupQueueSheet();
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
+                if (immersive) { setVideoFullscreen(false); return; }
                 if (queueBehavior != null && queueBehavior.getState() == com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED) {
                     queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
                 } else closeWithSlideDown();
@@ -122,6 +130,16 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         containerLyrics = findViewById(R.id.containerLyrics);
         videoHostLayout = findViewById(R.id.videoHostLayout);
         imgNowPlayingCover = findViewById(R.id.imgNowPlayingCover);
+        playerTopBar = findViewById(R.id.playerTopBar);
+        artworkArea = findViewById(R.id.playerArtworkArea);
+        discContainer = findViewById(R.id.discContainer);
+        videoCardView = findViewById(R.id.videoCardView);
+        videoFadeTop = findViewById(R.id.videoFadeTop);
+        videoFadeBottom = findViewById(R.id.videoFadeBottom);
+        playingFromBlock = findViewById(R.id.playingFromBlock);
+        // La portada y el video se acomodan al espacio libre cada vez que este cambia (rotación, cola, barras).
+        artworkArea.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> layoutArtwork());
+        videoCardView.setOnClickListener(v -> setVideoFullscreen(!immersive));
 
         lyricsHeaderRow = findViewById(R.id.lyricsHeaderRow);
         txtLyricsBadge = findViewById(R.id.txtLyricsBadge);
@@ -240,6 +258,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             containerCoverArt.setVisibility(View.GONE);
             containerVideoPlayer.setVisibility(View.INVISIBLE);
             if (containerLyrics != null) containerLyrics.setVisibility(View.VISIBLE);
+            setImmersiveNow(false);
         } else if (isMp3Mode) {
             tabSelectorMp3.setBackgroundResource(R.drawable.bg_chip_active);
             tabSelectorMp3.setTextColor(activeText);
@@ -254,6 +273,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             containerCoverArt.setVisibility(View.VISIBLE);
             containerVideoPlayer.setVisibility(View.INVISIBLE); // Keep measured and rendering
             if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
+            setImmersiveNow(false);
         } else {
             tabSelectorMp4.setBackgroundResource(R.drawable.bg_chip_active);
             tabSelectorMp4.setTextColor(activeText);
@@ -268,7 +288,91 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             containerCoverArt.setVisibility(View.GONE);
             containerVideoPlayer.setVisibility(View.VISIBLE);
             if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
+            artworkArea.post(this::layoutArtwork);
         }
+    }
+
+    private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    /** Portada en un marco cuadrado y video con su proporción real, según el espacio libre. */
+    private void layoutArtwork() {
+        int width = artworkArea.getWidth(), height = artworkArea.getHeight();
+        if (width <= 0 || height <= 0) return;
+        int side = Math.min(width, height);
+        FrameLayout.LayoutParams disc = (FrameLayout.LayoutParams) discContainer.getLayoutParams();
+        if (disc.width != side || disc.height != side || disc.gravity != android.view.Gravity.CENTER) {
+            disc.width = side; disc.height = side; disc.gravity = android.view.Gravity.CENTER;
+            discContainer.setLayoutParams(disc);
+        }
+        applyVideoFrame(immersiveProgress);
+    }
+
+    /**
+     * Coloca el recuadro del video entre dos estados: [progress] 0 = proporción real del video a todo el ancho, centrado;
+     * 1 = pantalla completa, desde el borde superior hasta el título, con sombra arriba y fundido abajo.
+     */
+    private void applyVideoFrame(float progress) {
+        int areaWidth = artworkArea.getWidth(), areaHeight = artworkArea.getHeight();
+        if (areaWidth <= 0 || areaHeight <= 0 || txtTitle.getHeight() <= 0) return;
+        PlayerManager player = PlayerManager.getInstance();
+        float aspect = player.getVideoAspect();
+        int screenWidth = getResources().getDisplayMetrics().widthPixels;
+        int pad = dp(20);
+        // Reposo: a todo el ancho de la pantalla (el video se pega a los bordes), sin pasarse del alto libre.
+        int width0 = Math.min(areaWidth + 2 * pad, Math.round(areaHeight * aspect));
+        int height0 = Math.round(width0 / aspect);
+        int left0 = (areaWidth - width0) / 2, top0 = (areaHeight - height0) / 2;
+        // Pantalla completa: se mide en pantalla y se pasa a coordenadas del contenedor.
+        int[] container = new int[2], title = new int[2];
+        containerVideoPlayer.getLocationInWindow(container);
+        txtTitle.getLocationInWindow(title);
+        int left1 = -container[0], top1 = -container[1];
+        int width1 = screenWidth, height1 = Math.max(areaHeight, title[1]);
+        float t = Math.max(0f, Math.min(1f, progress));
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) videoCardView.getLayoutParams();
+        lp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+        lp.leftMargin = Math.round(left0 + (left1 - left0) * t);
+        lp.topMargin = Math.round(top0 + (top1 - top0) * t);
+        lp.width = Math.round(width0 + (width1 - width0) * t);
+        lp.height = Math.round(height0 + (height1 - height0) * t);
+        videoCardView.setLayoutParams(lp);
+        // Un video que no llena el ancho (p. ej. cuadrado) conserva las esquinas redondeadas en reposo.
+        float radius0 = width0 >= areaWidth + 2 * pad - 2 ? 0f : dp(20);
+        videoCardView.setRadius(radius0 * (1f - t));
+        videoFadeTop.setAlpha(t);
+        videoFadeBottom.setAlpha(t);
+        playingFromBlock.setAlpha(1f - t);
+        // La barra superior queda por encima del video cuando este sube hasta el borde.
+        playerTopBar.setTranslationZ(t > 0f ? dp(24) : 0f);
+    }
+
+    private void setVideoFullscreen(boolean on) {
+        if (on == immersive || isMp3Mode) return;
+        immersive = on;
+        if (immersiveAnimator != null) immersiveAnimator.cancel();
+        PlayerManager player = PlayerManager.getInstance();
+        if (on) player.setVideoFill(true);
+        immersiveAnimator = android.animation.ValueAnimator.ofFloat(immersiveProgress, on ? 1f : 0f);
+        immersiveAnimator.setDuration(320);
+        immersiveAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        immersiveAnimator.addUpdateListener(a -> { immersiveProgress = (float) a.getAnimatedValue(); applyVideoFrame(immersiveProgress); });
+        immersiveAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            private boolean cancelled;
+            @Override public void onAnimationCancel(android.animation.Animator animation) { cancelled = true; }
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (!cancelled && !immersive) PlayerManager.getInstance().setVideoFill(false);
+            }
+        });
+        immersiveAnimator.start();
+    }
+
+    /** Sale de la pantalla completa sin animar (al volver a MP3 o al cerrar). */
+    private void setImmersiveNow(boolean on) {
+        if (immersiveAnimator != null) immersiveAnimator.cancel();
+        immersive = on;
+        immersiveProgress = on ? 1f : 0f;
+        PlayerManager.getInstance().setVideoFill(on);
+        if (artworkArea != null) applyVideoFrame(immersiveProgress);
     }
 
     private void setupPlayerGestures() {
@@ -676,7 +780,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Esta canción no tiene video disponible"), Toast.LENGTH_SHORT).show();
         }
     }
-    @Override public void onVideoAvailabilityChanged(boolean available) { updateVideoAvailability(); }
+    @Override public void onVideoAvailabilityChanged(boolean available) { updateVideoAvailability(); layoutArtwork(); }
 
     private void updatePlaybackState(boolean isPlaying) {
         btnPlayPauseIcon.setImageResource(isPlaying ? R.drawable.ic_pause : R.drawable.ic_play_arrow);

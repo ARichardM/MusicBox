@@ -33,7 +33,7 @@ public class SharedSongSearchTest {
         Intent routed = SharedSongSearch.searchIntent(RuntimeEnvironment.getApplication(), shared,
                 "Tema by Artista https://shazam.com/track/123/tema");
         assertNotNull(routed);
-        assertEquals("cl.arichard.descargador.MainActivity", routed.getComponent().getClassName());
+        assertEquals("cl.arichard.descargador.PreviewMainActivity", routed.getComponent().getClassName());
         assertEquals("Tema Artista", routed.getStringExtra(Intent.EXTRA_TEXT));
         assertTrue(routed.getBooleanExtra(SharedSongSearch.EXTRA_SEARCH, false));
         assertTrue((routed.getFlags() & Intent.FLAG_ACTIVITY_SINGLE_TOP) != 0);

@@ -495,6 +495,7 @@ public class PlaylistManager {
             if (resolved == null) resolved = localByPath.get(entry);
             if (resolved == null) {
                 SearchResult result = getOnlineTrack(entry);
+                if (result != null) cl.arichard.descargador.model.Song.rememberArt(result.getId(), result.getThumbnailUrl());
                 if (result != null) resolved = new cl.arichard.descargador.model.Song(0, result.getTitle(), result.getChannel(),
                         "YouTube", result.getDurationSeconds() * 1000L, "youtube:" + result.getId(), "YouTube", 0);
             }

@@ -12,11 +12,21 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28, application = Application.class)
 public class KnownLengthTest {
-    @Test public void prefersYtDlpThenApproximateThenTheLinkParameter() throws Exception {
+    @Test public void prefersYtDlpThenTheLinkParameterAndIgnoresTheApproximateSize() throws Exception {
         String link = "https://r1.googlevideo.com/videoplayback?id=a&clen=5000&mime=audio";
         assertEquals(7000, PlayerManager.knownLength(new JSONObject().put("filesize", 7000), link));
-        assertEquals(6000, PlayerManager.knownLength(new JSONObject().put("filesize_approx", 6000), link));
+        // filesize_approx es una estimación: si el enlace trae el tamaño exacto manda este.
+        assertEquals(5000, PlayerManager.knownLength(new JSONObject().put("filesize_approx", 6000), link));
         assertEquals(5000, PlayerManager.knownLength(new JSONObject(), link));
+        // Sin tamaño exacto no se usa la estimación: devuelve 0 para que el reproductor lo compruebe con el servidor.
+        assertEquals(0, PlayerManager.knownLength(new JSONObject().put("filesize_approx", 6000), "https://x/y?id=a"));
+    }
+
+    @Test public void aTinyFileForALongSongIsADecoyAndIsRejected() {
+        assertTrue(PlayerManager.isImpossiblySmall(99_810, 185));       // el caso real: 97 KB para 3 minutos
+        assertFalse(PlayerManager.isImpossiblySmall(2_998_000, 185));   // audio normal (~2,9 MB)
+        assertFalse(PlayerManager.isImpossiblySmall(99_810, 20));       // un clip corto sí puede ser pequeño
+        assertFalse(PlayerManager.isImpossiblySmall(0, 185));           // tamaño desconocido: no se descarta
     }
 
     @Test public void unknownSizeReturnsZeroSoTheCallerCanProbe() throws Exception {

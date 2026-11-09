@@ -46,6 +46,16 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         this.listener = listener;
     }
 
+    /** Pestaña de la búsqueda ("songs", "videos" o "all"): decide la forma del marco de la imagen. */
+    private String filter = "songs";
+
+    public void setFilter(String value) {
+        String next = value == null ? "songs" : value;
+        if (next.equals(filter)) return;
+        filter = next;
+        notifyDataSetChanged();
+    }
+
     public void setDownloadedIds(Set<String> ids) {
         downloadedIds.clear();
         if (ids != null) downloadedIds.addAll(ids);
@@ -181,6 +191,13 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         holder.txtTitle.setText(item.getTitle());
         holder.txtChannel.setText(item.getChannel() + " • " + item.getFormattedDuration());
 
+        // Canciones: marco cuadrado (la portada del álbum). Videos: 16:9. En "Todo" se distingue por la imagen.
+        float density = context.getResources().getDisplayMetrics().density;
+        boolean wide = "videos".equals(filter) || ("all".equals(filter) && item.getThumbnailUrl() != null
+                && item.getThumbnailUrl().contains("ytimg.com/vi/"));
+        ViewGroup.LayoutParams frame = holder.thumbFrame.getLayoutParams();
+        int frameWidth = Math.round((wide ? 110 : 62) * density);
+        if (frame.width != frameWidth) { frame.width = frameWidth; holder.thumbFrame.setLayoutParams(frame); }
         ImageLoader.getInstance().load(item.getThumbnailUrl(), holder.imgThumbnail);
 
         boolean isDownloading = downloadingIds.contains(item.getId());
@@ -272,8 +289,19 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         ImageView btnPlay, btnFavorite, imgDownloaded;
         cl.arichard.descargador.util.LoadingRingView progressDownload;
 
+        View thumbFrame;
+
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
+            thumbFrame = itemView.findViewById(R.id.thumbFrame);
+            // Esquinas redondeadas del marco de la portada (recorta también la marca de descarga y el botón).
+            final float radius = 10 * itemView.getResources().getDisplayMetrics().density;
+            thumbFrame.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                }
+            });
+            thumbFrame.setClipToOutline(true);
             imgThumbnail = itemView.findViewById(R.id.imgThumbnail);
             txtTitle = itemView.findViewById(R.id.txtResultTitle);
             txtChannel = itemView.findViewById(R.id.txtResultChannel);

@@ -30,6 +30,8 @@ import java.util.regex.Pattern;
 public final class LyricsFetcher {
     private static final String LRCLIB_BASE = "https://lrclib.net/api";
     private static final Pattern LRC_TIME_RE = Pattern.compile("\\[(\\d{1,3}):(\\d{2})(?:[.:](\\d{1,3}))?]");
+    /** Marcas de tiempo por palabra del LRC extendido («<00:22.82>You <00:23.23>know»): se quitan del texto visible. */
+    private static final Pattern LRC_WORD_TIME_RE = Pattern.compile("<\\d{1,3}:\\d{2}(?:[.:]\\d{1,3})?>");
     private static final Pattern LRC_OFFSET_RE = Pattern.compile("(?i)^\\[offset:\\s*([+-]?\\d+)\\s*]$");
     private static final Pattern LRC_META_RE = Pattern.compile("^\\[[a-zA-Z]{2,12}:.*]$");
     private static final Pattern NOISE_BRACKETS_RE = Pattern.compile(
@@ -149,6 +151,7 @@ public final class LyricsFetcher {
             }
             String text = stripped.substring(lastEnd).trim();
             text = LRC_TIME_RE.matcher(text).replaceAll("").trim();
+            text = MULTI_SPACE_RE.matcher(LRC_WORD_TIME_RE.matcher(text).replaceAll("")).replaceAll(" ").trim();
             for (long stamp : stamps) {
                 long adjusted = Math.max(0L, stamp - offsetMs);
                 entries.add(new Line(adjusted, text));
@@ -189,6 +192,7 @@ public final class LyricsFetcher {
             String text = line.trim();
             if (LRC_META_RE.matcher(text).matches()) continue;
             text = LRC_TIME_RE.matcher(text).replaceAll("").trim();
+            text = MULTI_SPACE_RE.matcher(LRC_WORD_TIME_RE.matcher(text).replaceAll("")).replaceAll(" ").trim();
             if (text.isEmpty()) {
                 if (!prevBlank) {
                     out.add(new Line(-1L, ""));

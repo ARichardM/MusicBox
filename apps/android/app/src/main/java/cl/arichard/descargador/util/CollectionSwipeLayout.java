@@ -40,8 +40,10 @@ public final class CollectionSwipeLayout extends FrameLayout {
     private boolean claim(MotionEvent event) {
         if (!isSwipeEnabled() || event.getPointerCount() != 1 || vertical) return false;
         float dx = Math.abs(event.getRawX() - downX), dy = Math.abs(event.getRawY() - downY);
-        if (!horizontal && Math.max(dx, dy) > slop * 2f) {
-            if (dx > dy * 1.35f) horizontal = true;
+        // Arranca casi en cuanto el dedo se mueve (antes hacía falta el doble de recorrido) y tolera trazos algo
+        // diagonales, para que el gesto responda a la primera sin quitarle el scroll vertical a la lista.
+        if (!horizontal && Math.max(dx, dy) > slop * 1.1f) {
+            if (dx > dy * 1.2f) horizontal = true;
             else vertical = true;
         }
         return horizontal;
@@ -66,8 +68,9 @@ public final class CollectionSwipeLayout extends FrameLayout {
             int direction = distance < 0 ? 1 : -1;
             velocity.computeCurrentVelocity(1000);
             float speed = velocity.getXVelocity();
-            boolean enoughDistance = Math.abs(distance) > getWidth() * 0.17f;
-            boolean enoughSpeed = Math.abs(speed) > 850f && Math.signum(speed) == Math.signum(distance);
+            boolean enoughDistance = Math.abs(distance) > getWidth() * 0.14f;
+            boolean enoughSpeed = Math.abs(speed) > 700f && Math.signum(speed) == Math.signum(distance)
+                    && Math.abs(distance) > 24 * getResources().getDisplayMetrics().density;
             boolean committed = listener.canNavigate(direction) && (enoughDistance || enoughSpeed);
             listener.onRelease(direction, committed, distance, speed);
             reset(); return true;

@@ -248,6 +248,7 @@ public final class YtMusicApi {
             duration = seconds(text(renderer == null ? null : renderer.optJSONObject("text")));
         }
         String thumb = bestThumbnail(row.optJSONObject("thumbnail"));
+        cl.arichard.descargador.model.Song.rememberArt(id, thumb);
         return new SearchResult(id, title, artist.isEmpty() ? fallbackArtist : artist, duration,
                 thumb.isEmpty() ? fallbackThumb : thumb, "https://www.youtube.com/watch?v=" + id);
     }
@@ -408,6 +409,11 @@ public final class YtMusicApi {
 
     /** Todas las canciones de una lista (p. ej. "todas las canciones" de un artista), con paginación. */
     public static List<SearchResult> playlist(String id, String artist) throws Exception {
+        return playlist(id, artist, false);
+    }
+
+    /** Con {@code allowVideos} también trae videoclips y videos subidos: al importar una playlist ninguna debe perderse. */
+    public static List<SearchResult> playlist(String id, String artist, boolean allowVideos) throws Exception {
         JSONObject data = post("browse", new JSONObject().put("browseId", id));
         List<SearchResult> songs = new ArrayList<>();
         Set<String> seen = new HashSet<>(), tokens = new HashSet<>();
@@ -419,7 +425,7 @@ public final class YtMusicApi {
             for (int i = 0; i < items.length(); i++) {
                 JSONObject item = items.optJSONObject(i);
                 if (item == null) continue;
-                SearchResult song = trackFromRow(item.optJSONObject("musicResponsiveListItemRenderer"), artist, "");
+                SearchResult song = trackFromRow(item.optJSONObject("musicResponsiveListItemRenderer"), artist, "", allowVideos);
                 if (song != null && seen.add(song.getId())) songs.add(song);
                 if (token.isEmpty()) token = firstString(item.optJSONObject("continuationItemRenderer"), "token");
             }
@@ -478,6 +484,42 @@ public final class YtMusicApi {
                 if (sameRecording(title, artist, candidate) || namedIn(title, artist, candidate)) return candidate;
                 if (++checked >= 8) break;
             }
+        }
+        return null;
+    }
+
+    /**
+     * El videoclip de una canción: las pistas de audio de YouTube Music («Songs») traen como "video" solo la portada
+     * fija, y el video real es otro ID. YouTube Music lo indica como {@code counterpart}; si no lo trae, se busca el
+     * mismo título y artista entre los videos. Null si el ID ya es un video o no hay un clip de esa grabación.
+     */
+    public static String videoCounterpart(String videoId) throws Exception {
+        if (videoId == null || videoId.isEmpty()) return null;
+        JSONObject data = post("next", new JSONObject().put("videoId", videoId).put("playlistId", "RDAMVM" + videoId));
+        for (JSONObject seed : all(data, "playlistPanelVideoRenderer")) {
+            if (!videoId.equals(seed.optString("videoId"))) continue;
+            if (!isSong(seed)) return null;   // ya es un videoclip o un video subido
+            Object counterpart = seed.opt("counterpart");
+            String id = firstString(counterpart, "videoId");
+            if (!id.isEmpty() && !id.equals(videoId) && !"MUSIC_VIDEO_TYPE_ATV".equals(firstString(counterpart, "musicVideoType")))
+                return id;
+            String title = text(seed.optJSONObject("title"));
+            List<List<JSONObject>> parts = segments(seed.optJSONObject("longBylineText"));
+            String artist = parts.isEmpty() ? "" : join(parts.get(0));
+            long seconds = seconds(text(seed.optJSONObject("lengthText")));
+            return title.isEmpty() ? null : videoByTitle(videoId, title, artist, seconds);
+        }
+        return null;
+    }
+
+    private static String videoByTitle(String audioId, String title, String artist, long seconds) throws Exception {
+        for (SearchResult video : searchPage((artist.isEmpty() ? "" : artist + " ") + title, "videos", null, 8).songs) {
+            if (video.getId().equals(audioId) || !(sameRecording(title, artist, video) || namedIn(video.getTitle(), video.getChannel(), new SearchResult(audioId, title, artist, seconds, "", ""))))
+                continue;
+            long found = video.getDurationSeconds();
+            // El clip puede durar un poco más (intro, créditos), pero no ser otra versión de la canción.
+            if (seconds > 0 && found > 0 && Math.abs(found - seconds) > Math.max(20, seconds * .15)) continue;
+            return video.getId();
         }
         return null;
     }

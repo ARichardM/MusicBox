@@ -22,6 +22,36 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
  public void updatePlaylists(List<String> names){original.clear();if(names!=null)original.addAll(names);filter("");}
  public void filter(String query){displayed.clear();String q=query==null?"":query.trim().toLowerCase(java.util.Locale.ROOT);for(String n:original)if(q.isEmpty()||n.toLowerCase(java.util.Locale.ROOT).contains(q))displayed.add(n);notifyDataSetChanged();}
  public int getDisplayedCount(){return displayed.size();}
+ /** Playlist recién creada (p. ej. importada): entra con un rebote la próxima vez que se dibuja. */
+ private String arriving="";
+ /** Marca [name] para que aparezca con rebote y devuelve su posición en la lista, o -1 si no se ve. */
+ public int highlightArrival(String name){
+  arriving=name==null?"":name;
+  int index=displayed.indexOf(arriving);
+  if(index>=0)notifyItemChanged(index);
+  return index;
+ }
+ private void playArrival(View row){
+  float density=context.getResources().getDisplayMetrics().density;
+  row.animate().cancel();
+  row.setAlpha(0f);row.setScaleX(.78f);row.setScaleY(.78f);row.setTranslationY(40*density);
+  row.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0f).setDuration(560)
+    .setInterpolator(new android.view.animation.OvershootInterpolator(2.6f)).start();
+  // Dos destellos suaves en el azul de MusicBox, como las canciones recién agregadas.
+  android.graphics.drawable.GradientDrawable glow=new android.graphics.drawable.GradientDrawable();
+  glow.setColor(androidx.core.content.ContextCompat.getColor(context,R.color.accent));
+  glow.setCornerRadius(16*density);glow.setAlpha(0);row.setForeground(glow);
+  android.animation.ValueAnimator pulse=android.animation.ValueAnimator.ofFloat(0f,1f);
+  pulse.setStartDelay(260);pulse.setDuration(1500);
+  pulse.addUpdateListener(a->{float t=(float)a.getAnimatedValue();glow.setAlpha((int)Math.round(70*Math.abs(Math.sin(t*Math.PI*2))*(1f-t)));});
+  pulse.addListener(new android.animation.AnimatorListenerAdapter(){@Override public void onAnimationEnd(android.animation.Animator animation){row.setForeground(null);}});
+  pulse.start();
+ }
+ @Override public void onViewRecycled(@NonNull Holder h){
+  h.itemView.animate().cancel();h.itemView.setAlpha(1f);h.itemView.setScaleX(1f);h.itemView.setScaleY(1f);
+  h.itemView.setTranslationY(0f);h.itemView.setForeground(null);
+  super.onViewRecycled(h);
+ }
  @NonNull @Override public Holder onCreateViewHolder(@NonNull ViewGroup p,int t){return new Holder(LayoutInflater.from(context).inflate(R.layout.item_playlist,p,false));}
  @Override public void onBindViewHolder(@NonNull Holder h,int position){
   String name=displayed.get(position);PlaylistManager pm=PlaylistManager.getInstance(context);
@@ -45,6 +75,7 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
   h.itemView.setOnClickListener(v->{if(listener!=null)listener.onPlaylistClick(name);});
   h.more.setOnClickListener(v->{if(listener!=null)listener.onDeleteClick(name,v);});
   cl.arichard.descargador.util.SafeTap.install(h.more);cl.arichard.descargador.util.SafeTap.installRowTap(h.itemView);
+  if(!arriving.isEmpty()&&arriving.equals(name)){arriving="";playArrival(h.itemView);}
  }
  @Override public int getItemCount(){return displayed.size();}
  static class Holder extends RecyclerView.ViewHolder{
