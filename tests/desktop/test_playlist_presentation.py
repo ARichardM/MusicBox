@@ -90,6 +90,14 @@ class PlaylistPresentationTests(unittest.TestCase):
         from PySide6.QtTest import QTest
         from downloads_controller import DownloadsController
         from importer_controller import ImporterImageProvider
+
+        def wait_for(predicate, timeout_ms=3000):
+            for _ in range(timeout_ms // 20):
+                if predicate():
+                    return True
+                QTest.qWait(20)
+            return predicate()
+
         QQuickStyle.setStyle("Material")
         if os.environ.get("MUSICBOX_UI_PREVIEW_DIR"):
             from PySide6.QtGui import QFont, QFontDatabase
@@ -130,13 +138,19 @@ class PlaylistPresentationTests(unittest.TestCase):
             first, second = areas["Driving"], areas["Chill"]
             start = first.mapToScene(QPointF(first.width() / 2, first.height() / 2)).toPoint()
             end = second.mapToScene(QPointF(second.width() / 2, second.height() / 2)).toPoint()
+            QTest.mouseMove(root, start)
+            self.assertTrue(wait_for(lambda: first.property("containsMouse")), "La tarjeta debe recibir el puntero")
             QTest.mousePress(root, Qt.LeftButton, Qt.NoModifier, start)
-            QTest.qWait(APP.styleHints().mousePressAndHoldInterval() + 100)
-            self.assertTrue(first.property("held"))
-            QTest.mouseMove(root, end, 100)
-            QTest.mouseRelease(root, Qt.LeftButton, Qt.NoModifier, end)
-            QTest.qWait(100)
-            self.assertEqual([row["name"] for row in b.visiblePlaylists], ["Chill", "Driving", "Gym"])
+            destination = start
+            try:
+                self.assertTrue(first.property("pressed"))
+                self.assertTrue(wait_for(lambda: first.property("held"),
+                                         APP.styleHints().mousePressAndHoldInterval() + 2000))
+                QTest.mouseMove(root, end, 100)
+                destination = end
+            finally:
+                QTest.mouseRelease(root, Qt.LeftButton, Qt.NoModifier, destination)
+            self.assertTrue(wait_for(lambda: [row["name"] for row in b.visiblePlaylists] == ["Chill", "Driving", "Gym"]))
             self.assertEqual(root.property("page"), 1, "Arrastrar no abre la playlist")
             root.setProperty("page", 0)
             QTest.qWait(150)
