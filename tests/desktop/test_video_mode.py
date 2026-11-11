@@ -61,11 +61,13 @@ class StreamFormatTests(unittest.TestCase):
 
 
 class BridgeVideoTests(unittest.TestCase):
-    def test_only_youtube_songs_can_be_watched(self):
+    def test_video_mode_requires_a_verified_stream(self):
         with tempfile.TemporaryDirectory() as directory:
             bridge = make_bridge(directory)
             self.assertFalse(bridge.videoAvailable)
             bridge._current = dict(ONLINE)
+            self.assertFalse(bridge.videoAvailable)
+            bridge._apply_video_check(ONLINE["url"], {"url": "https://stream.example/video.mp4"})
             self.assertTrue(bridge.videoAvailable)
             bridge._current = {"path": "C:/musica/a.mp3", "title": "Local"}
             self.assertFalse(bridge.videoAvailable)
@@ -77,6 +79,7 @@ class BridgeVideoTests(unittest.TestCase):
             bridge = make_bridge(directory)
             calls = []
             bridge._current = dict(ONLINE)
+            bridge._apply_video_check(ONLINE["url"], {"url": "https://stream.example/video.mp4"})
             bridge._pending_seek = 42000
             bridge._play_when_ready = False
             bridge._play_online = lambda item, **kwargs: calls.append((dict(item), kwargs))
@@ -119,7 +122,8 @@ class BridgeVideoTests(unittest.TestCase):
             bridge._streamReady.connect(lambda item, source: results.append(source))
             changes = []
             bridge.videoModeChanged.connect(lambda: changes.append(1))
-            with patch.object(module.youtube_streams, "resolve_stream", resolve),                     patch.object(bridge, "_maybe_autoplay"):  # sin red: la reproducción automática no es lo que se prueba
+            with patch.object(module.ytmusic, "playable_video_source", return_value=ONLINE["id"]), \
+                    patch.object(module.youtube_streams, "resolve_stream", resolve), patch.object(bridge, "_maybe_autoplay"):
                 bridge._play_online(dict(ONLINE))
                 self.assertTrue(wait_for(lambda: results))
             self.assertEqual(asked, [True, False])
@@ -137,6 +141,7 @@ class UiTests(unittest.TestCase):
             bridge = make_bridge(directory)
             bridge._user = {"name": "Demostración", "email": "demo@example.invalid"}
             bridge._current = dict(ONLINE)
+            bridge._apply_video_check(ONLINE["url"], {"url": "https://stream.example/video.mp4"})
             engine = QQmlApplicationEngine()
             errors = []
             engine.warnings.connect(lambda warnings: errors.extend(w.toString() for w in warnings))

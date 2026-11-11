@@ -1,5 +1,19 @@
 # Historial de versiones
 
+## 2.4.3 — 11 de noviembre de 2026
+
+### Windows y Android
+
+- Favoritos aparece en la biblioteca al guardar la primera canción. Mantén pulsada una playlist y arrástrala para ordenarla. Desde su menú, «Fijar en Inicio» la agrega a una fila compacta encima de las recomendaciones.
+- Las canciones de «Para esta playlist» responden con un rebote suave al tocarlas. El carrusel mantiene el desplazamiento horizontal por arrastre.
+- Las letras siguen la posición del reproductor durante la reproducción, la pausa y los saltos de tiempo. Si la letra disponible corresponde a otra duración o versión, se muestra como texto cuando hay una coincidencia de título y artista.
+- Los controles de Letra y MP4 aparecen cuando el contenido correspondiente está disponible. Android oculta el selector completo cuando solo queda el modo de audio.
+
+### Android
+
+- Se corrigió el cierre al hacer scroll y cargar más resultados de búsqueda. Los resultados y el indicador de carga se muestran sin superponerse con Inicio.
+- Las novedades del aviso de actualización se desplazan dentro del panel. Al arrastrar hacia abajo, el panel empieza a bajar cuando el texto llega al inicio.
+
 ## 2.4.2 — 8 de noviembre de 2026
 
 - La cuenta guarda el idioma, el tema, el formato y las calidades de descarga. Las carpetas se recuerdan por plataforma.

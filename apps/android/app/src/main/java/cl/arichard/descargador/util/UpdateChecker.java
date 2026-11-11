@@ -15,7 +15,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
+import androidx.core.widget.NestedScrollView;
 import android.widget.TextView;
 import androidx.core.content.FileProvider;
 import com.google.android.material.bottomsheet.BottomSheetBehavior;
@@ -213,7 +213,7 @@ public final class UpdateChecker {
     // ---------------------------------------------------------------- interfaz
 
     /** Un ScrollView que nunca ocupa más de la altura indicada, para que los botones siempre se vean. */
-    private static final class CappedScrollView extends ScrollView {
+    private static final class CappedScrollView extends NestedScrollView {
         private final int maxHeight;
 
         CappedScrollView(Activity activity, int maxHeight) {
@@ -224,7 +224,9 @@ public final class UpdateChecker {
         }
 
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
-            super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(maxHeight, MeasureSpec.AT_MOST));
+            int availableHeight = MeasureSpec.getMode(heightSpec) == MeasureSpec.UNSPECIFIED
+                    ? maxHeight : Math.min(maxHeight, MeasureSpec.getSize(heightSpec));
+            super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(availableHeight, MeasureSpec.AT_MOST));
         }
     }
 
@@ -270,7 +272,7 @@ public final class UpdateChecker {
         fill.run();
         // Las novedades largas se desplazan dentro de su zona; los botones quedan siempre a la vista.
         int screen = activity.getResources().getDisplayMetrics().heightPixels;
-        ScrollView scroll = new CappedScrollView(activity, Math.round(screen * 0.34f));
+        NestedScrollView scroll = new CappedScrollView(activity, Math.round(screen * 0.34f));
         scroll.addView(notesBox);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
         boolean hasMore = notes.size() > brief.size() || !brief.equals(notes);

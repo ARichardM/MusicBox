@@ -20,6 +20,7 @@ public class MainUiState extends ViewModel {
     String searchFilter = "songs";
     boolean loadingMore, hasMoreResults = true;
     String searchContinuation = "";
+    String activePagedSearchQuery = "";
     List<SearchResult> results = new ArrayList<>();
     /** Recomendaciones "Para ti": sobreviven a un giro de pantalla. */
     RecommendationEngine.Result forYou;

@@ -93,6 +93,22 @@
                         android:paddingEnd="16dp"
                         android:paddingTop="12dp">
 
+                        <HorizontalScrollView
+                            android:id="@+id/pinnedPlaylistsScroll"
+                            android:layout_width="match_parent"
+                            android:layout_height="56dp"
+                            android:layout_marginBottom="14dp"
+                            android:fillViewport="true"
+                            android:scrollbars="none"
+                            android:visibility="gone">
+                            <LinearLayout
+                                android:id="@+id/layoutPinnedPlaylists"
+                                android:layout_width="wrap_content"
+                                android:layout_height="match_parent"
+                                android:gravity="center_horizontal"
+                                android:orientation="horizontal" />
+                        </HorizontalScrollView>
+
                         <!-- Section 0: Para ti (recomendaciones) -->
                         <LinearLayout
                             android:id="@+id/sectionForYou"

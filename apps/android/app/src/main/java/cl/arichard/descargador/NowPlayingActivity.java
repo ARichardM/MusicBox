@@ -24,6 +24,8 @@ import com.yausername.youtubedl_android.YoutubeDLRequest;
 import java.io.File;
 
 public class NowPlayingActivity extends AppCompatActivity implements PlayerManager.PlaybackListener {
+    private static final java.util.concurrent.ExecutorService LYRICS_IO =
+            java.util.concurrent.Executors.newFixedThreadPool(2);
 
     public static final String EXTRA_VIDEO_ID = "extra_video_id";
     public static final String EXTRA_URL = "extra_url";
@@ -47,10 +49,14 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private LyricsAdapter lyricsAdapter;
     private boolean isLyricsMode = false;
     private boolean userScrollingLyrics = false;
-    private String loadedLyricsSongKey = "";
+    private String lyricsSongKey = "";
+    private int lyricsDurationSeconds = -1;
     private int lyricsRequestToken = 0;
+    private java.util.concurrent.Future<?> lyricsRequest;
     private cl.arichard.descargador.util.LyricsFetcher.Result currentLyrics = cl.arichard.descargador.util.LyricsFetcher.Result.empty();
     private int activeLyricsIndex = -1;
+    private final Runnable lyricsTick = this::syncLyrics;
+    private boolean screenResumed;
     private final Runnable resumeLyricsFollowRunnable = () -> {
         userScrollingLyrics = false;
         if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.GONE);
@@ -188,8 +194,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         findViewById(R.id.btnPlayerMore).setOnClickListener(this::showPlayerMenu);
         btnBack.setOnClickListener(v -> closeWithSlideDown());
 
-        Song openingSong = PlayerManager.getInstance().getCurrentSong();
-        if (openingSong != null && openingSong.getPath().toLowerCase(java.util.Locale.ROOT).endsWith(".mp4")) isMp3Mode = false;
+        PlayerManager openingPlayer = PlayerManager.getInstance();
+        if (openingPlayer.hasVideo() && !openingPlayer.isOnlineTrack()) isMp3Mode = false;
         tabSelectorMp3.setOnClickListener(v -> { isLyricsMode = false; setMediaMode(true); });
         tabSelectorMp4.setOnClickListener(v -> { isLyricsMode = false; setMediaMode(false); });
         if (tabSelectorLyrics != null) {
@@ -497,6 +503,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     @Override
     protected void onResume() {
         super.onResume();
+        screenResumed = true;
         PlayerManager.getInstance().addListener(this);
 
 
@@ -516,6 +523,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     @Override
     protected void onDestroy() {
+        lyricsRequestToken++;
+        if (lyricsRequest != null) lyricsRequest.cancel(true);
         if (recyclerLyrics != null) recyclerLyrics.removeCallbacks(resumeLyricsFollowRunnable);
         if (queuePanel != null) queuePanel.detach();
         // Al salir de la pantalla las próximas canciones vuelven a pedir solo audio (se ahorran datos).
@@ -525,6 +534,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     @Override
     protected void onPause() {
+        screenResumed = false;
+        recyclerLyrics.removeCallbacks(lyricsTick);
         PlayerManager.getInstance().savePosition();
         super.onPause();
         PlayerManager.getInstance().removeListener(this);
@@ -535,6 +546,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         if (song == null) { finish(); return; }
         onlineVideoId = song.getVideoId();
         onlineUrl = song.isOnline() ? "https://www.youtube.com/watch?v=" + onlineVideoId : null;
+        PlayerManager.getInstance().checkVideoAvailability();
         updateVideoAvailability();
         txtTitle.setText(song.getTitle());
         txtArtist.setText(song.getArtist());
@@ -546,16 +558,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), imgNowPlayingCover);
         }
 
-        String nextKey = songKey(song);
-        if (!nextKey.equals(loadedLyricsSongKey)) {
-            loadedLyricsSongKey = "";
-            activeLyricsIndex = -1;
-            currentLyrics = cl.arichard.descargador.util.LyricsFetcher.Result.empty();
-            if (lyricsAdapter != null) lyricsAdapter.setData(java.util.Collections.emptyList(), false, -1);
-            if (isLyricsMode) {
-                loadLyricsForSong(song, false);
-            }
-        }
+        loadLyricsForSong(song, false);
     }
 
     private static String songKey(Song song) {
@@ -572,7 +575,6 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
                 userScrollingLyrics = false;
                 if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.GONE);
                 PlayerManager.getInstance().seekTo((int) line.timeMs);
-                updateActiveLyricsLine((int) line.timeMs);
             }
         });
         recyclerLyrics.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(this));
@@ -606,30 +608,30 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     }
 
     private void toggleLyricsMode() {
+        if (!isLyricsMode && currentLyrics.lines.isEmpty()) return;
         isLyricsMode = !isLyricsMode;
         setMediaMode(isMp3Mode);
-        if (isLyricsMode) {
-            Song current = PlayerManager.getInstance().getCurrentSong();
-            if (current != null) {
-                if (!songKey(current).equals(loadedLyricsSongKey)) {
-                    loadLyricsForSong(current, false);
-                } else {
-                    updateActiveLyricsLine(PlayerManager.getInstance().getCurrentPosition());
-                    scrollToActiveLyric(false);
-                }
-            }
-        }
+        syncLyrics();
+        if (isLyricsMode) recyclerLyrics.post(() -> scrollToActiveLyric(false));
     }
 
     private void loadLyricsForSong(Song song, boolean force) {
         if (song == null || recyclerLyrics == null) return;
         final String key = songKey(song);
-        if (!force && key.equals(loadedLyricsSongKey) && !currentLyrics.isEmpty()) {
-            applyLyricsResult(currentLyrics);
-            return;
-        }
+        int playbackDuration = PlayerManager.getInstance().getDuration();
+        int duration = (int) Math.round((playbackDuration > 0 ? playbackDuration : song.getDuration()) / 1000.0);
+        if (!force && key.equals(lyricsSongKey) && Math.abs(duration - lyricsDurationSeconds) <= 1
+                && (duration > 0) == (lyricsDurationSeconds > 0)) return;
         if (force) cl.arichard.descargador.util.LyricsFetcher.clearCache();
         final int token = ++lyricsRequestToken;
+        lyricsSongKey = key;
+        lyricsDurationSeconds = duration;
+        currentLyrics = cl.arichard.descargador.util.LyricsFetcher.Result.empty();
+        activeLyricsIndex = -1;
+        recyclerLyrics.removeCallbacks(lyricsTick);
+        recyclerLyrics.removeCallbacks(resumeLyricsFollowRunnable);
+        lyricsAdapter.setData(java.util.Collections.emptyList(), false, -1);
+        updateModeSelectors();
         userScrollingLyrics = false;
         if (btnLyricsFollow != null) btnLyricsFollow.setVisibility(View.GONE);
         if (txtLyricsBadge != null) txtLyricsBadge.setVisibility(View.GONE);
@@ -638,15 +640,23 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         layoutLyricsEmpty.setVisibility(View.GONE);
         layoutLyricsLoading.setVisibility(View.VISIBLE);
 
-        new Thread(() -> {
-            cl.arichard.descargador.util.LyricsFetcher.Result result = cl.arichard.descargador.util.LyricsFetcher.find(song);
+        if (lyricsRequest != null) lyricsRequest.cancel(true);
+        lyricsRequest = LYRICS_IO.submit(() -> {
+            cl.arichard.descargador.util.LyricsFetcher.Result result = cl.arichard.descargador.util.LyricsFetcher.find(
+                    song.getTitle(), song.getArtist(), song.getAlbum(), duration, song.getVideoId(), song.getPath());
             runOnUiThread(() -> {
-                if (isFinishing() || token != lyricsRequestToken) return;
-                loadedLyricsSongKey = key;
-                currentLyrics = result == null ? cl.arichard.descargador.util.LyricsFetcher.Result.empty() : result;
+                if (isFinishing() || isDestroyed() || token != lyricsRequestToken
+                        || !key.equals(songKey(PlayerManager.getInstance().getCurrentSong()))) return;
+                currentLyrics = result;
                 applyLyricsResult(currentLyrics);
+                updateModeSelectors();
+                if (isLyricsMode && currentLyrics.lines.isEmpty()) {
+                    isLyricsMode = false;
+                    setMediaMode(isMp3Mode);
+                }
+                syncLyrics();
             });
-        }, "MusicBoxLyrics").start();
+        });
     }
 
     private void applyLyricsResult(cl.arichard.descargador.util.LyricsFetcher.Result result) {
@@ -697,6 +707,19 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             if (isLyricsMode && !userScrollingLyrics && next >= 0) {
                 scrollToActiveLyric(true);
             }
+        }
+    }
+
+    private void syncLyrics() {
+        recyclerLyrics.removeCallbacks(lyricsTick);
+        if (!screenResumed || !isLyricsMode || !currentLyrics.synced) return;
+        PlayerManager player = PlayerManager.getInstance();
+        int position = player.getCurrentPosition();
+        updateActiveLyricsLine(position);
+        int nextLine = activeLyricsIndex + 1;
+        if (player.isPlaying() && nextLine < currentLyrics.lines.size()) {
+            long untilNext = currentLyrics.lines.get(nextLine).timeMs - position;
+            recyclerLyrics.postDelayed(lyricsTick, Math.max(16L, Math.min(100L, untilNext)));
         }
     }
 
@@ -757,7 +780,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Ver alternativas")).setIcon(R.drawable.ic_search).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongAlternativesSheet.show(this, song, () -> updateSongInfo(PlayerManager.getInstance().getCurrentSong())); return true;
         });
-        menu.getMenu().add(cl.arichard.descargador.util.Tr.t(isLyricsMode ? "Ocultar letra" : "Ver letra")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
+        if (!currentLyrics.lines.isEmpty()) menu.getMenu().add(cl.arichard.descargador.util.Tr.t(isLyricsMode ? "Ocultar letra" : "Ver letra")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
             toggleLyricsMode(); return true;
         });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Información de la canción")).setIcon(R.drawable.ic_info).setOnMenuItemClickListener(item -> {
@@ -773,12 +796,21 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         menu.show();
     }
     private void updateVideoAvailability() {
-        boolean available = PlayerManager.getInstance().canShowVideo();
-        tabSelectorMp4.setVisibility(available ? View.VISIBLE : View.GONE);
-        if (!available && !isMp3Mode) {
+        PlayerManager player = PlayerManager.getInstance();
+        boolean available = player.canShowVideo();
+        updateModeSelectors();
+        if (!available && !isMp3Mode && !player.isVideoMode()) {
             setMediaMode(true);
             Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Esta canción no tiene video disponible"), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void updateModeSelectors() {
+        boolean video = PlayerManager.getInstance().canShowVideo();
+        boolean lyrics = !currentLyrics.lines.isEmpty();
+        tabSelectorMp4.setVisibility(video ? View.VISIBLE : View.GONE);
+        tabSelectorLyrics.setVisibility(lyrics ? View.VISIBLE : View.GONE);
+        findViewById(R.id.playerSelectorPill).setVisibility(video || lyrics ? View.VISIBLE : View.GONE);
     }
     @Override public void onVideoAvailabilityChanged(boolean available) { updateVideoAvailability(); layoutArtwork(); }
 
@@ -803,7 +835,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             txtCurrentTime.setText("00:00");
             txtTotalTime.setText("00:00");
         }
-        updateActiveLyricsLine(pos);
+        if (dur > 0) loadLyricsForSong(PlayerManager.getInstance().getCurrentSong(), false);
+        syncLyrics();
     }
 
     private void updateShuffleButton(boolean active) {
@@ -870,7 +903,10 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
 
     @Override
     public void onPlaybackStateChanged(boolean isPlaying) {
-        runOnUiThread(() -> updatePlaybackState(isPlaying));
+        runOnUiThread(() -> {
+            updatePlaybackState(isPlaying);
+            syncLyrics();
+        });
     }
 
     @Override

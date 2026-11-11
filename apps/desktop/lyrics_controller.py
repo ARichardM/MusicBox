@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, QTimer, Qt, Signal, Slot
 
 import i18n
 import lyrics
@@ -23,7 +23,7 @@ class LyricsController(QObject):
         self._state = "idle"          # idle, loading, ready, instrumental, empty, error
         self._track = {}
         self._identity = ""
-        self._loaded_identity = ""
+        self._request_signature = None
         self._lines = []
         self._synced = False
         self._source = ""
@@ -31,6 +31,10 @@ class LyricsController(QObject):
         self._error = ""
         self._active_index = -1
         self._generation = 0
+        self._clock = QTimer(self)
+        self._clock.setSingleShot(True)
+        self._clock.setTimerType(Qt.TimerType.PreciseTimer)
+        self._clock.timeout.connect(self._sync_position)
         self._loaded.connect(self._apply)
         if bridge is not None:
             if hasattr(bridge, "playerChanged"):
@@ -38,6 +42,7 @@ class LyricsController(QObject):
             player = getattr(bridge, "_player", None)
             if player is not None and hasattr(player, "positionChanged"):
                 player.positionChanged.connect(self._update_position)
+                player.playbackStateChanged.connect(lambda _: self._sync_position())
 
     @staticmethod
     def _identity_of(track: dict) -> str:
@@ -59,6 +64,10 @@ class LyricsController(QObject):
     @Property(str, notify=changed)
     def state(self) -> str:
         return self._state
+
+    @Property(bool, notify=changed)
+    def available(self) -> bool:
+        return bool(self._lines)
 
     @Property("QVariantMap", notify=changed)
     def track(self) -> dict:
@@ -102,11 +111,8 @@ class LyricsController(QObject):
         self._open = value
         self.changed.emit()
         if self._open:
-            current = self._current_bridge_track()
-            if current:
-                ident = self._identity_of(current)
-                if ident != self._loaded_identity or self._state in ("idle", "error"):
-                    self.load(current, force=(self._state == "error"))
+            self._on_player_changed()
+            self._sync_position()
 
     @Slot()
     def toggle(self) -> None:
@@ -126,7 +132,7 @@ class LyricsController(QObject):
         pos = getattr(self._bridge, "playerPosition", 0)
         if callable(pos):
             pos = pos()
-        return int(pos or 0)
+        return int(pos) if isinstance(pos, (int, float)) else 0
 
     def _enrich_track(self, track: dict) -> dict:
         item = dict(track or {})
@@ -134,6 +140,10 @@ class LyricsController(QObject):
             vid = self._bridge.trackVideoId(item)
             if vid:
                 item["id"] = vid
+        if self._bridge is not None and item:
+            duration = getattr(self._bridge, "playerDuration", 0)
+            if isinstance(duration, (int, float)) and duration > 0:
+                item["duration"] = round(duration / 1000)
         return item
 
     @Slot("QVariantMap")
@@ -145,6 +155,11 @@ class LyricsController(QObject):
         if not ident:
             self.reset()
             return
+        signature = (ident, item.get("title"), item.get("artist"), item.get("album"), item.get("duration"))
+        if not force and signature == self._request_signature:
+            return
+        self._request_signature = signature
+        self._clock.stop()
         self._track = item
         self._identity = ident
         self._lines = []
@@ -159,15 +174,19 @@ class LyricsController(QObject):
         self.changed.emit()
 
         def worker():
+            error = ""
             try:
                 try:
                     result = self._finder(item, use_cache=not force)
                 except TypeError:
                     result = self._finder(item)
-                self._loaded.emit(result, "", generation)
             except Exception as exc:
-                message = str(exc).splitlines()[-1] if str(exc) else i18n.tr("No se pudo cargar la letra. Revisa tu conexión.")
-                self._loaded.emit({}, message, generation)
+                result = {}
+                error = str(exc) or i18n.tr("No se pudo cargar la letra. Revisa tu conexión.")
+            try:
+                self._loaded.emit(result, error, generation)
+            except RuntimeError:
+                pass  # La ventana se cerró durante la consulta.
 
         threading.Thread(target=worker, daemon=True, name="musicbox-lyrics").start()
 
@@ -182,7 +201,6 @@ class LyricsController(QObject):
         if generation != self._generation:
             return
         data = dict(result or {}) if isinstance(result, dict) else {}
-        self._loaded_identity = self._identity
         if error:
             self._lines = []
             self._synced = False
@@ -190,6 +208,7 @@ class LyricsController(QObject):
             self._instrumental = False
             self._error = i18n.tr("No se pudo cargar la letra. Revisa tu conexión.")
             self._state = "error"
+            self._open = False
             self._set_active_index(-1)
             self.changed.emit()
             return
@@ -205,7 +224,9 @@ class LyricsController(QObject):
             self._state = "instrumental"
         else:
             self._state = "empty"
-        self._update_position(self._current_bridge_position())
+        if not self._lines:
+            self._open = False
+        self._sync_position()
         self.changed.emit()
 
     @Slot(int)
@@ -213,7 +234,8 @@ class LyricsController(QObject):
         target = max(0, int(milliseconds))
         if self._bridge is not None and hasattr(self._bridge, "seek"):
             self._bridge.seek(target)
-        self._update_position(target)
+        else:
+            self._update_position(target)
 
     @Slot(int)
     def seekToLine(self, index: int) -> None:
@@ -226,10 +248,12 @@ class LyricsController(QObject):
     @Slot()
     def reset(self) -> None:
         self._generation += 1
+        self._clock.stop()
+        self._open = False
         self._state = "idle"
         self._track = {}
         self._identity = ""
-        self._loaded_identity = ""
+        self._request_signature = None
         self._lines = []
         self._synced = False
         self._source = ""
@@ -249,31 +273,20 @@ class LyricsController(QObject):
             self._set_active_index(-1)
             return
         self._set_active_index(lyrics.active_line_index(self._lines, int(position_ms)))
+        self._clock.stop()
+        next_index = self._active_index + 1
+        if getattr(self._bridge, "playing", False) and next_index < len(self._lines):
+            until_next = self._lines[next_index]["timeMs"] - position_ms
+            self._clock.start(max(16, min(100, until_next)))
+
+    def _sync_position(self) -> None:
+        self._update_position(self._current_bridge_position())
 
     @Slot()
     def _on_player_changed(self) -> None:
         current = self._current_bridge_track()
-        ident = self._identity_of(current)
-        if not ident:
+        if not self._identity_of(current):
             if self._state != "idle" or self._identity:
                 self.reset()
             return
-        if ident != self._identity:
-            self._track = current
-            self._identity = ident
-            if self._open:
-                self.load(current)
-            else:
-                self._generation += 1
-                self._loaded_identity = ""
-                self._lines = []
-                self._synced = False
-                self._source = ""
-                self._instrumental = False
-                self._error = ""
-                self._state = "idle"
-                self._set_active_index(-1)
-                self.changed.emit()
-        else:
-            self._track = current
-            self._update_position(self._current_bridge_position())
+        self.load(current)

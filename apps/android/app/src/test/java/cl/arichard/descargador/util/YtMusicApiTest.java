@@ -79,6 +79,13 @@ public class YtMusicApiTest {
     @Test public void aMusicVideoNeedsNoCounterpart() throws Exception {
         responses.put("next", panel(panelVideo("CLIP1", "MUSIC_VIDEO_TYPE_OMV")));
         assertNull(YtMusicApi.videoCounterpart("CLIP1"));
+        assertEquals("CLIP1", YtMusicApi.playableVideoSource("CLIP1"));
+    }
+
+    @Test public void aSongWithoutACounterpartHasNoPlayableVideo() throws Exception {
+        responses.put("next", panel(panelVideo("AUDIO1", "MUSIC_VIDEO_TYPE_ATV")));
+        responses.put("search", new JSONObject());
+        assertNull(YtMusicApi.playableVideoSource("AUDIO1"));
     }
 
     @Test public void radioReturnsOnlySongsWithArtistAndAlbum() throws Exception {

@@ -156,6 +156,13 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(result["source"], "Fuente: LyricFind")
         self.assertEqual([line["text"] for line in result["lines"]], ["Primera línea oficial", "Segunda línea oficial"])
 
+    def test_different_recording_is_displayed_as_plain_lyrics(self):
+        record = {"id": 1, "trackName": "Tren Al Sur", "artistName": "Los Prisioneros", "duration": 310,
+                  "plainLyrics": "Siete y media", "syncedLyrics": "[00:10.00] Siete y media"}
+        result = lyrics.fetch_lrclib("Tren Al Sur", "Los Prisioneros", 337, opener=fake_opener([record]))
+        self.assertFalse(result["synced"])
+        self.assertEqual(result["lines"][0]["text"], "Siete y media")
+
     def test_raises_only_when_all_online_sources_fail(self):
         def broken_yt(endpoint, body):
             raise OSError("sin red")
@@ -232,7 +239,8 @@ class QmlLyricsUiTests(unittest.TestCase):
             self.assertIsNotNone(lyrics_panel)
             self.assertIsNotNone(lyrics_list)
 
-            # Al pulsar el botón de letra en el reproductor se abre el panel y se carga la letra sincronizada.
+            self.assertTrue(wait_for(lambda: lyrics_toggle.property("visible")))
+            # El botón aparece al confirmar la letra de la canción actual.
             QMetaObject.invokeMethod(lyrics_toggle, "clicked", Qt.DirectConnection)
             self.assertTrue(wait_for(lambda: bridge.lyrics.state == "ready" and lyrics_drawer.property("visible")))
             self.assertTrue(bridge.lyrics.open)
@@ -254,6 +262,9 @@ class QmlLyricsUiTests(unittest.TestCase):
             bridge.lyrics.seekToLine(2)
             APP.processEvents()
             self.assertEqual(seeks[-1], 20000)
+            self.assertEqual(bridge.lyrics.activeIndex, 1)
+            bridge._player.positionChanged.emit(20000)
+            APP.processEvents()
             self.assertEqual(bridge.lyrics.activeIndex, 2)
             self.assertEqual(bridge.lyrics.activeText, "Estación Central, segundo carro")
 
@@ -270,6 +281,12 @@ class QmlLyricsUiTests(unittest.TestCase):
             queue_drawer = root.findChild(QObject, "queueDrawer")
             QMetaObject.invokeMethod(queue_drawer, "open", Qt.DirectConnection)
             self.assertTrue(wait_for(lambda: not bridge.lyrics.open))
+
+            bridge.lyrics._finder = lambda track, **kwargs: {"lines": [], "instrumental": True}
+            bridge._current = {"path": "instrumental.wav", "title": "Instrumental"}
+            bridge.playerChanged.emit()
+            self.assertTrue(wait_for(lambda: bridge.lyrics.state == "instrumental"))
+            self.assertFalse(lyrics_toggle.property("visible"))
 
             root.setProperty("visible", False)
             bridge._listening_timer.stop()

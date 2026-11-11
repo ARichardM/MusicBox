@@ -494,22 +494,29 @@ public final class YtMusicApi {
      * mismo título y artista entre los videos. Null si el ID ya es un video o no hay un clip de esa grabación.
      */
     public static String videoCounterpart(String videoId) throws Exception {
+        String source = playableVideoSource(videoId);
+        return videoId == null || videoId.equals(source) ? null : source;
+    }
+
+    /** Distingue un videoclip del video con portada fija que acompaña una pista de audio. */
+    public static String playableVideoSource(String videoId) throws Exception {
         if (videoId == null || videoId.isEmpty()) return null;
         JSONObject data = post("next", new JSONObject().put("videoId", videoId).put("playlistId", "RDAMVM" + videoId));
         for (JSONObject seed : all(data, "playlistPanelVideoRenderer")) {
             if (!videoId.equals(seed.optString("videoId"))) continue;
-            if (!isSong(seed)) return null;   // ya es un videoclip o un video subido
+            if ("video".equals(kindOf(seed.opt("navigationEndpoint")))) return videoId;
             Object counterpart = seed.opt("counterpart");
             String id = firstString(counterpart, "videoId");
             if (!id.isEmpty() && !id.equals(videoId) && !"MUSIC_VIDEO_TYPE_ATV".equals(firstString(counterpart, "musicVideoType")))
                 return id;
+            if (!"song".equals(kindOf(seed))) return videoId;
             String title = text(seed.optJSONObject("title"));
             List<List<JSONObject>> parts = segments(seed.optJSONObject("longBylineText"));
             String artist = parts.isEmpty() ? "" : join(parts.get(0));
             long seconds = seconds(text(seed.optJSONObject("lengthText")));
             return title.isEmpty() ? null : videoByTitle(videoId, title, artist, seconds);
         }
-        return null;
+        return videoId; // Un video fuera del catálogo musical se comprueba al resolver su flujo.
     }
 
     private static String videoByTitle(String audioId, String title, String artist, long seconds) throws Exception {

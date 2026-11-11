@@ -80,6 +80,9 @@ public final class Tr {
         m.put("%d canción", "%d song");
         m.put("%d canciones", "%d songs");
         m.put("Sin canciones", "No songs");
+        m.put("Fijar en Inicio", "Pin to Home");
+        m.put("Quitar de Inicio", "Unpin from Home");
+        m.put("Abrir playlist", "Open playlist");
         m.put("Tu música en cifras", "Your music in numbers");
         m.put("Cada reproducción cuenta", "Every play counts");
         m.put("Tiempo escuchado", "Listening time");

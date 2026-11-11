@@ -97,6 +97,7 @@ public class LyricsFetcherTest {
         LyricsFetcher.httpTransport = url -> new JSONObject()
                 .put("trackName", "Tren al Sur")
                 .put("artistName", "Los Prisioneros")
+                .put("duration", 337)
                 .put("syncedLyrics", "[00:02.00] Uno\n[00:05.50] Dos")
                 .toString();
 
@@ -105,6 +106,21 @@ public class LyricsFetcherTest {
         assertEquals("LRCLIB", res.source);
         assertEquals(2, res.lines.size());
         assertEquals("Dos", res.lines.get(1).text);
+    }
+
+    @Test
+    public void differentRecordingDoesNotSupplyTimestamps() {
+        LyricsFetcher.httpTransport = url -> new JSONObject()
+                .put("trackName", "Tren al Sur")
+                .put("artistName", "Los Prisioneros")
+                .put("duration", 310)
+                .put("plainLyrics", "Siete y media")
+                .put("syncedLyrics", "[00:02.00] Siete y media")
+                .toString();
+
+        LyricsFetcher.Result result = LyricsFetcher.fetchLrclib("Tren al Sur", "Los Prisioneros", "Corazones", 337);
+        assertFalse(result.synced);
+        assertEquals("Siete y media", result.lines.get(0).text);
     }
 
     @Test

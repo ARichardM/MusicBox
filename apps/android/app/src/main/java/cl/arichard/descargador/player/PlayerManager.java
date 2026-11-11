@@ -55,6 +55,8 @@ public class PlayerManager {
     private static final Set<String> PREFETCHING = new HashSet<>();
     /** Videos de los que YouTube no ofrece un MP4 con imagen y sonido en un solo archivo. */
     private String failedVideoId = "";
+    private final Set<String> checkingVideoIds = new HashSet<>();
+    private long videoCheckRetryAt;
     /** El usuario eligio ver el video (pestana MP4): el flujo en linea trae imagen ademas de audio. */
     private boolean videoMode;
 
@@ -810,8 +812,8 @@ public class PlayerManager {
         final String videoId = currentOnlineVideoId;
         final boolean wantVideo = videoMode;
         // En modo video una pista de audio de YouTube Music (portada fija) se reemplaza por su videoclip, si lo tiene.
-        final String knownSource = streamSourceId(videoId, wantVideo, false);
-        if (knownSource != null) {
+        final String knownSource = wantVideo ? VIDEO_COUNTERPARTS.get(videoId) : videoId;
+        if (knownSource != null && !knownSource.isEmpty()) {
             CachedStream cached;
             synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(streamKey(knownSource, wantVideo)); }
             if (cached != null && cached.isFresh()) {
@@ -821,7 +823,8 @@ public class PlayerManager {
         }
         PLAYBACK_IO.execute(() -> {
             try {
-                final String source = streamSourceId(videoId, wantVideo, true);
+                final String source = wantVideo ? resolveVideoSource(videoId) : videoId;
+                if (source == null) throw new IllegalStateException("No hay videoclip para esta pista");
                 final String key = streamKey(source, wantVideo);
                 final String target = "https://www.youtube.com/watch?v=" + source;
                 CachedStream resolved = awaitPrefetch(key);
@@ -846,24 +849,17 @@ public class PlayerManager {
     private static final Map<String, String> VIDEO_COUNTERPARTS = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
-     * ID del que sale el flujo: en modo audio siempre el propio video; en modo video, el videoclip de la canción si
-     * existe y, si no, el mismo video. Con [network] false devuelve null cuando aún no se sabe (hay que consultarlo).
+     * ID del videoclip. Una pista con portada fija y sin videoclip guarda un resultado vacío.
      */
-    private static String streamSourceId(String videoId, boolean video, boolean network) {
-        if (!video || videoId == null) return videoId;
+    private static String resolveVideoSource(String videoId) throws Exception {
+        if (videoId == null || videoId.isEmpty()) return null;
         String known = VIDEO_COUNTERPARTS.get(videoId);
         if (known == null) {
-            if (!network) return null;
-            try {
-                String clip = cl.arichard.descargador.util.YtMusicApi.videoCounterpart(videoId);
-                VIDEO_COUNTERPARTS.put(videoId, clip == null ? "" : clip);
-                known = clip == null ? "" : clip;
-            } catch (Exception error) {
-                Log.w("MusicBoxPlayer", "No se pudo buscar el videoclip de " + videoId, error);
-                return videoId;   // sin red: se usa el video tal cual y se vuelve a intentar la próxima vez
-            }
+            String clip = cl.arichard.descargador.util.YtMusicApi.playableVideoSource(videoId);
+            known = clip == null ? "" : clip;
+            VIDEO_COUNTERPARTS.put(videoId, known);
         }
-        return known.isEmpty() ? videoId : known;
+        return known.isEmpty() ? null : known;
     }
 
     /** Resuelve el enlace de audio de un video y lo deja en la caché de enlaces. */
@@ -911,7 +907,10 @@ public class PlayerManager {
         final String nextId = song.getVideoId();
         if (!videoMode) { prefetchStream(nextId, false); return; }
         // En modo video se precarga el videoclip de la siguiente canción, que puede ser otro ID.
-        PLAYBACK_IO.execute(() -> prefetchStream(streamSourceId(nextId, true, true), true));
+        PLAYBACK_IO.execute(() -> {
+            try { prefetchStream(resolveVideoSource(nextId), true); }
+            catch (Exception error) { Log.d("MusicBoxPlayer", "No se pudo precargar el video", error); }
+        });
     }
 
     /** Si ya hay una resolución anticipada en curso para este video, espera a que termine y devuelve su enlace. */
@@ -974,6 +973,8 @@ public class PlayerManager {
                 final long extracted = System.currentTimeMillis() - clientStart;
                 JSONObject info = new JSONObject(output);
                 String stream = info.optString("url", "");
+                if (video && ("none".equals(info.optString("vcodec")) || "none".equals(info.optString("acodec"))))
+                    continue;
                 if (!stream.isEmpty()) {
                     // El tamaño ya viene en la respuesta de yt-dlp o en el propio enlace: así se evita una petición
                     // de comprobación (unos 2,7 s en el celular). Si el enlace está roto, el reproductor reintenta.
@@ -1091,6 +1092,13 @@ public class PlayerManager {
             if (mp == mediaPlayer) fail(new IllegalStateException("Error del reproductor " + what + "/" + extra));
             return true;
         });
+        player.setOnSeekCompleteListener(mp -> {
+            if (mp != mediaPlayer || !prepared) return;
+            int position = mp.getCurrentPosition();
+            int duration = mp.getDuration();
+            for (PlaybackListener listener : new ArrayList<>(listeners)) listener.onProgressUpdate(position, duration);
+            savePosition();
+        });
         player.setOnVideoSizeChangedListener((mp, width, height) -> { fitVideo(); notifyVideo(); });
         player.setOnCompletionListener(mp -> {
             if (mp != mediaPlayer || !prepared) return;
@@ -1127,7 +1135,7 @@ public class PlayerManager {
             playbackRecoveryAttempts++;
             final int backoff = 500 * playbackRecoveryAttempts;
             resumePosition = position;
-            String failedSource = streamSourceId(currentOnlineVideoId, videoMode, false);
+            String failedSource = videoMode ? VIDEO_COUNTERPARTS.get(currentOnlineVideoId) : currentOnlineVideoId;
             synchronized (STREAM_CACHE) { STREAM_CACHE.remove(streamKey(failedSource == null ? currentOnlineVideoId : failedSource, videoMode)); }
             final int requestGeneration = generation;
             loading(true);
@@ -1537,7 +1545,12 @@ public class PlayerManager {
     public void seekTo(int ms) {
         sampleListening();
         listeningPlaying = false;
-        if (prepared && mediaPlayer != null) mediaPlayer.seekTo(Math.max(0, ms));
+        if (prepared && mediaPlayer != null) {
+            int duration = getDuration();
+            int target = Math.max(0, duration > 0 ? Math.min(ms, duration) : ms);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mediaPlayer.seekTo(target, MediaPlayer.SEEK_CLOSEST);
+            else mediaPlayer.seekTo(target);
+        }
         else resumePosition = Math.max(0, ms);
         savePosition();
     }
@@ -1631,12 +1644,49 @@ public class PlayerManager {
     private void notifyQueue() { saveSession(); for (PlaybackListener l : new ArrayList<>(listeners)) l.onQueueChanged(); }
     public boolean isPlaying() { return prepared && mediaPlayer != null && mediaPlayer.isPlaying(); }
     public boolean isLoading() { return loading; }
-    /** Se puede ver esta cancion si ya trae imagen, o si es de YouTube y existe un MP4 con sonido. */
+    /** El selector se habilita cuando la canción tiene video local o un flujo verificado. */
     public boolean canShowVideo() {
         if (currentSong == null) return false;
-        if (hasVideo() || (!online && currentSong.getPath().toLowerCase(java.util.Locale.ROOT).endsWith(".mp4"))) return true;
+        if (hasVideo() && (!online || videoMode)) return true;
         String id = playbackVideoId();
-        return id != null && !id.isEmpty() && !id.equals(failedVideoId);
+        if (id == null || id.isEmpty() || id.equals(failedVideoId)) return false;
+        if (cl.arichard.descargador.data.PlaylistManager.getInstance(context).localVideoFor(id) != null) return true;
+        String source = VIDEO_COUNTERPARTS.get(id);
+        if (source == null || source.isEmpty()) return false;
+        synchronized (STREAM_CACHE) {
+            CachedStream stream = STREAM_CACHE.get(streamKey(source, true));
+            return stream != null && stream.isFresh();
+        }
+    }
+
+    public void checkVideoAvailability() {
+        String id = playbackVideoId();
+        if (id == null || id.isEmpty() || canShowVideo() || checkingVideoIds.contains(id)
+                || "".equals(VIDEO_COUNTERPARTS.get(id))) return;
+        if (id.equals(failedVideoId) && android.os.SystemClock.elapsedRealtime() < videoCheckRetryAt) return;
+        if (id.equals(failedVideoId)) failedVideoId = "";
+        checkingVideoIds.add(id);
+        PLAYBACK_IO.execute(() -> {
+            boolean verified = false;
+            try {
+                String source = resolveVideoSource(id);
+                if (source != null) {
+                    String key = streamKey(source, true);
+                    if (awaitPrefetch(key) == null)
+                        resolveToCache(key, "https://www.youtube.com/watch?v=" + source, true);
+                    verified = true;
+                }
+            } catch (Exception error) {
+                Log.d("MusicBoxPlayer", "No se pudo comprobar el video", error);
+            }
+            final boolean available = verified;
+            handler.post(() -> {
+                checkingVideoIds.remove(id);
+                if (!id.equals(playbackVideoId())) return;
+                if (!available) markVideoUnavailable(id);
+                notifyVideo();
+            });
+        });
     }
 
     public boolean isVideoMode() { return videoMode; }
@@ -1647,6 +1697,7 @@ public class PlayerManager {
      */
     public void setVideoMode(boolean value) {
         if (videoMode == value) return;
+        if (value && !canShowVideo()) return;
         videoMode = value;
         if (currentSong == null || playbackVideoId() == null) return;
         if (value && hasVideo()) {
@@ -1654,12 +1705,8 @@ public class PlayerManager {
             // fija: se busca su videoclip y, si existe, se cambia a él; si no, se deja lo que suena.
             if (!currentSong.isOnline()) return;
             final String id = playbackVideoId();
-            final int requestGeneration = generation;
-            PLAYBACK_IO.execute(() -> {
-                String source = streamSourceId(id, true, true);
-                if (id.equals(source)) return;
-                handler.post(() -> { if (requestGeneration == generation && videoMode) restartKeepingPosition(); });
-            });
+            String source = VIDEO_COUNTERPARTS.get(id);
+            if (source != null && !source.isEmpty() && !id.equals(source)) restartKeepingPosition();
             return;
         }
         restartKeepingPosition();
@@ -1678,22 +1725,26 @@ public class PlayerManager {
     public void leaveVideoMode() { videoMode = false; }
 
     private void videoUnavailable(String videoId) {
-        failedVideoId = videoId;
+        markVideoUnavailable(videoId);
         videoMode = false;
         int position = resumePosition;
         boolean resume = playWhenReady;
         notifyVideo();
-        failedVideoId = "";
         startCurrent();
         resumePosition = position;
         playWhenReady = resume;
+    }
+
+    private void markVideoUnavailable(String videoId) {
+        failedVideoId = videoId;
+        videoCheckRetryAt = android.os.SystemClock.elapsedRealtime() + 60000L;
     }
 
     public boolean hasVideo() {
         return prepared && mediaPlayer != null && mediaPlayer.getVideoWidth() > 0 && mediaPlayer.getVideoHeight() > 0;
     }
     private void notifyVideo() {
-        boolean available = hasVideo();
+        boolean available = canShowVideo();
         for (PlaybackListener listener : new ArrayList<>(listeners)) listener.onVideoAvailabilityChanged(available);
     }
     public int getCurrentPosition() { return prepared && mediaPlayer != null ? mediaPlayer.getCurrentPosition() : resumePosition; }

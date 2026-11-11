@@ -17,10 +17,19 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
  private final Context context; private final OnPlaylistClickListener listener;
  private final List<cl.arichard.descargador.model.Song> library=new ArrayList<>();
  private final List<String> original=new ArrayList<>(), displayed=new ArrayList<>();
- public PlaylistAdapter(Context c,List<String> names,OnPlaylistClickListener l){context=c;listener=l;updatePlaylists(names);}
+ private String currentQuery="";
+ public PlaylistAdapter(Context c,List<String> names,OnPlaylistClickListener l){context=c;listener=l;setHasStableIds(true);updatePlaylists(names);}
  public void setLibrary(List<cl.arichard.descargador.model.Song> songs){library.clear();library.addAll(songs);notifyDataSetChanged();}
- public void updatePlaylists(List<String> names){original.clear();if(names!=null)original.addAll(names);filter("");}
- public void filter(String query){displayed.clear();String q=query==null?"":query.trim().toLowerCase(java.util.Locale.ROOT);for(String n:original)if(q.isEmpty()||n.toLowerCase(java.util.Locale.ROOT).contains(q))displayed.add(n);notifyDataSetChanged();}
+ public void updatePlaylists(List<String> names){original.clear();if(names!=null)original.addAll(names);filter(currentQuery);}
+ public void filter(String query){currentQuery=query==null?"":query;displayed.clear();String q=currentQuery.trim().toLowerCase(java.util.Locale.ROOT);for(String n:original)if(q.isEmpty()||cl.arichard.descargador.util.Tr.name(n).toLowerCase(java.util.Locale.ROOT).contains(q))displayed.add(n);notifyDataSetChanged();}
+ public List<String> getPlaylistOrder(){return new ArrayList<>(original);}
+ public boolean move(int from,int to){
+  if(from<0||to<0||from>=displayed.size()||to>=displayed.size()||from==to)return false;
+  String name=displayed.get(from),target=displayed.get(to);
+  int destination=original.indexOf(target);original.remove(name);original.add(destination,name);
+  displayed.remove(from);displayed.add(to,name);notifyItemMoved(from,to);return true;
+ }
+ @Override public long getItemId(int position){long id=0xcbf29ce484222325L;for(char c:displayed.get(position).toCharArray())id=(id^c)*0x100000001b3L;return id;}
  public int getDisplayedCount(){return displayed.size();}
  /** Playlist recién creada (p. ej. importada): entra con un rebote la próxima vez que se dibuja. */
  private String arriving="";

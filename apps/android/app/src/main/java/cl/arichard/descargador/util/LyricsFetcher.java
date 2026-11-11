@@ -39,6 +39,8 @@ public final class LyricsFetcher {
     private static final Pattern FEAT_RE = Pattern.compile("(?i)\\s+(?:feat\\.?|ft\\.?|con|with)\\s+.*$");
     private static final Pattern TOPIC_RE = Pattern.compile("(?i)\\s*-\\s*topic$");
     private static final Pattern MULTI_SPACE_RE = Pattern.compile("\\s{2,}");
+    private static final Pattern RECORDING_VERSION = Pattern.compile(
+            "\\b(live|en vivo|acoustic|acustic[oa]|remix|karaoke|instrumental|demo|unplugged|edit|extended)\\b");
 
     public static final class Line {
         public final long timeMs;
@@ -325,7 +327,7 @@ public final class LyricsFetcher {
             List<Line> parsed = parseLrc(syncedRaw);
             if (!parsed.isEmpty()) return new Result(parsed, true, "LRCLIB", false);
         }
-        String plainRaw = item.optString("plainLyrics", "").trim();
+        String plainRaw = item.isNull("plainLyrics") ? "" : item.optString("plainLyrics", "").trim();
         if (!plainRaw.isEmpty()) {
             List<Line> parsed = plainLines(plainRaw);
             if (!parsed.isEmpty()) return new Result(parsed, false, "LRCLIB", false);
@@ -335,7 +337,37 @@ public final class LyricsFetcher {
 
     private static String norm(String s) {
         if (s == null) return "";
-        return s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9áéíóúñü]+", " ").trim();
+        String folded = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+                .toLowerCase(Locale.ROOT).replaceAll("(?<=\\p{IsLatin})\\p{M}+", "");
+        return java.text.Normalizer.normalize(folded, java.text.Normalizer.Form.NFC)
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+    }
+
+    private static java.util.Set<String> recordingVersions(String title, String album) {
+        java.util.Set<String> versions = new java.util.HashSet<>();
+        Matcher matcher = RECORDING_VERSION.matcher(norm(title + " " + album));
+        while (matcher.find()) {
+            String version = matcher.group();
+            if (version.equals("en vivo")) version = "live";
+            if (version.startsWith("acustic") || version.equals("unplugged")) version = "acoustic";
+            versions.add(version);
+        }
+        return versions;
+    }
+
+    private static Result matchingLyrics(JSONObject item, String originalTitle, String title, String artist,
+                                         String album, int durationSec) {
+        String foundTitle = item.optString("trackName", item.optString("name", ""));
+        String foundArtist = norm(cleanArtist(item.optString("artistName", "")));
+        if (!norm(title).equals(norm(cleanTitle(foundTitle)))) return null;
+        if (!artist.isEmpty() && !norm(artist).equals(foundArtist)) return null;
+        double duration = item.optDouble("duration", 0);
+        boolean sameRecording = !artist.isEmpty() && durationSec > 0 && duration > 0 && Math.abs(durationSec - duration) <= 2
+                && recordingVersions(originalTitle, album).equals(recordingVersions(foundTitle, item.optString("albumName")));
+        if (sameRecording) return resultFromLrclibRecord(item);
+        if (item.optBoolean("instrumental") || item.isNull("plainLyrics")) return null;
+        List<Line> text = plainLines(item.optString("plainLyrics", ""));
+        return text.isEmpty() ? null : new Result(text, false, "LRCLIB", false);
     }
 
     /** Busca letras sincronizadas o planas en LRCLIB. */
@@ -345,6 +377,7 @@ public final class LyricsFetcher {
         String cArtist = cleaned[1];
         if (cTitle.isEmpty()) return null;
 
+        Result plain = null;
         if (!cArtist.isEmpty()) {
             try {
                 StringBuilder url = new StringBuilder(LRCLIB_BASE).append("/get?track_name=")
@@ -360,8 +393,9 @@ public final class LyricsFetcher {
                     url.append("&duration=").append(durationSec);
                 }
                 JSONObject direct = new JSONObject(httpTransport.get(url.toString()));
-                Result directRes = resultFromLrclibRecord(direct);
-                if (directRes != null) return directRes;
+                Result directRes = matchingLyrics(direct, title, cTitle, cArtist, album, durationSec);
+                if (directRes != null && (directRes.synced || directRes.instrumental)) return directRes;
+                plain = directRes;
             } catch (Exception ignored) {}
         }
 
@@ -369,46 +403,25 @@ public final class LyricsFetcher {
             String query = !cArtist.isEmpty() ? (cTitle + " " + cArtist) : cTitle;
             String searchUrl = LRCLIB_BASE + "/search?q=" + URLEncoder.encode(query, "UTF-8");
             JSONArray array = new JSONArray(httpTransport.get(searchUrl));
-            String wantedTitle = norm(cTitle);
-            String wantedArtist = norm(cArtist);
-            JSONObject bestItem = null;
-            double bestScore = -999.0;
+            Result best = plain;
+            double bestScore = plain == null ? -1 : 0;
             int limit = Math.min(array.length(), 15);
             for (int i = 0; i < limit; i++) {
                 JSONObject item = array.optJSONObject(i);
                 if (item == null) continue;
-                String candTitle = norm(cleanTitle(item.optString("trackName", item.optString("name", ""))));
-                String candArtist = norm(cleanArtist(item.optString("artistName", "")));
-                if (candTitle.isEmpty()) continue;
-                boolean titleMatch = candTitle.equals(wantedTitle)
-                        || candTitle.contains(wantedTitle)
-                        || wantedTitle.contains(candTitle);
-                if (!titleMatch) continue;
-                double score = candTitle.equals(wantedTitle) ? 3.0 : 1.5;
-                if (!wantedArtist.isEmpty()) {
-                    if (candArtist.equals(wantedArtist)) score += 3.0;
-                    else if (candArtist.contains(wantedArtist) || wantedArtist.contains(candArtist)) score += 1.8;
-                    else score -= 1.2;
-                }
-                int candDur = item.optInt("duration", 0);
-                if (durationSec > 0 && candDur > 0) {
-                    int diff = Math.abs(candDur - durationSec);
-                    if (diff <= 3) score += 2.0;
-                    else if (diff <= 10) score += 1.0;
-                    else if (diff > 25) score -= 1.5;
-                }
-                if (!item.optString("syncedLyrics", "").trim().isEmpty()) score += 1.2;
-                else if (!item.optString("plainLyrics", "").trim().isEmpty()) score += 0.4;
+                Result candidate = matchingLyrics(item, title, cTitle, cArtist, album, durationSec);
+                if (candidate == null) continue;
+                double score = candidate.synced || candidate.instrumental
+                        ? 10 - Math.abs(item.optDouble("duration") - durationSec) : 0;
+                if (!norm(album).isEmpty() && norm(album).equals(norm(item.optString("albumName")))) score += 3;
                 if (score > bestScore) {
                     bestScore = score;
-                    bestItem = item;
+                    best = candidate;
                 }
             }
-            if (bestItem != null && bestScore >= 1.5) {
-                return resultFromLrclibRecord(bestItem);
-            }
+            return best;
         } catch (Exception ignored) {}
-        return null;
+        return plain;
     }
 
     /** Busca la letra de una canción combinando archivo local .lrc, LRCLIB y YouTube Music. */

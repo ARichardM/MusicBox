@@ -25,6 +25,8 @@ public class PlaylistManager {
     private final Map<String, List<String>> playlists = new HashMap<>();
     private final Map<String, SearchResult> onlineTracks = new HashMap<>();
     private final Map<String, String> descriptions = new HashMap<>();
+    private final List<String> playlistOrder = new ArrayList<>();
+    private final Set<String> pinnedPlaylists = new java.util.LinkedHashSet<>();
     private final Set<String> autoDownloadPlaylists = new HashSet<>();
     private Runnable changeListener;
     private final List<Runnable> observers = new ArrayList<>();
@@ -56,6 +58,7 @@ public class PlaylistManager {
         playlists.clear();
         onlineTracks.clear();
         descriptions.clear();
+        playlistOrder.clear(); pinnedPlaylists.clear();
         autoDownloadPlaylists.clear();
         if (!storageFile.exists() && !new File(storageFile.getPath() + ".bak").exists()) return;
         try {
@@ -90,6 +93,16 @@ public class PlaylistManager {
                 }
             }
             JSONArray auto = root.optJSONArray("autoDownload");
+            JSONArray order = root.optJSONArray("playlistOrder");
+            if (order != null) for (int i = 0; i < order.length(); i++) {
+                String name = order.optString(i);
+                if (playlists.containsKey(name) && !playlistOrder.contains(name)) playlistOrder.add(name);
+            }
+            JSONArray pinned = root.optJSONArray("pinnedPlaylists");
+            if (pinned != null) for (int i = 0; i < pinned.length(); i++) {
+                String name = pinned.optString(i);
+                if (playlists.containsKey(name)) pinnedPlaylists.add(name);
+            }
             if (auto != null) for (int i = 0; i < auto.length(); i++) autoDownloadPlaylists.add(auto.getString(i));
             JSONObject descriptionsRoot = root.optJSONObject("descriptions");
             if (descriptionsRoot != null) {
@@ -113,6 +126,7 @@ public class PlaylistManager {
     public synchronized void setChangeListener(Runnable listener) { changeListener = listener; }
     /** Extra listeners (for example the media notification) that learn about every change on the main thread. */
     public synchronized void addObserver(Runnable observer) { if (!observers.contains(observer)) observers.add(observer); }
+    public synchronized void removeObserver(Runnable observer) { observers.remove(observer); }
     public synchronized void setAutoDownloadListener(AutoDownloadListener listener) { autoDownloadListener = listener; }
 
     public synchronized JSONObject exportJson() {
@@ -132,6 +146,8 @@ public class PlaylistManager {
             root.put("onlineTracks", tracks);
             root.put("autoDownload", new JSONArray(autoDownloadPlaylists));
             root.put("descriptions", new JSONObject(descriptions));
+            root.put("playlistOrder", new JSONArray(getPlaylistNames()));
+            root.put("pinnedPlaylists", new JSONArray(pinnedPlaylists));
         } catch (Exception ignored) {}
         return root;
     }
@@ -178,18 +194,52 @@ public class PlaylistManager {
 
     public synchronized void resetForAccount() {
         playlists.clear(); onlineTracks.clear(); autoDownloadPlaylists.clear();
+        descriptions.clear(); playlistOrder.clear(); pinnedPlaylists.clear(); freshlyAdded.clear();
         playlists.put("Favoritos", new ArrayList<>()); save();
     }
 
     public synchronized List<String> getPlaylistNames() {
         List<String> list = new ArrayList<>();
-        list.add("Favoritos");
+        for (String name : playlistOrder) if (playlists.containsKey(name) && !list.contains(name)) list.add(name);
+        if (!list.contains("Favoritos")) list.add(0, "Favoritos");
         for (String name : playlists.keySet()) {
-            if (!"Favoritos".equalsIgnoreCase(name)) {
+            if (!list.contains(name)) {
                 list.add(name);
             }
         }
         return list;
+    }
+
+    public synchronized List<String> getVisiblePlaylistNames(List<cl.arichard.descargador.model.Song> library) {
+        List<String> names = getPlaylistNames();
+        if (resolveSongs("Favoritos", library).isEmpty()) names.remove("Favoritos");
+        return names;
+    }
+
+    /** Reordena solo las entradas indicadas: las ocultas o filtradas conservan su lugar. */
+    public synchronized void setPlaylistOrder(List<String> requested) {
+        if (requested == null) return;
+        List<String> chosen = new ArrayList<>();
+        for (String name : requested) if (playlists.containsKey(name) && !chosen.contains(name)) chosen.add(name);
+        List<String> ordered = getPlaylistNames();
+        int next = 0;
+        for (int i = 0; i < ordered.size(); i++) if (chosen.contains(ordered.get(i))) ordered.set(i, chosen.get(next++));
+        if (ordered.equals(getPlaylistNames())) return;
+        playlistOrder.clear(); playlistOrder.addAll(ordered); save();
+    }
+
+    public synchronized boolean isPinned(String name) { return pinnedPlaylists.contains(name); }
+
+    public synchronized void setPinned(String name, boolean pinned) {
+        if (!playlists.containsKey(name)) return;
+        boolean changed = pinned ? pinnedPlaylists.add(name) : pinnedPlaylists.remove(name);
+        if (changed) save();
+    }
+
+    public synchronized List<String> getPinnedPlaylistNames(List<cl.arichard.descargador.model.Song> library) {
+        List<String> names = getVisiblePlaylistNames(library);
+        names.retainAll(pinnedPlaylists);
+        return names;
     }
 
     public synchronized List<String> getSongPaths(String playlistName) {
@@ -201,7 +251,9 @@ public class PlaylistManager {
         if (name == null || name.trim().isEmpty() || playlists.containsKey(name.trim())) {
             return false;
         }
+        List<String> previousOrder = getPlaylistNames();
         playlists.put(name.trim(), new ArrayList<>());
+        playlistOrder.clear(); playlistOrder.addAll(previousOrder); playlistOrder.add(name.trim());
         save();
         return true;
     }
@@ -211,6 +263,7 @@ public class PlaylistManager {
         if (playlists.remove(name) != null) {
             autoDownloadPlaylists.remove(name);
             descriptions.remove(name);
+            playlistOrder.remove(name); pinnedPlaylists.remove(name); freshlyAdded.remove(name);
             save();
             return true;
         }
@@ -225,8 +278,14 @@ public class PlaylistManager {
         if ("Favoritos".equals(oldName)) cleanName = oldName;
         if (cleanName.isEmpty() || (!oldName.equals(cleanName) && playlists.containsKey(cleanName))) return false;
         if (!oldName.equals(cleanName)) {
+            List<String> previousOrder = getPlaylistNames();
             List<String> songs = playlists.remove(oldName);
             playlists.put(cleanName, songs);
+            playlistOrder.clear();
+            for (String name : previousOrder) playlistOrder.add(oldName.equals(name) ? cleanName : name);
+            if (pinnedPlaylists.remove(oldName)) pinnedPlaylists.add(cleanName);
+            Set<String> fresh = freshlyAdded.remove(oldName);
+            if (fresh != null) freshlyAdded.put(cleanName, fresh);
             if (autoDownloadPlaylists.remove(oldName)) autoDownloadPlaylists.add(cleanName);
             String previousDescription = descriptions.remove(oldName);
             if (previousDescription != null && !previousDescription.isEmpty()) descriptions.put(cleanName, previousDescription);

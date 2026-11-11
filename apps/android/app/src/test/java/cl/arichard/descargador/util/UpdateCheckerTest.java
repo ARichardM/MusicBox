@@ -5,9 +5,19 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Application;
+import android.app.Activity;
+import android.view.View;
+import android.widget.FrameLayout;
+import androidx.coordinatorlayout.widget.CoordinatorLayout;
+import androidx.core.view.ViewCompat;
+import androidx.core.widget.NestedScrollView;
+import com.google.android.material.bottomsheet.BottomSheetBehavior;
+import java.lang.reflect.Constructor;
 import java.util.Arrays;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.android.controller.ActivityController;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
@@ -52,5 +62,42 @@ public class UpdateCheckerTest {
         assertTrue(UpdateChecker.isNewer("2.10.0", "2.9.9"));
         assertFalse(UpdateChecker.isNewer("2.3.1", "2.3.1-pruebas"));
         assertFalse(UpdateChecker.isNewer("2.3.0", "2.3.1"));
+    }
+
+    @Test public void downwardDragIsHandedToTheSheetOnlyAtTheTopOfTheNotes() throws Exception {
+        try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class).setup()) {
+            Activity activity = controller.get();
+            Class<?> type = Class.forName(UpdateChecker.class.getName() + "$CappedScrollView");
+            Constructor<?> constructor = type.getDeclaredConstructor(Activity.class, int.class);
+            constructor.setAccessible(true);
+            NestedScrollView notes = (NestedScrollView) constructor.newInstance(activity, 200);
+            View paragraphs = new View(activity);
+            paragraphs.setMinimumHeight(600);
+            notes.addView(paragraphs, new FrameLayout.LayoutParams(-1, 600));
+            FrameLayout sheet = new FrameLayout(activity);
+            sheet.addView(notes, new FrameLayout.LayoutParams(-1, -2));
+            CoordinatorLayout coordinator = new CoordinatorLayout(activity);
+            BottomSheetBehavior<FrameLayout> behavior = new BottomSheetBehavior<>();
+            CoordinatorLayout.LayoutParams params = new CoordinatorLayout.LayoutParams(-1, 400);
+            params.setBehavior(behavior);
+            coordinator.addView(sheet, params);
+            activity.setContentView(coordinator);
+            behavior.setState(BottomSheetBehavior.STATE_EXPANDED);
+            coordinator.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY));
+            coordinator.layout(0, 0, 400, 800);
+
+            assertEquals(200, notes.getHeight());
+            notes.scrollTo(0, 100);
+            assertTrue(notes.canScrollVertically(-1));
+            int top = sheet.getTop();
+            behavior.onStartNestedScroll(coordinator, sheet, notes, notes, ViewCompat.SCROLL_AXIS_VERTICAL, ViewCompat.TYPE_TOUCH);
+            behavior.onNestedPreScroll(coordinator, sheet, notes, 0, -40, new int[2], ViewCompat.TYPE_TOUCH);
+            assertEquals(top, sheet.getTop());
+
+            notes.scrollTo(0, 0);
+            behavior.onNestedPreScroll(coordinator, sheet, notes, 0, -40, new int[2], ViewCompat.TYPE_TOUCH);
+            assertTrue(sheet.getTop() > top);
+        }
     }
 }

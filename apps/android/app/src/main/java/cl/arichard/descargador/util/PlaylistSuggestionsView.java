@@ -357,24 +357,45 @@ public class PlaylistSuggestionsView extends LinearLayout {
         }
 
         @Override public void onBindViewHolder(@NonNull Holder holder, int position) {
+            holder.resetMotion();
             holder.slide.bind(items.get(position));
             ViewGroup.LayoutParams params = holder.slide.getLayoutParams();
             params.width = pageWidth();
             holder.slide.setLayoutParams(params);
             if (entrance && position < 5) {
-                holder.slide.setAlpha(0f); holder.slide.setScaleX(.94f); holder.slide.setScaleY(.94f);
-                holder.slide.animate().alpha(1f).scaleX(1f).scaleY(1f).setStartDelay(position * 55L)
-                        .setDuration(280).setInterpolator(new DecelerateInterpolator()).start();
+                holder.slide.setAlpha(0f);
+                holder.reveal = ObjectAnimator.ofFloat(holder.slide, View.ALPHA, 0f, 1f);
+                holder.reveal.setStartDelay(position * 55L);
+                holder.reveal.setDuration(280);
+                holder.reveal.setInterpolator(new DecelerateInterpolator());
+                holder.reveal.start();
             }
             if (position == Math.min(items.size(), 5) - 1) entrance = false;
         }
 
         @Override public int getItemCount() { return items.size(); }
+
+        @Override public void onViewRecycled(@NonNull Holder holder) {
+            holder.resetMotion();
+            super.onViewRecycled(holder);
+        }
     }
 
     private static final class Holder extends RecyclerView.ViewHolder {
         final Slide slide;
+        ObjectAnimator reveal;
         Holder(Slide slide) { super(slide); this.slide = slide; }
+
+        void resetMotion() {
+            if (reveal != null) {
+                reveal.cancel();
+                reveal = null;
+            }
+            slide.animate().cancel();
+            slide.setAlpha(1f);
+            slide.setScaleX(1f);
+            slide.setScaleY(1f);
+        }
     }
 
     /** Una diapositiva: portada, título, artista y botón +. */
@@ -399,7 +420,7 @@ public class PlaylistSuggestionsView extends LinearLayout {
             card.setColor(ContextCompat.getColor(context, R.color.bg_primary));
             setBackground(card);
             setClickable(true); setFocusable(true);
-            SafeTap.installRowTap(this);
+            SafeTap.installRowBounce(this);
 
             CardView frame = new CardView(context);
             frame.setRadius(dp(10)); frame.setCardElevation(0);

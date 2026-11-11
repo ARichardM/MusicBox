@@ -159,6 +159,34 @@ def track_from_panel(item: dict) -> dict | None:
                       best_thumbnail(item.get("thumbnail")), kind_of(item))
 
 
+def playable_video_source(video_id: str, kind: str = "", api=post) -> str:
+    """Devuelve el videoclip correspondiente, o vacío si solo existe la pista con portada fija."""
+    if kind == "video":
+        return video_id
+    data = api("next", {"videoId": video_id, "playlistId": "RDAMVM" + video_id})
+    for item in walk(data, "playlistPanelVideoRenderer"):
+        if item.get("videoId") != video_id:
+            continue
+        details = {key: value for key, value in item.items() if key != "counterpart"}
+        if kind != "song" and kind_of(details) != "song":
+            return video_id
+        counterpart = item.get("counterpart") or {}
+        clip = first(counterpart, "videoId", "")
+        if clip and clip != video_id and kind_of(counterpart) != "song":
+            return clip
+        seed = track_from_panel(item)
+        if seed is None:
+            return ""
+        for candidate in search_videos(f"{seed['artist']} {seed['title']}".strip(), api=api)[:8]:
+            if candidate["id"] == video_id or not (_same_recording(candidate, seed) or _named_in(candidate, seed)):
+                continue
+            length, found = seed["duration"], candidate["duration"]
+            if not length or not found or abs(length - found) <= max(20, length * .15):
+                return candidate["id"]
+        return ""
+    return "" if kind == "song" else video_id
+
+
 def related(video_id: str, count: int = 25, api=post) -> list[dict]:
     """Canciones parecidas a una (la radio de YouTube Music); solo pistas de audio, sin la propia semilla."""
     if count <= 0:

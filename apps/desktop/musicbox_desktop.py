@@ -15,6 +15,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 import hashlib
 import random
+import re
 import platform
 import time
 import uuid
@@ -146,6 +147,7 @@ class MusicBoxBridge(QObject):
     _searchFinished = Signal(object, str, int)
     _downloadEvent = Signal(object)
     _streamReady = Signal(object, str)
+    _videoChecked = Signal(str, object)
     _prefetchReady = Signal(str, str)
     _autoplayReady = Signal(str, list, int)
     autoplayChanged = Signal()
@@ -254,6 +256,8 @@ class MusicBoxBridge(QObject):
             self._playlists = {}
         if "Favoritos" not in self._playlists:
             self._playlists["Favoritos"] = []
+        self._playlist_order = self._settings.value("playlistOrder", [], list) or []
+        self._pinned_playlists = set(self._settings.value("pinnedPlaylists", [], list) or [])
         try:
             self._online_tracks = json.loads(self._settings.value("onlineTracksData", "{}", str) or "{}")
         except (ValueError, TypeError):
@@ -278,7 +282,11 @@ class MusicBoxBridge(QObject):
         # MP4 con sonido se recuerdan para no volver a intentarlo.
         self._video_mode = False
         self._no_video = set()
-        self.playerChanged.connect(self.videoModeChanged)
+        self._video_check_url = ""
+        self._checking_videos = set()
+        self._videoChecked.connect(self._apply_video_check)
+        self.playerChanged.connect(self._check_current_video)
+        self._player.hasVideoChanged.connect(self.videoModeChanged)
         self._alternatives = AlternativesController(self, parent=self)
         self._lyrics = LyricsController(self, parent=self)
         self._auto_download_playlists = set(self._settings.value("autoDownloadPlaylists", [], list) or [])
@@ -837,10 +845,57 @@ class MusicBoxBridge(QObject):
 
     @Property(bool, notify=videoModeChanged)
     def videoAvailable(self):
-        """¿Se puede ver la canción actual? Solo las de YouTube que ofrecen un MP4 con sonido."""
         current = self._current or {}
-        return bool(current.get("url") and not current.get("path") and current.get("id")
-                    and current.get("id") not in self._no_video)
+        if current.get("path"):
+            return self._player.hasVideo()
+        url, video_id = current.get("url"), current.get("id")
+        if not url or not video_id or video_id in self._no_video:
+            return False
+        cached = self._stream_cache.get(self._stream_key(url, True))
+        return bool((self._video_mode and self._player.hasVideo())
+                    or (cached and time.monotonic() - cached[0] < 600))
+
+    @Slot()
+    def _check_current_video(self):
+        item = dict(self._current or {})
+        url = "" if item.get("path") else item.get("url") or ""
+        if url == self._video_check_url:
+            return
+        self._video_check_url = url
+        self.videoModeChanged.emit()
+        video_id = item.get("id") or ""
+        if not url or not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id) or self.videoAvailable or video_id in self._no_video:
+            return
+        if url in self._checking_videos or self._video_mode:
+            return
+        self._checking_videos.add(url)
+
+        def check():
+            try:
+                result = self._resolve_video(item)
+            except Exception:
+                result = None
+            try:
+                self._videoChecked.emit(url, result)
+            except RuntimeError:
+                pass  # La ventana se cerró mientras se comprobaba el video.
+
+        threading.Thread(target=check, daemon=True, name="musicbox-video-check").start()
+
+    def _resolve_video(self, item):
+        source_id = ytmusic.playable_video_source(item["id"], item.get("kind") or "")
+        if not source_id:
+            return None
+        source = "https://www.youtube.com/watch?v=" + source_id
+        return youtube_streams.resolve_stream(source, self._extract_info, video=True)
+
+    @Slot(str, object)
+    def _apply_video_check(self, url, info):
+        self._checking_videos.discard(url)
+        if info and info.get("url"):
+            self._stream_cache[self._stream_key(url, True)] = (time.monotonic(), info["url"], {})
+        if url == self._video_check_url:
+            self.videoModeChanged.emit()
 
     def _wants_video(self, item):
         return bool(self._video_mode and item.get("url") and not item.get("path")
@@ -1215,8 +1270,8 @@ class MusicBoxBridge(QObject):
         result = []
         by_path_clicks = {row.get("path"): row for row in self._library_all}
         id_rows = {vid: by_path_clicks[path] for path, vid in self._path_ids.items() if path in by_path_clicks}
-        for name, keys in self._playlists.items():
-            keys = self._visible_playlist_keys(keys, by_path_clicks, id_rows)
+        for name in self._ordered_playlist_names():
+            keys = self._visible_playlist_keys(self._playlists[name], by_path_clicks, id_rows)
             thumb = ""
             for k in keys:
                 thumb = self._entry_thumbnail(k, by_path_clicks, id_rows)
@@ -1229,9 +1284,43 @@ class MusicBoxBridge(QObject):
                 "clicks": self._clicks(self._playlist_entry_key(k, by_path_clicks) for k in keys),
                 "thumbnail": thumb,
                 "isFavorites": name == "Favoritos",
+                "pinned": name in getattr(self, "_pinned_playlists", set()),
                 "autoDownload": name in self._auto_download_playlists or self.isAutoDownload(f"playlist:{name}")
             })
-        return sorted(result, key=lambda x: x["name"].casefold())
+        return result
+
+    def _ordered_playlist_names(self):
+        names = list(dict.fromkeys(name for name in getattr(self, "_playlist_order", []) if name in self._playlists))
+        names.extend(name for name in sorted(self._playlists, key=str.casefold) if name not in names)
+        return names
+
+    @Property("QVariantList", notify=playlistsChanged)
+    def visiblePlaylists(self):
+        return [row for row in self.playlists if not row["isFavorites"] or row["count"] > 0]
+
+    @Property("QVariantList", notify=playlistsChanged)
+    def pinnedPlaylists(self):
+        return [row for row in self.visiblePlaylists if row["pinned"]]
+
+    @Slot(str, bool)
+    def setPlaylistPinned(self, name, pinned):
+        if name not in self._playlists: return
+        if pinned: self._pinned_playlists.add(name)
+        else: self._pinned_playlists.discard(name)
+        self._save_playlists()
+        self.playlistsChanged.emit()
+        self._schedule_cloud_save()
+
+    @Slot(str, str)
+    def movePlaylist(self, name, target):
+        names = self._ordered_playlist_names()
+        if name == target or name not in names or target not in names: return
+        position = names.index(target)
+        names.remove(name); names.insert(position, name)
+        self._playlist_order = names
+        self._save_playlists()
+        self.playlistsChanged.emit()
+        self._schedule_cloud_save()
 
     def _visible_playlist_keys(self, keys, by_path, id_rows):
         """Cuenta las mismas entradas que la vista puede resolver, sin borrar referencias guardadas."""
@@ -1576,6 +1665,8 @@ class MusicBoxBridge(QObject):
         self._settings.setValue("onlineTracksData", json.dumps(self._online_tracks))
         self._settings.setValue("autoDownloadPlaylists", list(self._auto_download_playlists))
         self._settings.setValue("playlistDescriptions", json.dumps(self._playlist_descriptions))
+        self._settings.setValue("playlistOrder", self._ordered_playlist_names())
+        self._settings.setValue("pinnedPlaylists", sorted(getattr(self, "_pinned_playlists", set()) & self._playlists.keys()))
 
     def _id_of(self, item):
         return item.get("id") or self._path_ids.get(item.get("path", ""), "")
@@ -1673,6 +1764,7 @@ class MusicBoxBridge(QObject):
         name = name.strip()
         if not name or name == "Favoritos": return
         if name not in self._playlists:
+            self._playlist_order = self._ordered_playlist_names() + [name]
             self._playlists[name] = []
             self._save_playlists()
             self.playlistsChanged.emit()
@@ -1686,6 +1778,8 @@ class MusicBoxBridge(QObject):
             del self._playlists[name]
             self._auto_download_playlists.discard(name)
             self._playlist_descriptions.pop(name, None)
+            self._playlist_order = [value for value in getattr(self, "_playlist_order", []) if value != name]
+            getattr(self, "_pinned_playlists", set()).discard(name)
             self._settings.remove(f"autoDownload/playlist:{name}")
             self._save_playlists()
             self.playlistsChanged.emit()
@@ -1702,6 +1796,9 @@ class MusicBoxBridge(QObject):
         if not new_name or (new_name == "Favoritos" and old_name != "Favoritos"): return False
         if new_name != old_name and new_name in self._playlists: return False
         if new_name != old_name:
+            self._playlist_order = [new_name if name == old_name else name for name in self._ordered_playlist_names()]
+            if old_name in getattr(self, "_pinned_playlists", set()):
+                self._pinned_playlists.remove(old_name); self._pinned_playlists.add(new_name)
             self._playlists[new_name] = self._playlists.pop(old_name)
             if old_name in self._auto_download_playlists:
                 self._auto_download_playlists.remove(old_name); self._auto_download_playlists.add(new_name)
@@ -2194,6 +2291,8 @@ class MusicBoxBridge(QObject):
                     self._auto_download_playlists = set(p_data["autoDownload"])
                 if "descriptions" in p_data and isinstance(p_data["descriptions"], dict):
                     self._playlist_descriptions = dict(p_data["descriptions"])
+                self._playlist_order = p_data.get("playlistOrder", []) if isinstance(p_data.get("playlistOrder"), list) else []
+                self._pinned_playlists = set(p_data.get("pinnedPlaylists", [])) if isinstance(p_data.get("pinnedPlaylists"), list) else set()
                 if isinstance(p_data.get("playlists"), dict) and "Favoritos" in p_data["playlists"]:
                     # Quitar un favorito en otro dispositivo no debe resucitar por una copia antigua.
                     self._favorites = set(self._playlists["Favoritos"])
@@ -2297,6 +2396,8 @@ class MusicBoxBridge(QObject):
             "onlineTracks": identity.export_online_tracks(self._online_tracks),
             "autoDownload": list(self._auto_download_playlists),
             "descriptions": self._playlist_descriptions,
+            "playlistOrder": self._ordered_playlist_names(),
+            "pinnedPlaylists": sorted(getattr(self, "_pinned_playlists", set()) & self._playlists.keys()),
         }
         state = dict(self._cloud_snapshot)
         devices = state.get("devices") if isinstance(state.get("devices"), dict) else {}
@@ -2388,6 +2489,8 @@ class MusicBoxBridge(QObject):
             self._auto_download_playlists = set(data["autoDownload"])
         if isinstance(data.get("descriptions"), dict):
             self._playlist_descriptions = dict(data["descriptions"])
+        if isinstance(data.get("playlistOrder"), list): self._playlist_order = list(data["playlistOrder"])
+        if isinstance(data.get("pinnedPlaylists"), list): self._pinned_playlists = set(data["pinnedPlaylists"])
         self._save_playlists()
         self._settings.setValue("favorites", list(self._favorites))
         self._sync_base["local"] = self._section_hash(self._cloud_state().get("playlists"))
@@ -3464,20 +3567,21 @@ class MusicBoxBridge(QObject):
             try:
                 try:
                     # El audio usa la llamada de siempre; solo el video añade su opción.
-                    info = (youtube_streams.resolve_stream(url, self._extract_info, video=True) if use_video
-                            else youtube_streams.resolve_stream(url, self._extract_info))
+                    info = self._resolve_video(item) if use_video else youtube_streams.resolve_stream(url, self._extract_info)
+                    if use_video and not (info or {}).get("url"):
+                        raise RuntimeError("No hay videoclip para esta pista")
                 except Exception:
                     if not use_video:
                         raise
                     # Sin MP4 con sonido para este video: se vuelve al audio y la interfaz lo refleja.
-                    self._no_video.add(item.get("id", ""))
-                    self._video_mode, use_video = False, False
-                    self.videoModeChanged.emit()
+                    item["_video_unavailable"] = True
+                    use_video = False
                     info = youtube_streams.resolve_stream(url, self._extract_info)
                 stream = info.get("url", "")
-                item.update(title=info.get("track") or info.get("title") or item.get("title"),
-                                     artist=info.get("artist") or info.get("uploader") or item.get("artist"),
-                                     album=info.get("album") or "Streaming")
+                if not use_video:
+                    item.update(title=info.get("track") or info.get("title") or item.get("title"),
+                                artist=info.get("artist") or info.get("uploader") or item.get("artist"),
+                                album=info.get("album") or "Streaming")
                 if stream:
                     self._stream_cache[self._stream_key(url, use_video)] = (time.monotonic(), stream, {
                         "title": item.get("title", ""), "artist": item.get("artist", ""),
@@ -3519,6 +3623,10 @@ class MusicBoxBridge(QObject):
     def _play_stream(self, track, source):
         if track.get("_stream_generation") != self._stream_generation:
             return
+        if track.pop("_video_unavailable", False):
+            self._no_video.add(track.get("id", ""))
+            self._video_mode = False
+            self.videoModeChanged.emit()
         self._stream_resolving = False
         if Path(source).is_file():
             self._current = dict(track)

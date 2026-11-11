@@ -14,9 +14,10 @@ import cl.arichard.descargador.R;
 public final class SafeTap {
     private SafeTap() {}
     public static void install(View view) {
-        install(view, true);
+        install(view, true, 0.82f);
     }
-    public static void installRowTap(View view) { install(view, false); }
+    public static void installRowTap(View view) { install(view, false, 1f); }
+    public static void installRowBounce(View view) { install(view, false, 0.96f); }
 
     /** Elegant "pop" for toggles such as the heart: a quick squash, then a springy overshoot. */
     public static void pop(View view, boolean activated) {
@@ -26,32 +27,46 @@ public final class SafeTap {
                 .setInterpolator(new OvershootInterpolator(activated ? 4f : 1.5f)).start();
     }
 
-    private static void press(View view, boolean down) {
+    private static void press(View view, boolean down, float scale, boolean bounce) {
         view.animate().cancel();
-        if (down) view.animate().scaleX(0.82f).scaleY(0.82f).setDuration(90).start();
-        else view.animate().scaleX(1f).scaleY(1f).setDuration(260).setInterpolator(new OvershootInterpolator(3f)).start();
+        if (down) view.animate().scaleX(scale).scaleY(scale).setStartDelay(0).setDuration(85)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        else view.animate().scaleX(1f).scaleY(1f).setStartDelay(0).setDuration(scale >= 0.95f ? 190 : 260)
+                .setInterpolator(bounce ? new OvershootInterpolator(scale >= 0.95f ? 1.6f : 3f)
+                        : new android.view.animation.DecelerateInterpolator()).start();
     }
-    private static void install(View view, boolean protectNavigation) {
+    private static void install(View view, boolean protectNavigation, float pressScale) {
         if (protectNavigation) view.setTag(R.id.protectedAction, true);
         int slop = ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
         view.setOnTouchListener(new View.OnTouchListener() {
             float x, y; boolean dragged;
             @Override public boolean onTouch(View target, MotionEvent event) {
                 switch (event.getActionMasked()) {
-                    case MotionEvent.ACTION_DOWN: x = event.getRawX(); y = event.getRawY(); dragged = false; if (protectNavigation) press(target, true); break;
+                    case MotionEvent.ACTION_DOWN:
+                        x = event.getRawX(); y = event.getRawY(); dragged = false;
+                        if (pressScale < 1f) press(target, true, pressScale, false);
+                        break;
                     case MotionEvent.ACTION_MOVE:
                         if (!dragged && Math.hypot(event.getRawX() - x, event.getRawY() - y) > slop) {
-                            dragged = true; if (protectNavigation) press(target, false); MotionEvent cancel = MotionEvent.obtain(event);
+                            dragged = true;
+                            if (pressScale < 1f) press(target, false, pressScale, protectNavigation);
+                            MotionEvent cancel = MotionEvent.obtain(event);
                             cancel.setAction(MotionEvent.ACTION_CANCEL); target.onTouchEvent(cancel); cancel.recycle();
                         }
                         return dragged;
                     case MotionEvent.ACTION_POINTER_DOWN:
+                        if (!dragged && pressScale < 1f) press(target, false, pressScale, false);
                         dragged = true;
                         MotionEvent cancel = MotionEvent.obtain(event);
                         cancel.setAction(MotionEvent.ACTION_CANCEL); target.onTouchEvent(cancel); cancel.recycle();
                         return true;
-                    case MotionEvent.ACTION_CANCEL: dragged = true; if (protectNavigation) press(target, false); break;
-                    case MotionEvent.ACTION_UP: if (protectNavigation) press(target, false); return dragged;
+                    case MotionEvent.ACTION_CANCEL:
+                        if (!dragged && pressScale < 1f) press(target, false, pressScale, protectNavigation);
+                        dragged = true;
+                        break;
+                    case MotionEvent.ACTION_UP:
+                        if (!dragged && pressScale < 1f) press(target, false, pressScale, true);
+                        return dragged;
                 }
                 return false;
             }

@@ -7,6 +7,7 @@ from collections import OrderedDict
 import json
 from pathlib import Path
 import re
+from threading import Lock
 from urllib.parse import urlencode, parse_qs, urlsplit
 import urllib.request
 
@@ -16,6 +17,7 @@ import ytmusic
 LRCLIB_SEARCH_URL = "https://lrclib.net/api/search"
 USER_AGENT = "MusicBox/2.4 (https://github.com/ARichardM/MusicBox)"
 CACHE_LIMIT = 128
+_CACHE_LOCK = Lock()
 
 TIME_TAG = re.compile(r"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\]")
 OFFSET_TAG = re.compile(r"^\s*\[offset:\s*([+-]?\d+)\s*\]\s*$", re.IGNORECASE)
@@ -231,6 +233,25 @@ def read_local(path: str | Path) -> dict | None:
     return None
 
 
+def _recording_versions(title: str, album: str) -> set[str]:
+    text = coincidencias.normalize(f"{title} {album}")
+    names = re.findall(r"\b(live|en vivo|acoustic|acustic[oa]|remix|karaoke|instrumental|demo|unplugged|edit|extended)\b", text)
+    aliases = {"en vivo": "live", "acustico": "acoustic", "acustica": "acoustic", "unplugged": "acoustic"}
+    return {aliases.get(name, name) for name in names}
+
+
+def _lyrics_for_recording(item, title, artist, duration, original_title, album):
+    found_title = item.get("trackName") or item.get("name") or ""
+    found_artist = item.get("artistName") or ""
+    found_duration = item.get("duration")
+    same_recording = (duration > 0 and isinstance(found_duration, (int, float)) and abs(duration - found_duration) <= 2
+                      and coincidencias.normalize(title) == coincidencias.normalize(clean_title(found_title))
+                      and bool(artist) and coincidencias.normalize(artist) == coincidencias.normalize(clean_artist(found_artist))
+                      and _recording_versions(original_title or title, album)
+                      == _recording_versions(found_title, item.get("albumName") or ""))
+    return item if same_recording else dict(item, syncedLyrics=None, instrumental=False)
+
+
 def _score_lrclib_candidate(candidate: dict, title: str, artist: str, duration: int) -> float:
     wanted_title = coincidencias.normalize(clean_title(title))
     found_title = coincidencias.normalize(clean_title(candidate.get("trackName") or candidate.get("name") or ""))
@@ -287,7 +308,8 @@ def _lrclib_request(params: dict, opener=urllib.request.urlopen) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
-def fetch_lrclib(title: str, artist: str = "", duration: int = 0, opener=urllib.request.urlopen) -> dict | None:
+def fetch_lrclib(title: str, artist: str = "", duration: int = 0, opener=urllib.request.urlopen, *,
+                 original_title: str = "", album: str = "") -> dict | None:
     """Busca la letra en LRCLIB priorizando letras sincronizadas que coincidan en título, artista y duración."""
     title = title.strip()
     artist = artist.strip()
@@ -321,7 +343,7 @@ def fetch_lrclib(title: str, artist: str = "", duration: int = 0, opener=urllib.
                 continue
             if item_id is not None:
                 seen_ids.add(item_id)
-            candidates.append(item)
+            candidates.append(_lyrics_for_recording(item, title, artist, duration, original_title, album))
         # Si ya hay una coincidencia sincronizada sólida en la primera consulta, no hace falta seguir buscando.
         if any(_score_lrclib_candidate(c, title, artist, duration) >= 1.15 for c in candidates):
             break
@@ -333,6 +355,8 @@ def fetch_lrclib(title: str, artist: str = "", duration: int = 0, opener=urllib.
     best_item = None
     for item in candidates:
         score = _score_lrclib_candidate(item, title, artist, duration)
+        if score >= 0 and album and coincidencias.normalize(album) == coincidencias.normalize(item.get("albumName") or ""):
+            score += 0.15
         if score > best_score:
             best_score = score
             best_item = item
@@ -377,17 +401,19 @@ def _video_id_from_track(track: dict) -> str:
     return ""
 
 
-def _cache_key(track: dict, title: str, artist: str) -> str:
+def _cache_key(track: dict, title: str, artist: str, duration: int) -> str:
     vid = _video_id_from_track(track)
     norm_title = coincidencias.normalize(title)
     norm_artist = coincidencias.normalize(artist)
-    if norm_title:
-        return f"{vid}|{norm_artist}|{norm_title}"
-    return vid or str(track.get("path") or "")
+    path = str(track.get("path") or "")
+    if norm_title or vid or path:
+        return f"{vid}|{path}|{norm_artist}|{norm_title}|{track.get('title') or ''}|{track.get('album') or ''}|{duration}"
+    return ""
 
 
 def clear_cache() -> None:
-    _CACHE.clear()
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 def find(
@@ -407,11 +433,12 @@ def find(
     title, artist, duration = clean_query(item)
     video_id = _video_id_from_track(item)
     store = _CACHE if cache is None else cache
-    key = _cache_key(item, title, artist)
+    key = _cache_key(item, title, artist, duration)
 
-    if use_cache and key and key in store:
-        store.move_to_end(key)
-        return dict(store[key])
+    with _CACHE_LOCK:
+        if use_cache and key and key in store:
+            store.move_to_end(key)
+            return dict(store[key])
 
     if not title and not video_id:
         return local_result or {"lines": [], "synced": False, "source": "", "instrumental": False}
@@ -423,15 +450,17 @@ def find(
     if title:
         attempts += 1
         try:
-            lrclib_result = fetch_lrclib(title, artist, duration, opener=lrclib_opener)
+            lrclib_result = fetch_lrclib(title, artist, duration, opener=lrclib_opener,
+                                         original_title=item.get("title") or "", album=item.get("album") or "")
         except Exception:
             errors += 1
 
     if lrclib_result and (lrclib_result.get("synced") or lrclib_result.get("instrumental")):
         if key:
-            store[key] = dict(lrclib_result)
-            while len(store) > CACHE_LIMIT:
-                store.popitem(last=False)
+            with _CACHE_LOCK:
+                store[key] = dict(lrclib_result)
+                while len(store) > CACHE_LIMIT:
+                    store.popitem(last=False)
         return lrclib_result
 
     if local_result and local_result.get("lines"):
@@ -439,9 +468,10 @@ def find(
 
     if lrclib_result and lrclib_result.get("lines"):
         if key:
-            store[key] = dict(lrclib_result)
-            while len(store) > CACHE_LIMIT:
-                store.popitem(last=False)
+            with _CACHE_LOCK:
+                store[key] = dict(lrclib_result)
+                while len(store) > CACHE_LIMIT:
+                    store.popitem(last=False)
         return lrclib_result
 
     # Respaldo: letra oficial en YouTube Music (directa por videoId o buscando la canción equivalente).
@@ -463,9 +493,10 @@ def find(
 
     if yt_result and yt_result.get("lines"):
         if key:
-            store[key] = dict(yt_result)
-            while len(store) > CACHE_LIMIT:
-                store.popitem(last=False)
+            with _CACHE_LOCK:
+                store[key] = dict(yt_result)
+                while len(store) > CACHE_LIMIT:
+                    store.popitem(last=False)
         return yt_result
 
     if attempts > 0 and errors == attempts:

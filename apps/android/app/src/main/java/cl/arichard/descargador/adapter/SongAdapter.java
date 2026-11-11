@@ -63,6 +63,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     /** Cómo se ordena la lista. DEFAULT respeta el orden recibido (el de la playlist o el del escáner). */
     public enum Sort { DEFAULT, TITLE, ARTIST, RECENT, PLAYS, DURATION }
     private Sort sort = Sort.DEFAULT;
+    private boolean playlistOrder;
     /** Sentido natural de cada orden: A→Z, de menor a mayor duración, lo más reciente o lo más escuchado primero. */
     private boolean ascending = true;
 
@@ -93,6 +94,12 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     }
 
     public void updateSongs(List<Song> songs) {
+        updateSongs(songs, false);
+    }
+
+    /** Las playlists reciben sus entradas en orden de incorporación, incluidas las canciones online. */
+    public void updateSongs(List<Song> songs, boolean playlistOrder) {
+        this.playlistOrder = playlistOrder;
         fileExists.clear();
         originalList.clear();
         if (songs != null) {
@@ -110,7 +117,16 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         switch (sort) {
             case ARTIST: order = ((java.util.Comparator<Song>) (a, b) -> collator.compare(a.getArtist(), b.getArtist())).thenComparing(byTitle); break;
             case DURATION: order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(a.getDuration(), b.getDuration())).thenComparing(byTitle); break;
-            case RECENT: order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(b.getDateAdded(), a.getDateAdded())).thenComparing(byTitle); break;
+            case RECENT: {
+                if (playlistOrder) {
+                    java.util.Map<String, Integer> positions = new java.util.HashMap<>();
+                    for (int i = 0; i < originalList.size(); i++) positions.put(originalList.get(i).getPath(), i);
+                    order = (a, b) -> Integer.compare(positions.get(b.getPath()), positions.get(a.getPath()));
+                } else {
+                    order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(b.getDateAdded(), a.getDateAdded())).thenComparing(byTitle);
+                }
+                break;
+            }
             case PLAYS: {
                 // Se cuentan una sola vez: contar dentro del comparador tomaría el candado de los clics muchas veces.
                 java.util.Map<String, Integer> plays = new java.util.HashMap<>();
@@ -283,22 +299,19 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             if (arriving.contains(displayedList.get(i).getPath())) notifyItemChanged(i);
     }
 
-    /** Entra deslizándose y brilla dos veces en el azul de MusicBox; ocurre una sola vez por canción. */
-    private void playArrival(View row, int order) {
+    /** Realza la canción sin competir con las transformaciones del animador de RecyclerView. */
+    private void playArrival(SongViewHolder holder, int order) {
+        View row = holder.itemView;
         float density = row.getResources().getDisplayMetrics().density;
         android.graphics.drawable.GradientDrawable glow = new android.graphics.drawable.GradientDrawable();
         glow.setColor(androidx.core.content.ContextCompat.getColor(row.getContext(), R.color.accent));
         glow.setCornerRadius(16 * density);
         glow.setAlpha(0);
         row.setForeground(glow);
-        row.setAlpha(0f);
-        row.setTranslationX(42 * density);
         long delay = Math.min(order, 6) * 70L;
-        row.animate().cancel();
-        row.animate().alpha(1f).translationX(0f).setStartDelay(delay).setDuration(420)
-                .setInterpolator(new android.view.animation.OvershootInterpolator(1.1f)).start();
         android.animation.ValueAnimator pulse = android.animation.ValueAnimator.ofFloat(0f, 1f);
-        pulse.setStartDelay(delay + 220);
+        holder.arrivalPulse = pulse;
+        pulse.setStartDelay(delay);
         pulse.setDuration(1600);
         pulse.addUpdateListener(animation -> {
             float t = (float) animation.getAnimatedValue();
@@ -307,13 +320,30 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             glow.setAlpha((int) Math.round(70 * wave));
         });
         pulse.addListener(new android.animation.AnimatorListenerAdapter() {
-            @Override public void onAnimationEnd(android.animation.Animator animation) { row.setForeground(null); }
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                if (holder.arrivalPulse == animation) {
+                    holder.arrivalPulse = null;
+                    row.setForeground(null);
+                }
+            }
         });
         pulse.start();
     }
 
+    private void clearArrival(SongViewHolder holder) {
+        if (holder.arrivalPulse != null) holder.arrivalPulse.cancel();
+        holder.arrivalPulse = null;
+        holder.itemView.setForeground(null);
+    }
+
+    @Override public void onViewDetachedFromWindow(@NonNull SongViewHolder holder) {
+        clearArrival(holder);
+        super.onViewDetachedFromWindow(holder);
+    }
+
     @Override
     public void onViewRecycled(@NonNull SongViewHolder holder) {
+        clearArrival(holder);
         holder.itemView.animate().cancel();
         holder.itemView.setAlpha(1f);
         holder.itemView.setTranslationX(0f);
@@ -323,11 +353,12 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     @Override
     public void onBindViewHolder(@NonNull SongViewHolder holder, int position) {
+        clearArrival(holder);
         Song song = displayedList.get(position);
         if (!arriving.isEmpty() && arriving.remove(song.getPath())) {
             int order = 0;
             for (int i = 0; i < position; i++) if (arriving.contains(displayedList.get(i).getPath())) order++;
-            playArrival(holder.itemView, order);
+            playArrival(holder, order);
         }
         holder.txtTitle.setText(song.getTitle());
         holder.txtSubtitle.setText(song.getArtist() + " • " + song.getFormattedDuration());
@@ -462,6 +493,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         cl.arichard.descargador.util.LoadingRingView progressDownload;
         View downloadMarkSlot;
         View viewPlayingOverlay;
+        android.animation.ValueAnimator arrivalPulse;
 
         public SongViewHolder(@NonNull View itemView) {
             super(itemView);

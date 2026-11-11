@@ -60,10 +60,10 @@ Las portadas geométricas se crearon para estas capturas; no son carátulas ofic
 
 | Experiencia | Funciones |
 | --- | --- |
-| **Reproductor** | Audio y video, cola editable que se reordena arrastrando, indicador de origen, repetición, reproducción aleatoria y controles en la notificación. |
+| **Reproductor** | Audio, video y letras según disponibilidad. Las letras con tiempos de la grabación siguen la reproducción y los saltos. Incluye cola editable, indicador de origen, repetición, reproducción aleatoria y controles en la notificación. |
 | **Biblioteca** | Canciones locales, carpetas y playlists con portadas, búsqueda y estado de reproducción. |
-| **Playlists** | Nombre, descripción, menú de configuración y descarga automática de nuevas canciones. |
-| **Favoritos** | Una playlist especial y sincronizada; las canciones se identifican por su ID de YouTube, así que no se duplican entre dispositivos. |
+| **Playlists** | Mantén pulsada una playlist y arrástrala para ordenar la biblioteca. Usa «Fijar en Inicio» en su menú para mostrarla en una fila compacta encima de las recomendaciones. Incluye descripción y descarga automática. |
+| **Favoritos** | Aparece en la biblioteca cuando guardas una canción. Se sincroniza entre dispositivos y usa el ID de YouTube para evitar duplicados. |
 | **Clics** | Contador de reproducciones por canción, carpeta y playlist, y estadísticas de tu cuenta. |
 | **Inicio y descubrimiento** | Búsqueda y recomendaciones «Para ti» que se adaptan a lo que escuchas, con canciones de audio de YouTube Music (no videoclips) y artistas con su foto. |
 | **Artistas** | Página de cada artista con sus canciones más escuchadas, todas sus canciones, álbumes y sencillos. |
@@ -141,10 +141,9 @@ Configura estos secretos en **Settings → Secrets and variables → Actions**:
 | `DESKTOP_OAUTH_CLIENT_JSON_BASE64` | Cliente OAuth de escritorio codificado en Base64. |
 | `DESKTOP_FIREBASE_CONFIG_BASE64` | JSON de Firebase para escritorio (`project_id` y `api_key`) codificado en Base64. |
 
-Actualiza la versión (`version.py`, `build.gradle.kts`, `MusicBox.iss`) y la sección de [CHANGELOG.md](CHANGELOG.md); luego crea una etiqueta como `v2.3.0`. GitHub generará una Release con ambos instaladores y las novedades del changelog como notas.
+Actualiza `version.py`, `descargador_gui.py`, `build.gradle.kts`, `MusicBox.iss` y `version_info.txt`, incrementa `versionCode` en Android y agrega la sección de [CHANGELOG.md](CHANGELOG.md). Sube el commit y su etiqueta de versión a GitHub. Las notas de la publicación se generan desde el changelog.
 
-La versión avanza de una en una desde la última publicada: después de `2.3.2`
-corresponde `2.3.3`, y después `2.3.4`. Cambiar el número menor o mayor requiere
+El último número se incrementa en una unidad desde la versión publicada. Cambiar el número menor o mayor requiere
 una indicación explícita. `python scripts/check_version.py` comprueba esta regla
 y que Android, Windows y el changelog coincidan. Los workflows preparan la Release
 como borrador y solo se publica automáticamente cuando Android y Windows terminan

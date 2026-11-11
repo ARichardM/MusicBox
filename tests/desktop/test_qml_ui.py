@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject, QSettings, QUrl, QMetaObject, Qt, Q_ARG
+from PySide6.QtCore import QObject, QPoint, QPointF, QSettings, QUrl, QMetaObject, Qt, Q_ARG
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
@@ -22,6 +22,54 @@ APP = QApplication.instance() or QApplication([])
 
 
 class QmlUiTests(unittest.TestCase):
+    def test_suggestion_card_bounces_on_press_and_does_not_play_on_drag(self):
+        QQuickStyle.setStyle("Material")
+        engine = QQmlApplicationEngine()
+        source = QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "SuggestionTest.qml"))
+        engine.loadData(b"""
+            import QtQuick
+            import "components" as Mb
+            Window {
+                id: harness
+                width: 480
+                height: 180
+                visible: true
+                property int plays: 0
+                Mb.PlaylistSuggestions {
+                    width: parent.width
+                    height: implicitHeight
+                    suggestions: [{id: "first", title: "First"}, {id: "second", title: "Second"}]
+                    onPlayRequested: harness.plays += 1
+                }
+            }
+        """, source)
+        self.assertTrue(engine.rootObjects())
+        window = engine.rootObjects()[0]
+        try:
+            QTest.qWait(350)
+            carousel = window.findChild(QObject, "playlistSuggestionsCarousel")
+            card = carousel.property("currentItem")
+            self.assertIsNotNone(card)
+            start = card.mapToScene(QPointF(card.width() / 2, card.height() / 2)).toPoint()
+            QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, start)
+            QTest.qWait(100)
+            self.assertLess(card.scale(), .98)
+            QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, start)
+            QTest.qWait(230)
+            self.assertAlmostEqual(card.scale(), 1)
+            self.assertEqual(window.property("plays"), 1)
+
+            QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, start)
+            before_drag = carousel.property("contentX")
+            for offset in (30, 70, 120, 160):
+                QTest.mouseMove(window, start - QPoint(offset, 0), 25)
+            self.assertGreater(carousel.property("contentX"), before_drag)
+            QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, start - QPoint(160, 0))
+            QTest.qWait(400)
+            self.assertEqual(window.property("plays"), 1)
+        finally:
+            window.close()
+
     def test_remote_format_controls_playlist_download_and_preserves_pending_local_choice(self):
         with tempfile.TemporaryDirectory() as directory:
             settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.IniFormat)
@@ -190,7 +238,7 @@ class QmlUiTests(unittest.TestCase):
             QTest.qWait(400)
             self.assertFalse(popup.property("visible"),
                              f"focus={popup.property('activeFocus')} opened={popup.property('opened')}")
-            names = [row["name"] for row in bridge.playlists]
+            names = [row["name"] for row in bridge.visiblePlaylists]
             current = names.index("Demostración")
             direction = 1 if current + 1 < len(names) else -1
             expected = names[current + direction]

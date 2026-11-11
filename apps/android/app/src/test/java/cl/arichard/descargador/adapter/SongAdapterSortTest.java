@@ -97,6 +97,55 @@ public class SongAdapterSortTest {
         assertEquals(Arrays.asList("Alfa", "Beta", "álbum"), titles());
     }
 
+    @Test public void playlistRecentUsesMembershipOrderForOnlineAndDownloadedSongs() {
+        Song old = song("Antigua", "Ana", 200, 900);
+        Song online = new Song(0, "Zulu", "Ana", "YouTube", 200000,
+                "youtube:abcdefghijk", "YouTube", 0);
+        Song downloaded = song("Descargada antes", "Ana", 200, 1);
+        adapter.setSort(SongAdapter.Sort.RECENT, true);
+        adapter.updateSongs(Arrays.asList(old, online, downloaded), true);
+        assertEquals(Arrays.asList("Descargada antes", "Zulu", "Antigua"), titles());
+        adapter.setSort(SongAdapter.Sort.RECENT, false);
+        assertEquals(Arrays.asList("Antigua", "Zulu", "Descargada antes"), titles());
+        adapter.updateSongs(Arrays.asList(old, online, downloaded));
+        assertEquals("Zulu", titles().get(0)); // Fuera de playlists vuelve a usarse la fecha del archivo.
+    }
+
+    @Test public void newlyAddedSongRespectsTheCurrentSortAndFilters() {
+        List<Song> playlist = new ArrayList<>(adapter.getDisplayedList());
+        adapter.setSort(SongAdapter.Sort.TITLE, true);
+        adapter.setArtistFilter("Ana");
+        adapter.filter("Al");
+        playlist.add(song("Alce", "Ana", 120, 0));
+        playlist.add(song("Albor", "Otra", 120, 0));
+        adapter.updateSongs(playlist, true);
+        assertEquals(Arrays.asList("Alce", "Alfa"), titles());
+        adapter.setSort(SongAdapter.Sort.RECENT, true);
+        assertEquals(Arrays.asList("Alce", "Alfa"), titles());
+    }
+
+    @Test public void arrivalHighlightStaysAlignedWhenRecyclerAnimationsAreCancelledOrRebound() {
+        android.content.Context themed = new android.view.ContextThemeWrapper(
+                RuntimeEnvironment.getApplication(), cl.arichard.descargador.R.style.Theme_MusicBox);
+        adapter = new SongAdapter(themed, new ArrayList<>(adapter.getDisplayedList()), null);
+        android.widget.FrameLayout parent = new android.widget.FrameLayout(themed);
+        SongAdapter.SongViewHolder holder = adapter.onCreateViewHolder(parent, 0);
+        adapter.highlightArrivals(java.util.Collections.singleton(adapter.getDisplayedList().get(0).getPath()));
+        adapter.onBindViewHolder(holder, 0);
+        holder.itemView.animate().cancel();
+        assertEquals(0f, holder.itemView.getTranslationX(), .001f);
+        assertEquals(1f, holder.itemView.getAlpha(), .001f);
+        assertNotNull(holder.itemView.getForeground());
+        adapter.onBindViewHolder(holder, 1);
+        assertNull(holder.itemView.getForeground());
+        assertNull(holder.arrivalPulse);
+        adapter.highlightArrivals(java.util.Collections.singleton(adapter.getDisplayedList().get(1).getPath()));
+        adapter.onBindViewHolder(holder, 1);
+        adapter.onViewDetachedFromWindow(holder);
+        assertNull(holder.itemView.getForeground());
+        assertNull(holder.arrivalPulse);
+    }
+
     @Test public void mostPlayedFirst() {
         ClickStats stats = ClickStats.getInstance(RuntimeEnvironment.getApplication());
         Song alfa = adapter.getDisplayedList().get(2);

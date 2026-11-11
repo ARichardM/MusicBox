@@ -200,6 +200,7 @@ Rectangle {
 
             ListView {
                 id: carousel
+                objectName: "playlistSuggestionsCarousel"
                 anchors.fill: parent
                 anchors.bottomMargin: 10
                 orientation: ListView.Horizontal
@@ -221,7 +222,6 @@ Rectangle {
                         PauseAnimation { duration: Math.max(0, Math.min(ViewTransition.index, 4)) * 55 }
                         ParallelAnimation {
                             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 260; easing.type: Easing.OutCubic }
-                            NumberAnimation { property: "scale"; from: 0.94; to: 1; duration: 300; easing.type: Easing.OutCubic }
                         }
                     }
                 }
@@ -235,6 +235,7 @@ Rectangle {
 
                 delegate: Rectangle {
                     id: slide
+                    objectName: "playlistSuggestionCard"
                     required property int index
                     required property var track
                     property bool added: false
@@ -243,8 +244,14 @@ Rectangle {
                     radius: 14
                     color: slideArea.containsMouse ? Theme.cardHover : Theme.panel
                     Behavior on color { ColorAnimation { duration: 120 } }
-                    scale: slideArea.pressed ? 0.985 : 1
-                    Behavior on scale { NumberAnimation { duration: 90 } }
+                    scale: slideArea.pressed && !carousel.dragging ? 0.96 : 1
+                    Behavior on scale {
+                        NumberAnimation {
+                            duration: slideArea.pressed || carousel.dragging ? 85 : 190
+                            easing.type: slideArea.pressed || carousel.dragging ? Easing.OutCubic : Easing.OutBack
+                            easing.overshoot: 1.4
+                        }
+                    }
 
                     MouseArea {
                         id: slideArea

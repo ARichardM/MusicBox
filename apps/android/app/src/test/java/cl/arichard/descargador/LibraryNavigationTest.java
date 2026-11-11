@@ -47,6 +47,40 @@ public class LibraryNavigationTest {
             Shadows.shadowOf(Looper.getMainLooper()).idle();
         }
     }
+
+    @Test public void playlistRefreshInsertsOnlineSongsAccordingToTheSelectedOrder() throws Exception {
+        context.getSharedPreferences("musicbox_prefs", 0).edit().putString("library_sort", "RECENT:1").commit();
+        PlaylistManager manager = PlaylistManager.getInstance(context);
+        String name = "Orden de incorporación";
+        manager.createPlaylist(name);
+        manager.addOnlineTrack(name, new cl.arichard.descargador.model.SearchResult(
+                "aaaaaaaaaaa", "Alfa", "Ana", 120, "", ""));
+        manager.addOnlineTrack(name, new cl.arichard.descargador.model.SearchResult(
+                "bbbbbbbbbbb", "Beta", "Ana", 120, "", ""));
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).create()) {
+            finishScan();
+            MainActivity activity = controller.get();
+            java.lang.reflect.Method open = MainActivity.class.getDeclaredMethod("showPlaylistSongs", String.class);
+            open.setAccessible(true); open.invoke(activity, name);
+            cl.arichard.descargador.adapter.SongAdapter adapter = (cl.arichard.descargador.adapter.SongAdapter)
+                    ((RecyclerView) activity.findViewById(R.id.recyclerLibrary)).getAdapter();
+            assertEquals("Beta", adapter.getDisplayedList().get(0).getTitle());
+            manager.addOnlineTrack(name, new cl.arichard.descargador.model.SearchResult(
+                    "ccccccccccc", "Zulu", "Ana", 120, "", ""));
+            java.lang.reflect.Method refresh = MainActivity.class.getDeclaredMethod("refreshPlaylistsView");
+            refresh.setAccessible(true); refresh.invoke(activity);
+            assertEquals("Zulu", adapter.getDisplayedList().get(0).getTitle());
+            java.lang.reflect.Method sort = MainActivity.class.getDeclaredMethod("applySort",
+                    cl.arichard.descargador.adapter.SongAdapter.Sort.class, boolean.class);
+            sort.setAccessible(true);
+            sort.invoke(activity, cl.arichard.descargador.adapter.SongAdapter.Sort.TITLE, true);
+            manager.addOnlineTrack(name, new cl.arichard.descargador.model.SearchResult(
+                    "ddddddddddd", "Delta", "Ana", 120, "", ""));
+            refresh.invoke(activity);
+            assertEquals("Alfa", adapter.getDisplayedList().get(0).getTitle());
+            assertEquals("Delta", adapter.getDisplayedList().get(2).getTitle());
+        }
+    }
     @Test public void reopeningKeepsPlaylistAndSearchInsteadOfReturningToAllSongs() throws Exception {
         context.getSharedPreferences("library_navigation", 0).edit().putInt("mode", 3)
                 .putString("sublist", "En camino").putString("query", "Recuerdo").putBoolean("search_tab", false).commit();

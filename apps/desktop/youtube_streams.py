@@ -46,6 +46,8 @@ def resolve_stream(url: str, extractor, opener=urllib.request.urlopen, video: bo
         try:
             info = extractor(_options(client, format=VIDEO_FORMAT if video else AUDIO_FORMAT), url)
             stream = (info or {}).get("url", "")
+            if video and stream and (info.get("vcodec") == "none" or info.get("acodec") == "none"):
+                continue
             if stream and stream_is_reachable(stream, info.get("http_headers"), opener):
                 return info
         except Exception as exc:  # cada cliente puede fallar de forma distinta

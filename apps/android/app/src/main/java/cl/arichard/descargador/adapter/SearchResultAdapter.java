@@ -17,7 +17,7 @@ import java.util.Set;
 import java.util.ArrayList;
 import java.util.List;
 
-public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapter.ViewHolder> {
+public class SearchResultAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     public interface OnResultClickListener {
         void onMoreClick(SearchResult result, View anchor);
@@ -57,12 +57,14 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     }
 
     public void setDownloadedIds(Set<String> ids) {
+        if (downloadedIds.equals(ids == null ? java.util.Collections.emptySet() : ids)) return;
         downloadedIds.clear();
         if (ids != null) downloadedIds.addAll(ids);
         notifyDataSetChanged();
     }
 
     public void setDownloadedTitles(Set<String> titles) {
+        if (downloadedTitles.equals(titles == null ? java.util.Collections.emptySet() : titles)) return;
         downloadedTitles.clear();
         if (titles != null) downloadedTitles.addAll(titles);
         notifyDataSetChanged();
@@ -153,7 +155,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
     @NonNull
     @Override
-    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         if (viewType == TYPE_LOADING_MORE) {
             float density = context.getResources().getDisplayMetrics().density;
             android.widget.FrameLayout footer = new android.widget.FrameLayout(context);
@@ -162,30 +164,30 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             ring.setId(R.id.searchLoadingMoreRing);
             int size = Math.round(30 * density);
             footer.addView(ring, new android.widget.FrameLayout.LayoutParams(size, size, android.view.Gravity.CENTER));
-            return new ViewHolder(footer);
+            return new LoadingHolder(footer, ring);
         }
         View view = LayoutInflater.from(context).inflate(R.layout.item_search_result, parent, false);
         return new ViewHolder(view);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull ViewHolder holder, int position, @NonNull java.util.List<Object> payloads) {
-        if (getItemViewType(position) == TYPE_LOADING_MORE) {
-            cl.arichard.descargador.util.LoadingRingView ring = holder.itemView.findViewById(R.id.searchLoadingMoreRing);
-            if (ring != null) ring.setActive(true);
-            return;
-        }
-        if (payloads.contains(PROGRESS)) {
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder row, int position, @NonNull List<Object> payloads) {
+        if (row instanceof ViewHolder && payloads.contains(PROGRESS)) {
+            ViewHolder holder = (ViewHolder) row;
             Float fraction = downloadProgress.get(results.get(position).getId());
             holder.progressDownload.setProgress(fraction == null ? -1f : fraction);
             return;
         }
-        super.onBindViewHolder(holder, position, payloads);
+        super.onBindViewHolder(row, position, payloads);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-        if (getItemViewType(position) == TYPE_LOADING_MORE) return;
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder row, int position) {
+        if (row instanceof LoadingHolder) {
+            ((LoadingHolder) row).ring.setActive(true);
+            return;
+        }
+        ViewHolder holder = (ViewHolder) row;
         SearchResult item = results.get(position);
         animateArrival(holder.itemView, position);
         holder.txtTitle.setText(item.getTitle());
@@ -244,7 +246,8 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             else pm.addOnlineTrack("Favoritos", item);
             cl.arichard.descargador.util.SafeTap.pop(holder.btnFavorite, !exists);
             if (listener != null) listener.onFavoriteChanged(item, !exists);
-            notifyItemChanged(holder.getBindingAdapterPosition());
+            int currentPosition = holder.getBindingAdapterPosition();
+            if (currentPosition != RecyclerView.NO_POSITION) notifyItemChanged(currentPosition);
         });
 
         holder.itemView.setOnClickListener(v -> {
@@ -269,10 +272,14 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     }
 
     @Override
-    public void onViewRecycled(@NonNull ViewHolder holder) {
-        holder.itemView.animate().cancel();
-        holder.itemView.setAlpha(1f);
-        holder.itemView.setTranslationY(0f);
+    public void onViewRecycled(@NonNull RecyclerView.ViewHolder holder) {
+        if (holder instanceof LoadingHolder) {
+            ((LoadingHolder) holder).ring.setActive(false);
+        } else {
+            holder.itemView.animate().cancel();
+            holder.itemView.setAlpha(1f);
+            holder.itemView.setTranslationY(0f);
+        }
         super.onViewRecycled(holder);
     }
 
@@ -281,7 +288,16 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
         return results.size() + (loadingMore ? 1 : 0);
     }
 
-    static class ViewHolder extends RecyclerView.ViewHolder {
+    private static final class LoadingHolder extends RecyclerView.ViewHolder {
+        final cl.arichard.descargador.util.LoadingRingView ring;
+
+        LoadingHolder(View footer, cl.arichard.descargador.util.LoadingRingView ring) {
+            super(footer);
+            this.ring = ring;
+        }
+    }
+
+    private static final class ViewHolder extends RecyclerView.ViewHolder {
         ImageView imgThumbnail;
         TextView txtTitle;
         TextView txtChannel;

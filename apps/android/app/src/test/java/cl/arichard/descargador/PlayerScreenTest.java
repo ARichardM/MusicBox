@@ -41,11 +41,10 @@ public class PlayerScreenTest {
         assertEquals("Repetir lista", ((TextView) activity.findViewById(R.id.txtRepeatMode)).getText().toString());
         activity.findViewById(R.id.btnRepeat).performClick();
         assertEquals("Repetir canción", ((TextView) activity.findViewById(R.id.txtRepeatMode)).getText().toString());
-        assertNotNull(activity.findViewById(R.id.tabSelectorLyrics));
+        assertEquals(android.view.View.GONE, activity.findViewById(R.id.tabSelectorLyrics).getVisibility());
+        assertEquals(android.view.View.GONE, activity.findViewById(R.id.playerSelectorPill).getVisibility());
         assertEquals(android.view.View.GONE, activity.findViewById(R.id.containerLyrics).getVisibility());
         activity.findViewById(R.id.tabSelectorLyrics).performClick();
-        assertEquals(android.view.View.VISIBLE, activity.findViewById(R.id.containerLyrics).getVisibility());
-        activity.findViewById(R.id.tabSelectorMp3).performClick();
         assertEquals(android.view.View.GONE, activity.findViewById(R.id.containerLyrics).getVisibility());
         cl.arichard.descargador.player.QueueSheet.show(activity);
         Dialog dialog = ShadowDialog.getLatestDialog();
