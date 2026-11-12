@@ -7,7 +7,7 @@ Image {
     id: root
     property string name: ""
     property int size: 18
-    property color tint: Theme.dark ? "#FFFFFF" : "#46505E"
+    property color tint: Theme.dark ? "#FFFFFF" : Theme.adaptiveColor("#46505E")
 
     width: size
     height: size

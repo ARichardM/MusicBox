@@ -7,6 +7,9 @@ from PySide6.QtCore import QLocale, QTranslator
 LANGUAGES = ("auto", "es", "en")
 
 EN = {
+    "Color primario": "Accent color",
+    "Azul": "Blue",
+    "Naranjo": "Orange",
     "Descarga de playlists": "Playlist downloads",
     "Formato de descarga": "Download format",
     "Importar playlists": "Import playlists",
@@ -180,6 +183,12 @@ EN = {
     "Conectando…": "Connecting…",
     "Configuración": "Settings",
     "Configurar playlist": "Playlist settings",
+    "Opciones de playlist": "Playlist options",
+    "Compartir playlist (CSV)": "Share playlist (CSV)",
+    "Archivos CSV": "CSV files",
+    "La playlist no tiene canciones para compartir.": "The playlist has no tracks to share.",
+    "No se pudo guardar la playlist.": "Couldn't save the playlist.",
+    "CSV guardado. Impórtalo con Soundiiz o TuneMyMusic.": "CSV saved. Import it with Soundiiz or TuneMyMusic.",
     "Continuar con Google": "Continue with Google",
     "Contraer panel": "Collapse panel",
     "Crea una con el botón + o agrega canciones desde cualquier vista":

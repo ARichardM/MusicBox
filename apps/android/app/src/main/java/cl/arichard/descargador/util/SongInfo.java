@@ -65,7 +65,7 @@ public final class SongInfo {
             text.setTextSize(11f);
             text.setLetterSpacing(.08f);
             text.setTypeface(null, android.graphics.Typeface.BOLD);
-            text.setTextColor(ContextCompat.getColor(context, R.color.accent));
+            text.setTextColor(AccentColors.getColor(context, R.color.accent));
             text.setPadding(0, Math.round(16 * density), 0, Math.round(2 * density));
             return text;
         }
@@ -75,12 +75,12 @@ public final class SongInfo {
         TextView label = new TextView(context);
         label.setText(row.label);
         label.setTextSize(12f);
-        label.setTextColor(ContextCompat.getColor(context, R.color.text_secondary));
+        label.setTextColor(AccentColors.getColor(context, R.color.text_secondary));
         text.setText(row.value);
         text.setTextSize(15f);
         text.setGravity(Gravity.START);
         text.setTextIsSelectable(true);
-        text.setTextColor(ContextCompat.getColor(context, R.color.text_primary));
+        text.setTextColor(AccentColors.getColor(context, R.color.text_primary));
         line.addView(label);
         line.addView(text);
         return line;

@@ -19,7 +19,7 @@ AbstractButton {
     Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
     Behavior on opacity { NumberAnimation { duration: 140 } }
 
-    readonly property color foreground: variant === "primary" ? (enabled ? "white" : Theme.muted)
+    readonly property color foreground: variant === "primary" ? (enabled ? Theme.accentText : Theme.muted)
         : variant === "danger" ? Theme.danger
         : variant === "secondary" ? Theme.fg
         : Theme.accent

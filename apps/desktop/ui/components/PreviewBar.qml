@@ -71,7 +71,7 @@ Item {
                 width: parent.width
                 height: 5
                 radius: 3
-                color: Theme.dark ? "#2C2E34" : "#D3D9E3"
+                color: Theme.dark ? Theme.adaptiveColor("#2C2E34") : Theme.adaptiveColor("#D3D9E3")
                 Rectangle {
                     height: parent.height
                     radius: 3

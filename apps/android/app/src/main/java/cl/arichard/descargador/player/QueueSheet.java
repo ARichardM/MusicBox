@@ -1,5 +1,7 @@
 package cl.arichard.descargador.player;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.app.Activity;
 import android.graphics.Typeface;
 import android.text.Editable;
@@ -108,13 +110,13 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
     private int dp(int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
     private TextView text(String value, int size) {
         TextView text = new TextView(activity); text.setText(value); text.setTextSize(size);
-        text.setTextColor(ContextCompat.getColor(activity, R.color.text_primary));
+        text.setTextColor(AccentColors.getColor(activity, R.color.text_primary));
         text.setGravity(Gravity.CENTER_VERTICAL); return text;
     }
     private TextView button(String label, Runnable action) {
         TextView button = text(label, 14); button.setGravity(Gravity.CENTER);
         button.setMinHeight(dp(48)); button.setPadding(dp(12), 0, dp(12), 0);
-        button.setTextColor(ContextCompat.getColor(activity, R.color.accent));
+        button.setTextColor(AccentColors.getColor(activity, R.color.accent));
         button.setBackgroundResource(R.drawable.bg_text_button);
         button.setOnClickListener(v -> action.run());
         cl.arichard.descargador.util.SafeTap.install(button); return button;
@@ -140,7 +142,7 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         LinearLayout labels = new LinearLayout(activity); labels.setOrientation(LinearLayout.VERTICAL);
         TextView title = text(Tr.t("Reproducción automática"), 15); title.setTypeface(null, Typeface.BOLD);
         TextView detail = text(Tr.t("Agrega canciones similares al final de la cola"), 12);
-        detail.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary));
+        detail.setTextColor(AccentColors.getColor(activity, R.color.text_secondary));
         labels.addView(title); labels.addView(detail);
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
         com.google.android.material.switchmaterial.SwitchMaterial toggle = new com.google.android.material.switchmaterial.SwitchMaterial(activity);
@@ -157,7 +159,7 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
     private LinearLayout build(Runnable close) {
         LinearLayout root = new LinearLayout(activity); root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(8), dp(12), dp(inline ? 12 : 20));
-        root.setBackgroundColor(inline ? 0 : ContextCompat.getColor(activity, R.color.bg_primary));
+        root.setBackgroundColor(inline ? 0 : AccentColors.getColor(activity, R.color.bg_primary));
         View handle = new View(activity); handle.setBackgroundResource(R.drawable.bg_sheet_handle);
         LinearLayout.LayoutParams handleParams = new LinearLayout.LayoutParams(dp(40), dp(4));
         handleParams.gravity = Gravity.CENTER_HORIZONTAL; handleParams.topMargin = dp(2); root.addView(handle, handleParams);
@@ -180,9 +182,9 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         LinearLayout nextTexts = new LinearLayout(activity); nextTexts.setOrientation(LinearLayout.VERTICAL);
         nextTexts.setPadding(dp(12), 0, 0, 0);
         subheading = text("", 14); subheading.setSingleLine(true); subheading.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        subheading.setTextColor(ContextCompat.getColor(activity, R.color.text_primary));
+        subheading.setTextColor(AccentColors.getColor(activity, R.color.text_primary));
         nextMeta = text("", 12); nextMeta.setSingleLine(true); nextMeta.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        nextMeta.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary));
+        nextMeta.setTextColor(AccentColors.getColor(activity, R.color.text_secondary));
         nextTexts.addView(subheading); nextTexts.addView(nextMeta);
         nextRow.addView(nextTexts, new LinearLayout.LayoutParams(0, -2, 1));
         nextRow.setVisibility(inline ? View.VISIBLE : View.GONE);
@@ -194,12 +196,12 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         root.addView(header);
 
         hint = text(Tr.t("Mantén pulsado y arrastra para cambiar el orden"), 12);
-        hint.setTextColor(ContextCompat.getColor(activity, R.color.text_secondary)); root.addView(hint);
+        hint.setTextColor(AccentColors.getColor(activity, R.color.text_secondary)); root.addView(hint);
         autoplayView = autoplayRow();
         root.addView(autoplayView);
         autoplayStatus = text("", 12);
         autoplayStatus.setPadding(dp(4), dp(4), dp(4), dp(8));
-        autoplayStatus.setTextColor(ContextCompat.getColor(activity, R.color.accent));
+        autoplayStatus.setTextColor(AccentColors.getColor(activity, R.color.accent));
         autoplayStatus.setOnClickListener(v -> player.retryAutoplay());
         root.addView(autoplayStatus);
         empty = text(Tr.t("Tu cola está vacía. Agrega tus canciones favoritas."), 15);
@@ -362,7 +364,7 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
             Song song = player.getQueue().get(position);
             boolean active = position == player.getCurrentIndex();
             holder.title.setText((active ? Tr.t("Ahora · ") : "") + song.getTitle() + "\n" + song.getArtist());
-            holder.title.setTextColor(ContextCompat.getColor(activity, active ? R.color.accent : R.color.text_primary));
+            holder.title.setTextColor(AccentColors.getColor(activity, active ? R.color.accent : R.color.text_primary));
             holder.itemView.setBackgroundResource(active ? R.drawable.bg_song_playing : 0);
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), holder.cover);
             holder.itemView.setOnClickListener(v -> player.playQueueIndex(holder.getBindingAdapterPosition()));

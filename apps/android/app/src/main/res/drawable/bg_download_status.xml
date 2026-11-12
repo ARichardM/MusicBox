@@ -3,8 +3,8 @@
     <corners android:radius="7dp"/>
     <gradient
         android:angle="315"
-        android:startColor="#F0272C33"
-        android:centerColor="#E51B2633"
-        android:endColor="#D9101822"/>
-    <stroke android:width="0.75dp" android:color="#9946DDFB"/>
+        android:startColor="?attr/musicboxDownloadStart"
+        android:centerColor="?attr/musicboxDownloadCenter"
+        android:endColor="?attr/musicboxDownloadEnd"/>
+    <stroke android:width="0.75dp" android:color="?attr/musicboxAccentBorder"/>
 </shape>

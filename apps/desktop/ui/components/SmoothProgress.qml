@@ -14,7 +14,7 @@ Item {
         id: track
         anchors.fill: parent
         radius: height / 2
-        color: Theme.dark ? "#26272C" : "#D5DBE5"
+        color: Theme.dark ? Theme.adaptiveColor("#26272C") : Theme.adaptiveColor("#D5DBE5")
         clip: true
 
         Rectangle {

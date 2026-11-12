@@ -1,3 +1,3 @@
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient android:angle="45" android:startColor="#363B74" android:centerColor="#7759A3" android:endColor="#D3849C"/>
+    <gradient android:angle="45" android:startColor="?attr/musicboxCoverStart" android:centerColor="?attr/musicboxCoverEnd" android:endColor="#D3849C"/>
 </shape>

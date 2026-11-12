@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.Manifest;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -31,7 +33,6 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -71,7 +72,7 @@ import cl.arichard.descargador.util.Tr;
  * historial paginado y registro. Se abre desde el perfil. Todo lo que ve viene de {@link DownloadManager},
  * que sigue trabajando aunque se cierre la pantalla.
  */
-public class DownloaderActivity extends AppCompatActivity {
+public class DownloaderActivity extends AppearanceActivity {
     private static final String PREFS = "downloader";
     private static final int PAGE = DownloadHistoryDb.PAGE_SIZE;
 
@@ -305,7 +306,7 @@ public class DownloaderActivity extends AppCompatActivity {
             TextView label = findViewById(ids[i]);
             boolean selected = i == index;
             label.setBackgroundResource(selected ? R.drawable.bg_chip_active : 0);
-            label.setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
+            label.setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
             View page = pages[i];
             if (selected) {
                 page.setVisibility(View.VISIBLE);
@@ -343,8 +344,8 @@ public class DownloaderActivity extends AppCompatActivity {
 
     private void style(View tile, TextView title, TextView sub, boolean selected) {
         tile.setBackgroundResource(selected ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
-        title.setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
-        sub.setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
+        title.setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
+        sub.setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
     }
 
     private void renderFormat() {
@@ -361,7 +362,7 @@ public class DownloaderActivity extends AppCompatActivity {
             chip.setGravity(Gravity.CENTER);
             chip.setPadding(dp(16), 0, dp(16), 0);
             chip.setBackgroundResource(selected ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
-            chip.setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
+            chip.setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38));
             lp.setMargins(0, 0, dp(8), 0);
             chip.setLayoutParams(lp);
@@ -387,8 +388,8 @@ public class DownloaderActivity extends AppCompatActivity {
         TextView single = findViewById(R.id.chipSingle), playlist = findViewById(R.id.chipPlaylist);
         single.setBackgroundResource(!playlistMode ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
         playlist.setBackgroundResource(playlistMode ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
-        single.setTextColor(ContextCompat.getColor(this, !playlistMode ? R.color.chip_active_text : R.color.text_primary));
-        playlist.setTextColor(ContextCompat.getColor(this, playlistMode ? R.color.chip_active_text : R.color.text_primary));
+        single.setTextColor(AccentColors.getColor(this, !playlistMode ? R.color.chip_active_text : R.color.text_primary));
+        playlist.setTextColor(AccentColors.getColor(this, playlistMode ? R.color.chip_active_text : R.color.text_primary));
         inputRange.setVisibility(playlistMode ? View.VISIBLE : View.GONE);
     }
 
@@ -577,7 +578,7 @@ public class DownloaderActivity extends AppCompatActivity {
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
         row.title = new TextView(this);
-        row.title.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        row.title.setTextColor(AccentColors.getColor(this, R.color.text_primary));
         row.title.setTextSize(14f); row.title.setTypeface(null, Typeface.BOLD);
         row.title.setSingleLine(true); row.title.setEllipsize(TextUtils.TruncateAt.END);
         head.addView(row.title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -589,7 +590,7 @@ public class DownloaderActivity extends AppCompatActivity {
         head.addView(row.badge, badgeLp);
         row.cancel = new TextView(this);
         row.cancel.setText("✕"); row.cancel.setTextSize(15f); row.cancel.setGravity(Gravity.CENTER);
-        row.cancel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        row.cancel.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
         head.addView(row.cancel, new LinearLayout.LayoutParams(dp(36), dp(36)));
         root.addView(head);
         row.bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
@@ -599,7 +600,7 @@ public class DownloaderActivity extends AppCompatActivity {
         barLp.topMargin = dp(8);
         root.addView(row.bar, barLp);
         row.detail = new TextView(this);
-        row.detail.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        row.detail.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
         row.detail.setTextSize(12f);
         row.detail.setPadding(0, dp(6), 0, 0);
         root.addView(row.detail);
@@ -626,7 +627,7 @@ public class DownloaderActivity extends AppCompatActivity {
             case PARTIAL: label = Tr.t("CON ERRORES"); color = R.color.heart_red; break;
             default: label = Tr.t("COMPLETADO"); color = R.color.success; break;
         }
-        int tint = ContextCompat.getColor(this, color);
+        int tint = AccentColors.getColor(this, color);
         row.badge.setText(label);
         row.badge.setTextColor(tint);
         GradientDrawable pill = new GradientDrawable();
@@ -704,13 +705,13 @@ public class DownloaderActivity extends AppCompatActivity {
             row.setPadding(0, dp(12), 0, dp(2));
             TextView title = new TextView(this);
             title.setText(file.title);
-            title.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+            title.setTextColor(AccentColors.getColor(this, R.color.text_primary));
             title.setTextSize(14f); title.setSingleLine(true); title.setEllipsize(TextUtils.TruncateAt.END);
             row.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             TextView badge = new TextView(this);
             badge.setText(file.existing ? Tr.t("Existente") : file.mp3 ? "MP3" : "MP4");
             badge.setTextSize(10.5f); badge.setTypeface(null, Typeface.BOLD); badge.setGravity(Gravity.CENTER);
-            badge.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+            badge.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
             badge.setBackgroundResource(R.drawable.bg_chip_inactive);
             badge.setPadding(dp(10), 0, dp(10), 0);
             row.addView(badge, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)));
@@ -878,10 +879,10 @@ public class DownloaderActivity extends AppCompatActivity {
             TextView text = (TextView) holder.itemView;
             int color;
             switch (line.level) {
-                case "error": color = ContextCompat.getColor(DownloaderActivity.this, R.color.heart_red); break;
+                case "error": color = AccentColors.getColor(DownloaderActivity.this, R.color.heart_red); break;
                 case "warn": color = Color.parseColor("#FF9F0A"); break;
-                case "ready": color = ContextCompat.getColor(DownloaderActivity.this, R.color.success); break;
-                default: color = ContextCompat.getColor(DownloaderActivity.this, R.color.text_secondary);
+                case "ready": color = AccentColors.getColor(DownloaderActivity.this, R.color.success); break;
+                default: color = AccentColors.getColor(DownloaderActivity.this, R.color.text_secondary);
             }
             text.setTextColor(color);
             text.setText(new SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(new Date(line.time)) + "  " + line.text);

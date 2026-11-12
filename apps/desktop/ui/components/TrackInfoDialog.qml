@@ -12,7 +12,7 @@ Dialog {
     modal: true
     title: qsTr("Información de la canción")
     standardButtons: Dialog.Close
-    background: Rectangle { radius: 20; color: musicbox.darkMode ? "#161618" : "white" }
+    background: Rectangle { radius: 20; color: musicbox.darkMode ? Theme.adaptiveColor("#161618") : "white" }
     contentItem: ScrollView {
         clip: true
         contentWidth: availableWidth
@@ -28,7 +28,7 @@ Dialog {
                     TextEdit {
                         Layout.fillWidth: true
                         text: modelData.value
-                        color: musicbox.darkMode ? "white" : "#111318"
+                        color: musicbox.darkMode ? "white" : Theme.adaptiveColor("#111318")
                         font.pixelSize: 14
                         readOnly: true
                         selectByMouse: true

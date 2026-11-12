@@ -162,6 +162,7 @@ public final class CloudSyncManager {
         String language = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales().toLanguageTags();
         return new JSONObject().put("autoFormat", p.getString("autoFormat", "MP3"))
                 .put("darkMode", p.getBoolean("dark_mode", true))
+                .put("accentColor", cl.arichard.descargador.util.AccentColors.selected(context))
                 .put("language", p.getString("language", language.isEmpty() ? "auto" : language))
                 .put("quality_mp3", p.getString("quality_mp3", "192 kbps"))
                 .put("quality_mp4", p.getString("quality_mp4", "1080p"))
@@ -181,6 +182,9 @@ public final class CloudSyncManager {
             edit.putBoolean("dark_mode", remote.optBoolean("darkMode", root.optBoolean("darkMode", true)));
         if (!pending.has("androidFolders") && remote.optJSONArray("androidFolders") != null)
             edit.putString("library_roots", remote.optJSONArray("androidFolders").toString());
+        String accent = remote.optString("accentColor", "");
+        if (!pending.has("accentColor") && cl.arichard.descargador.util.AccentColors.isValid(accent))
+            edit.putString("accentColor", accent);
         edit.apply();
         handler.post(() -> {
             if (active != this) return;

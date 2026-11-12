@@ -3,6 +3,15 @@
     <style name="Theme.MusicBox" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/accent</item>
         <item name="colorPrimaryVariant">@color/accent</item>
+        <item name="musicboxAccentRipple">@color/dialog_button_ripple</item>
+        <item name="musicboxAccentSoft">@color/accent_soft</item>
+        <item name="musicboxAccentBorder">@color/accent_border</item>
+        <item name="musicboxAccentHighlight">@color/accent_highlight</item>
+        <item name="musicboxCoverStart">@color/cover_start</item>
+        <item name="musicboxCoverEnd">@color/cover_end</item>
+        <item name="musicboxDownloadStart">@color/download_start</item>
+        <item name="musicboxDownloadCenter">@color/download_center</item>
+        <item name="musicboxDownloadEnd">@color/download_end</item>
         <item name="colorSecondary">@color/accent</item>
         <item name="colorSurface">@color/bg_card</item>
         <item name="colorOnSurface">@color/text_primary</item>
@@ -27,11 +36,8 @@
     </style>
 
     <style name="ThemeOverlay.MusicBox.Dialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
-        <item name="colorPrimary">@color/accent</item>
-        <item name="colorSecondary">@color/accent</item>
         <item name="colorSurface">@color/bg_card</item>
         <item name="colorOnSurface">@color/text_primary</item>
-        <item name="android:colorAccent">@color/accent</item>
         <item name="android:colorBackground">@color/bg_card</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
@@ -58,7 +64,7 @@
     <style name="Widget.MusicBox.DialogButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
         <item name="backgroundTint">@android:color/transparent</item>
         <item name="android:backgroundTint">@android:color/transparent</item>
-        <item name="android:textColor">@color/accent</item>
+        <item name="android:textColor">?attr/colorPrimary</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textStyle">bold</item>
         <item name="android:gravity">center</item>
@@ -66,13 +72,13 @@
         <item name="android:minHeight">44dp</item>
         <item name="android:paddingLeft">12dp</item>
         <item name="android:paddingRight">12dp</item>
-        <item name="rippleColor">@color/dialog_button_ripple</item>
+        <item name="rippleColor">?attr/musicboxAccentRipple</item>
     </style>
 
     <style name="Widget.MusicBox.DialogEditText" parent="Widget.AppCompat.EditText">
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textColorHint">@color/text_secondary</item>
-        <item name="android:backgroundTint">@color/accent</item>
+        <item name="android:backgroundTint">?attr/colorPrimary</item>
         <item name="android:paddingLeft">16dp</item>
         <item name="android:paddingRight">16dp</item>
         <item name="android:minHeight">52dp</item>
@@ -126,5 +132,23 @@
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">10.5sp</item>
         <item name="android:maxLines">1</item>
+    </style>
+    <style name="ThemeOverlay.MusicBox.Orange" parent="">
+        <item name="colorPrimary">@color/accent_orange</item>
+        <item name="colorPrimaryVariant">@color/accent_orange</item>
+        <item name="colorSecondary">@color/accent_orange</item>
+        <item name="colorOnPrimary">@color/on_accent_orange</item>
+        <item name="colorOnSecondary">@color/on_accent_orange</item>
+        <item name="android:colorAccent">@color/accent_orange</item>
+        <item name="colorControlActivated">@color/accent_orange</item>
+        <item name="musicboxAccentRipple">@color/orange_ripple</item>
+        <item name="musicboxAccentSoft">@color/orange_soft</item>
+        <item name="musicboxAccentBorder">@color/orange_border</item>
+        <item name="musicboxAccentHighlight">@color/orange_highlight</item>
+        <item name="musicboxCoverStart">@color/orange_cover_start</item>
+        <item name="musicboxCoverEnd">@color/orange_cover_end</item>
+        <item name="musicboxDownloadStart">@color/orange_download_start</item>
+        <item name="musicboxDownloadCenter">@color/orange_download_center</item>
+        <item name="musicboxDownloadEnd">@color/orange_download_end</item>
     </style>
 </resources>

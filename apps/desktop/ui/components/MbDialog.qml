@@ -29,5 +29,5 @@ Popup {
         border.width: 1
         border.color: Theme.line
     }
-    Overlay.modal: Rectangle { color: Theme.dark ? "#AA000000" : "#66101520" }
+    Overlay.modal: Rectangle { color: Theme.dark ? "#AA000000" : Theme.adaptiveColor("#66101520") }
 }

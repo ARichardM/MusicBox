@@ -6,7 +6,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     spacing: 24
-    readonly property color card: Theme.dark ? "#1B1C20" : "#FFFFFF"
+    readonly property color card: Theme.dark ? Theme.adaptiveColor("#1B1C20") : "#FFFFFF"
 
     // Artistas para ti
     ColumnLayout {

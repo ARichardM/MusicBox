@@ -136,7 +136,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 36
-                    color: Theme.dark ? "#18191C" : "#EDF0F5"
+                    color: Theme.dark ? Theme.adaptiveColor("#18191C") : Theme.adaptiveColor("#EDF0F5")
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 14

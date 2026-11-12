@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -21,7 +23,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -55,7 +56,7 @@ import cl.arichard.descargador.util.YoutubeApi;
  * coincidencias en YouTube con elección automática solo cuando es segura, y 4) el informe. El resultado son los
  * enlaces elegidos, que el Descargador pone en su cola sin empezar a descargar.
  */
-public class ImporterActivity extends AppCompatActivity {
+public class ImporterActivity extends AppearanceActivity {
     public static final String EXTRA_URLS = "urls";
     public static final String EXTRA_COUNT = "count";
     public static final String EXTRA_TREE = "tree";
@@ -281,7 +282,7 @@ public class ImporterActivity extends AppCompatActivity {
         for (int i = 0; i < pages.length; i++) {
             boolean selected = i == index;
             steps[i].setBackgroundResource(selected ? R.drawable.bg_chip_active : 0);
-            steps[i].setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
+            steps[i].setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
             View page = pages[i];
             if (selected) {
                 page.setVisibility(View.VISIBLE);
@@ -467,8 +468,8 @@ public class ImporterActivity extends AppCompatActivity {
     private void bindCheck(TextView check, boolean on) {
         GradientDrawable disc = new GradientDrawable();
         disc.setShape(GradientDrawable.OVAL);
-        if (on) disc.setColor(ContextCompat.getColor(this, R.color.accent));
-        else disc.setStroke(dp(2), ContextCompat.getColor(this, R.color.border));
+        if (on) disc.setColor(AccentColors.getColor(this, R.color.accent));
+        else disc.setStroke(dp(2), AccentColors.getColor(this, R.color.border));
         check.setBackground(disc);
         check.setText(on ? "✓" : "");
     }
@@ -574,7 +575,7 @@ public class ImporterActivity extends AppCompatActivity {
                 default: label = Tr.t("EN COLA"); color = R.color.text_secondary;
             }
             if (row.chosen >= 0 && row.state.equals("review")) { label = Tr.t("ELEGIDA"); color = R.color.success; }
-            int tint = ContextCompat.getColor(ImporterActivity.this, color);
+            int tint = AccentColors.getColor(ImporterActivity.this, color);
             h.badge.setText(label); h.badge.setTextColor(tint);
             GradientDrawable pill = new GradientDrawable();
             pill.setCornerRadius(dp(12)); pill.setColor((tint & 0x00FFFFFF) | 0x26000000);
@@ -672,7 +673,7 @@ public class ImporterActivity extends AppCompatActivity {
             boolean active = filters[index] == selected;
             button.setSelected(active);
             button.setBackgroundResource(active ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
-            button.setTextColor(ContextCompat.getColor(this, active ? R.color.chip_active_text : R.color.text_secondary));
+            button.setTextColor(AccentColors.getColor(this, active ? R.color.chip_active_text : R.color.text_secondary));
         }
     }
 

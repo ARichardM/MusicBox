@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -15,7 +17,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
 
@@ -35,7 +36,7 @@ import cl.arichard.descargador.util.YtMusicApi;
  * Página del artista: foto con marco redondo, sus canciones más escuchadas, todas sus canciones y su discografía.
  * Tocar una canción reproduce la lista como cola; tocar un álbum abre sus pistas.
  */
-public class ArtistActivity extends AppCompatActivity {
+public class ArtistActivity extends AppearanceActivity {
     public static final String EXTRA_ID = "artist_id", EXTRA_NAME = "artist_name", EXTRA_PHOTO = "artist_photo";
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -51,14 +52,14 @@ public class ArtistActivity extends AppCompatActivity {
         super.onCreate(state);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(ContextCompat.getColor(this, R.color.bg_primary));
+        scroll.setBackgroundColor(AccentColors.getColor(this, R.color.bg_primary));
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(20), dp(20), dp(24));
         scroll.addView(content, new FrameLayout.LayoutParams(-1, -2));
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(ContextCompat.getColor(this, R.color.bg_primary));
+        root.setBackgroundColor(AccentColors.getColor(this, R.color.bg_primary));
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         miniPlayer = new cl.arichard.descargador.util.MiniPlayerView(this);
         LinearLayout.LayoutParams playerLayout = new LinearLayout.LayoutParams(-1, -2);
@@ -99,7 +100,7 @@ public class ArtistActivity extends AppCompatActivity {
         TextView view = new TextView(this);
         view.setText(text);
         view.setTextSize(size);
-        view.setTextColor(ContextCompat.getColor(this, color));
+        view.setTextColor(AccentColors.getColor(this, color));
         if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         return view;
     }
@@ -184,7 +185,7 @@ public class ArtistActivity extends AppCompatActivity {
         button.setGravity(Gravity.CENTER);
         button.setTextSize(15);
         button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        button.setTextColor(primary ? 0xFFFFFFFF : ContextCompat.getColor(this, R.color.text_primary));
+        button.setTextColor(primary ? AccentColors.onAccent(this) : AccentColors.getColor(this, R.color.text_primary));
         button.setBackgroundResource(primary ? R.drawable.bg_button_accent : R.drawable.bg_button_secondary);
         SafeTap.install(button);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(52));
@@ -199,7 +200,7 @@ public class ArtistActivity extends AppCompatActivity {
         CardView card = new CardView(this);
         card.setRadius(dp(sizeDp) / 2f);
         card.setCardElevation(0f);
-        card.setCardBackgroundColor(ContextCompat.getColor(this, R.color.bg_card));
+        card.setCardBackgroundColor(AccentColors.getColor(this, R.color.bg_card));
         ImageView photo = new ImageView(this);
         photo.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(photo, new FrameLayout.LayoutParams(-1, -1));
@@ -209,7 +210,7 @@ public class ArtistActivity extends AppCompatActivity {
         View ring = new View(this);
         GradientDrawable oval = new GradientDrawable();
         oval.setShape(GradientDrawable.OVAL);
-        oval.setStroke(dp(ringDp), ContextCompat.getColor(this, R.color.accent));
+        oval.setStroke(dp(ringDp), AccentColors.getColor(this, R.color.accent));
         ring.setBackground(oval);
         frame.addView(ring, new FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp)));
         frame.setLayoutParams(new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp)));
@@ -314,7 +315,7 @@ public class ArtistActivity extends AppCompatActivity {
         CardView art = new CardView(this);
         art.setRadius(dp(10));
         art.setCardElevation(0f);
-        art.setCardBackgroundColor(ContextCompat.getColor(this, R.color.bg_card));
+        art.setCardBackgroundColor(AccentColors.getColor(this, R.color.bg_card));
         ImageView cover = new ImageView(this);
         cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
         art.addView(cover, new FrameLayout.LayoutParams(-1, -1));
@@ -386,7 +387,7 @@ public class ArtistActivity extends AppCompatActivity {
         CardView art = new CardView(this);
         art.setRadius(dp(radiusDp));
         art.setCardElevation(0f);
-        art.setCardBackgroundColor(ContextCompat.getColor(this, R.color.bg_card));
+        art.setCardBackgroundColor(AccentColors.getColor(this, R.color.bg_card));
         ImageView image = new ImageView(this);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
         art.addView(image, new FrameLayout.LayoutParams(-1, -1));

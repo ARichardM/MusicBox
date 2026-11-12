@@ -188,6 +188,9 @@ public final class Tr {
         m.put("Desactivar descarga autom\u00e1tica", "Turn off auto-download");
         m.put("Activar descarga autom\u00e1tica", "Turn on auto-download");
         m.put("Eliminar playlist", "Delete playlist");
+        m.put("Compartir playlist (CSV)", "Share playlist (CSV)");
+        m.put("La playlist no tiene canciones para compartir.", "The playlist has no tracks to share.");
+        m.put("No se pudo compartir la playlist.", "Couldn't share the playlist.");
         m.put("\u00bfEliminar \"", "Delete \"");
         m.put("\"? Las canciones descargadas se conservar\u00e1n.", "\"? Downloaded songs will be kept.");
         m.put("Eliminar", "Delete");

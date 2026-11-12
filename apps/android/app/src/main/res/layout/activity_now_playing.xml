@@ -260,7 +260,7 @@
                             android:paddingBottom="3dp"
                             android:textSize="11sp"
                             android:textStyle="bold"
-                            android:textColor="@color/accent"
+                            android:textColor="?attr/colorPrimary"
                             android:background="@drawable/bg_nav_island"
                             android:visibility="gone"/>
 

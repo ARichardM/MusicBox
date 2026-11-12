@@ -81,7 +81,7 @@ public final class SongAlternativesSheet {
     }
 
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
-    private int color(int id) { return ContextCompat.getColor(activity, id); }
+    private int color(int id) { return AccentColors.getColor(activity, id); }
 
     private void open() {
         replaceable = picker == null && (!PlaylistManager.getInstance(activity).playlistsContaining(song.getPath()).isEmpty()

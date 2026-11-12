@@ -22,7 +22,7 @@ Rectangle {
     radius: 18
     color: Theme.card
     border.width: 1
-    border.color: Theme.dark ? "#26282E" : "#D5DCE6"
+    border.color: Theme.dark ? Theme.adaptiveColor("#26282E") : Theme.adaptiveColor("#D5DCE6")
     clip: true
     implicitHeight: shut ? headerHeight : headerHeight + slideHeight + 10
     visible: opacity > 0.01
@@ -314,7 +314,7 @@ Rectangle {
                                 anchors.centerIn: parent
                                 name: slide.added ? "check" : "plus"
                                 size: 16
-                                tint: slide.added || addArea.containsMouse ? "#FFFFFF" : Theme.accent
+                                tint: slide.added ? "#FFFFFF" : (addArea.containsMouse ? Theme.accentText : Theme.accent)
                                 SequentialAnimation {
                                     running: slide.added
                                     NumberAnimation { target: addIcon; property: "scale"; to: 1.3; duration: 120; easing.type: Easing.OutCubic }

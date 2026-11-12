@@ -25,7 +25,7 @@ import java.util.function.Supplier;
 import static org.junit.Assert.*;
 import static org.junit.Assume.*;
 
-/** Runs against the separate preview app and never deletes or downloads user files. */
+/** Runs against the isolated verification app. */
 @RunWith(AndroidJUnit4.class)
 public class DeviceGestureTest {
     private UiDevice device;
@@ -166,26 +166,27 @@ public class DeviceGestureTest {
         assertTrue(device.hasObject(By.res(pkg, "navTabLibrary").selected(true)));
     }
 
-    @Test public void upwardPlayerDragFollowsFingerAndCanBeCancelled() throws Exception {
-        Rect mini = view("miniPlayerLayout").getVisibleBounds();
+    @Test public void shortUpwardSwipeOverPlayButtonOpensPlayerOnRelease() throws Exception {
+        Rect button = view("btnMiniPlayPause").getVisibleBounds();
+        android.app.Activity activity = resumed();
+        float density = activity.getResources().getDisplayMetrics().density;
+        String initial = main(() -> player.getCurrentSong().getPath());
+        int x = button.centerX();
+        int y = button.centerY();
+        int cancelledY = y - Math.round(72 * density);
         long down = android.os.SystemClock.uptimeMillis();
-        pointer(down, android.view.MotionEvent.ACTION_DOWN, mini.centerX(), mini.centerY());
-        pointer(down, android.view.MotionEvent.ACTION_MOVE, mini.centerX(), mini.centerY() - 120);
-        Thread.sleep(100);
-        MainActivity activity = (MainActivity) resumed();
-        float first = main(() -> activity.findViewById(R.id.nowPlayingCoordinator).getTranslationY());
-        pointer(down, android.view.MotionEvent.ACTION_MOVE, mini.centerX(), mini.centerY() - 360);
-        Thread.sleep(80);
-        float second = main(() -> activity.findViewById(R.id.nowPlayingCoordinator).getTranslationY());
-        assertTrue("Player follows the finger: " + first + " -> " + second, second < first && second > 0);
-        pointer(down, android.view.MotionEvent.ACTION_CANCEL, mini.centerX(), mini.centerY() - 360);
-        waitFor(() -> main(() -> activity.findViewById(R.id.nowPlayingRoot) == null));
-        down = android.os.SystemClock.uptimeMillis();
-        pointer(down, android.view.MotionEvent.ACTION_DOWN, mini.centerX(), mini.centerY());
-        pointer(down, android.view.MotionEvent.ACTION_MOVE, mini.centerX(), mini.centerY() - 800);
-        pointer(down, android.view.MotionEvent.ACTION_UP, mini.centerX(), mini.centerY() - 800);
-        waitFor(() -> resumed() instanceof NowPlayingActivity);
+        pointer(down, android.view.MotionEvent.ACTION_DOWN, x, y);
+        pointer(down, android.view.MotionEvent.ACTION_MOVE, x, cancelledY);
+        assertSame("Player stays closed while the finger is down", activity, resumed());
+        pointer(down, android.view.MotionEvent.ACTION_CANCEL, x, cancelledY);
+        assertSame("Cancelling leaves the player closed", activity, resumed());
+        assertFalse(main(player::isPlaying));
+
+        assertTrue(device.swipe(x, y, x + Math.round(12 * density), y - Math.round(40 * density), 7));
         view("btnPlayerMore");
+        assertTrue(resumed() instanceof NowPlayingActivity);
+        assertFalse("The swipe must not press Play", main(player::isPlaying));
+        assertEquals("The swipe must not skip the song", initial, main(() -> player.getCurrentSong().getPath()));
     }
     private void pointer(long down, int action, int x, int y) {
         android.view.MotionEvent event = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, x, y, 0);

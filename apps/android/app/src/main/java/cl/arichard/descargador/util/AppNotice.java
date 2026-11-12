@@ -36,9 +36,10 @@ public final class AppNotice {
         float density = anchor.getResources().getDisplayMetrics().density;
         GradientDrawable surface = new GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(42, 46, 54), Color.rgb(24, 28, 35)});
+                new int[]{AccentColors.adaptive(anchor.getContext(), Color.rgb(42, 46, 54)),
+                        AccentColors.adaptive(anchor.getContext(), Color.rgb(24, 28, 35))});
         surface.setCornerRadius(18f * density);
-        surface.setStroke(Math.max(1, Math.round(density)), Color.argb(105, 70, 221, 251));
+        surface.setStroke(Math.max(1, Math.round(density)), AccentColors.adaptive(anchor.getContext(), Color.argb(105, 70, 221, 251)));
         view.setBackground(surface);
         view.setElevation(12f * density);
 
@@ -50,7 +51,7 @@ public final class AppNotice {
 
         if (action != null && callback != null) {
             bar.setAction(action, ignored -> callback.run());
-            bar.setActionTextColor(Color.rgb(70, 221, 251));
+            bar.setActionTextColor(AccentColors.adaptive(anchor.getContext(), Color.rgb(70, 221, 251)));
             TextView actionView = view.findViewById(com.google.android.material.R.id.snackbar_action);
             actionView.setTextSize(12f);
         }

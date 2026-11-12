@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -10,7 +12,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.cardview.widget.CardView;
 import androidx.core.content.ContextCompat;
 import cl.arichard.descargador.data.ClickStats;
@@ -28,7 +29,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Live statistics: keep the screen and keyed rows, update only changed values. */
-public final class StatisticsActivity extends AppCompatActivity {
+public final class StatisticsActivity extends AppearanceActivity {
     private LinearLayout content, ranking;
     private TextView totalTime, totalPlays, rankingHeading, empty;
     private boolean playlists;
@@ -67,7 +68,7 @@ public final class StatisticsActivity extends AppCompatActivity {
         super.onDestroy();
     }
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
-    private int color(int resource) { return ContextCompat.getColor(this, resource); }
+    private int color(int resource) { return AccentColors.getColor(this, resource); }
     private TextView text(String value, int size, boolean bold, boolean muted) {
         TextView view = new TextView(this);
         view.setText(value); view.setTextSize(size);

@@ -16,7 +16,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.content.ContextCompat;
 import com.yausername.youtubedl_android.YoutubeDL;
@@ -27,7 +26,7 @@ import java.io.File;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class PlayerActivity extends AppCompatActivity {
+public class PlayerActivity extends AppearanceActivity {
     public static final String EXTRA_URL = "extra_url";
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_VIDEO_ID = "videoId";

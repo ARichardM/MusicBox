@@ -31,4 +31,23 @@
     <color name="accent_primary">#007AFF</color>
     <color name="bg_card_elevated">#E5E5EA</color>
     <color name="bg_dark">#FFFFFF</color>
+    <color name="accent_orange">#B94700</color>
+    <color name="on_accent_orange">#FFFFFF</color>
+    <color name="orange_ripple">#26B94700</color>
+    <color name="orange_soft">#20B94700</color>
+    <color name="orange_border">#60B94700</color>
+    <color name="orange_highlight">#FFAD66</color>
+    <color name="accent_soft">#20007AFF</color>
+    <color name="accent_border">#60007AFF</color>
+    <color name="accent_highlight">#46DDFB</color>
+    <color name="cover_start">#363B74</color>
+    <color name="cover_end">#7759A3</color>
+    <color name="download_start">#F0272C33</color>
+    <color name="download_center">#E51B2633</color>
+    <color name="download_end">#D9101822</color>
+    <color name="orange_cover_start">#743B20</color>
+    <color name="orange_cover_end">#A36A39</color>
+    <color name="orange_download_start">#F0332C27</color>
+    <color name="orange_download_center">#E533261B</color>
+    <color name="orange_download_end">#D9221810</color>
 </resources>

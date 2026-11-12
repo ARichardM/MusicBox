@@ -246,7 +246,7 @@
                                     android:layout_height="wrap_content"
                                     android:padding="6dp"
                                     android:text="@string/borrar"
-                                    android:textColor="@color/accent"
+                                    android:textColor="?attr/colorPrimary"
                                     android:textSize="13sp"
                                     android:textStyle="bold"
                                     android:background="@drawable/bg_text_button"/>
@@ -430,7 +430,7 @@
                         android:orientation="vertical">
                         <TextView android:id="@+id/txtLibraryContext"
                             android:layout_width="match_parent" android:layout_height="wrap_content"
-                            android:textColor="@color/accent" android:textSize="11sp"
+                            android:textColor="?attr/colorPrimary" android:textSize="11sp"
                             android:textStyle="bold" android:letterSpacing="0.08"
                             android:maxLines="1" android:visibility="gone"/>
                         <TextView android:id="@+id/txtLibraryTitle"
@@ -447,16 +447,16 @@
                     </LinearLayout>
                     <ImageView android:contentDescription="@string/reproduccion_aleatoria" android:id="@+id/btnShuffleAll"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
-                        android:src="@drawable/ic_shuffle" app:tint="@color/accent"
+                        android:src="@drawable/ic_shuffle" app:tint="?attr/colorPrimary"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                     <ImageView android:id="@+id/btnLibraryMore"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
-                        android:src="@drawable/ic_more_vert" app:tint="@color/accent"
+                        android:src="@drawable/ic_more_vert" app:tint="?attr/colorPrimary"
                         android:contentDescription="@string/mas_opciones"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                     <ImageView android:id="@+id/btnNewPlaylist"
                         android:layout_width="40dp" android:layout_height="40dp" android:padding="8dp"
-                        android:src="@drawable/ic_add" app:tint="@color/accent"
+                        android:src="@drawable/ic_add" app:tint="?attr/colorPrimary"
                         android:contentDescription="@string/nueva_playlist" android:visibility="gone"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                 </LinearLayout>
@@ -512,7 +512,7 @@
                         android:paddingStart="10dp" android:paddingEnd="12dp"
                         android:background="@drawable/bg_auto_dl_pill" android:clickable="true" android:focusable="true">
                         <ImageView android:id="@+id/imgLibrarySort" android:layout_width="14dp" android:layout_height="14dp"
-                            android:src="@drawable/ic_sort" app:tint="@color/accent" android:importantForAccessibility="no"/>
+                            android:src="@drawable/ic_sort" app:tint="?attr/colorPrimary" android:importantForAccessibility="no"/>
                         <TextView android:id="@+id/txtLibrarySort" android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_marginStart="6dp" android:textColor="@color/text_primary" android:textSize="11sp"
                             android:layout_weight="1" android:maxLines="1" android:ellipsize="end"
@@ -531,7 +531,7 @@
                         android:layout_width="32dp" android:layout_height="48dp"
                         android:layout_marginEnd="4dp" android:paddingStart="8dp" android:paddingEnd="8dp"
                         android:paddingTop="16dp" android:paddingBottom="16dp"
-                        android:src="@drawable/ic_close" app:tint="@color/accent"
+                        android:src="@drawable/ic_close" app:tint="?attr/colorPrimary"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:visibility="gone" android:clickable="true" android:focusable="true"/>
                     <View android:id="@+id/libraryToolsSpacer"
@@ -543,7 +543,7 @@
                         android:paddingStart="8dp" android:paddingEnd="2dp"
                         android:background="@drawable/bg_auto_dl_pill">
                         <ImageView android:contentDescription="@null" android:importantForAccessibility="no" android:layout_width="13dp" android:layout_height="13dp"
-                            android:src="@drawable/ic_download" app:tint="@color/accent"/>
+                            android:src="@drawable/ic_download" app:tint="?attr/colorPrimary"/>
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                             android:layout_marginStart="4dp" android:text="@string/auto"
                             android:textColor="@color/text_primary" android:textSize="11sp"
@@ -756,7 +756,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="8dp"
-                    android:textColor="@color/accent"
+                    android:textColor="?attr/colorPrimary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>

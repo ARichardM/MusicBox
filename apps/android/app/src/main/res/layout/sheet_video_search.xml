@@ -20,7 +20,7 @@
             android:textColor="@color/text_primary" android:textColorHint="@color/text_secondary" android:textSize="15sp"/>
         <TextView android:id="@+id/btnVideoSearch" android:layout_width="wrap_content" android:layout_height="40dp"
             android:gravity="center" android:minWidth="84dp" android:paddingStart="16dp" android:paddingEnd="16dp"
-            android:text="@string/buscar" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"
+            android:text="@string/buscar" android:textColor="?attr/colorOnPrimary" android:textSize="14sp" android:textStyle="bold"
             android:background="@drawable/bg_button_accent"/>
     </LinearLayout>
 
@@ -43,15 +43,15 @@
         android:gravity="center_vertical" android:orientation="horizontal">
         <TextView android:id="@+id/btnVideoAll" android:layout_width="wrap_content" android:layout_height="44dp"
             android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
-            android:text="@string/marcar_todos" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+            android:text="@string/marcar_todos" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
             android:background="@drawable/bg_text_button"/>
         <TextView android:id="@+id/btnVideoNone" android:layout_width="wrap_content" android:layout_height="44dp"
             android:layout_marginStart="8dp" android:gravity="center" android:paddingStart="14dp" android:paddingEnd="14dp"
-            android:text="@string/desmarcar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+            android:text="@string/desmarcar" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
             android:background="@drawable/bg_text_button"/>
         <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
     </LinearLayout>
     <TextView android:id="@+id/btnVideoAdd" android:layout_width="match_parent" android:layout_height="52dp"
-        android:layout_marginTop="8dp" android:gravity="center" android:textColor="#FFFFFF" android:textSize="15sp"
+        android:layout_marginTop="8dp" android:gravity="center" android:textColor="?attr/colorOnPrimary" android:textSize="15sp"
         android:textStyle="bold" android:background="@drawable/bg_button_accent"/>
 </LinearLayout>

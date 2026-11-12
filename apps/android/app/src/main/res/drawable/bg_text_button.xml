@@ -1,4 +1,4 @@
-<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#25007AFF">
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="?attr/musicboxAccentRipple">
     <item>
         <shape>
             <solid android:color="@color/bg_card"/>

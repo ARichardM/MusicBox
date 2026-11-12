@@ -95,8 +95,8 @@ public class PlaylistSuggestionsView extends LinearLayout {
         setOrientation(VERTICAL);
         GradientDrawable background = new GradientDrawable();
         background.setCornerRadius(dp(18));
-        background.setColor(ContextCompat.getColor(context, R.color.bg_card));
-        background.setStroke(dp(1), ColorUtils.setAlphaComponent(ContextCompat.getColor(context, R.color.border), 120));
+        background.setColor(AccentColors.getColor(context, R.color.bg_card));
+        background.setStroke(dp(1), ColorUtils.setAlphaComponent(AccentColors.getColor(context, R.color.border), 120));
         setBackground(background);
         setClipToOutline(true);
 
@@ -108,13 +108,13 @@ public class PlaylistSuggestionsView extends LinearLayout {
 
         sparkle = new ImageView(context);
         sparkle.setImageResource(R.drawable.ic_sparkle);
-        sparkle.setColorFilter(ContextCompat.getColor(context, R.color.accent));
+        sparkle.setColorFilter(AccentColors.getColor(context, R.color.accent));
         sparkle.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         header.addView(sparkle, new LayoutParams(dp(18), dp(18)));
 
         TextView title = new TextView(context);
         title.setText(Tr.t("Para esta playlist"));
-        title.setTextColor(ContextCompat.getColor(context, R.color.text_primary));
+        title.setTextColor(AccentColors.getColor(context, R.color.text_primary));
         title.setTextSize(12f);
         title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         title.setSingleLine(true);
@@ -138,7 +138,7 @@ public class PlaylistSuggestionsView extends LinearLayout {
         shimmer = new View(context);
         GradientDrawable ghost = new GradientDrawable();
         ghost.setCornerRadius(dp(14));
-        ghost.setColor(ColorUtils.setAlphaComponent(ContextCompat.getColor(context, R.color.text_secondary), 40));
+        ghost.setColor(ColorUtils.setAlphaComponent(AccentColors.getColor(context, R.color.text_secondary), 40));
         shimmer.setBackground(ghost);
         shimmer.setVisibility(GONE);
         FrameLayout.LayoutParams ghostLp = new FrameLayout.LayoutParams(-1, dp(58));
@@ -339,7 +339,7 @@ public class PlaylistSuggestionsView extends LinearLayout {
     private ImageView iconButton(int icon, String description) {
         ImageView view = new ImageView(getContext());
         view.setImageResource(icon);
-        view.setColorFilter(ContextCompat.getColor(getContext(), R.color.text_secondary));
+        view.setColorFilter(AccentColors.getColor(getContext(), R.color.text_secondary));
         view.setPadding(dp(9), dp(9), dp(9), dp(9));
         android.util.TypedValue ripple = new android.util.TypedValue();
         getContext().getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
@@ -417,14 +417,14 @@ public class PlaylistSuggestionsView extends LinearLayout {
             setLayoutParams(new RecyclerView.LayoutParams(dp(260), dp(58)));
             GradientDrawable card = new GradientDrawable();
             card.setCornerRadius(dp(14));
-            card.setColor(ContextCompat.getColor(context, R.color.bg_primary));
+            card.setColor(AccentColors.getColor(context, R.color.bg_primary));
             setBackground(card);
             setClickable(true); setFocusable(true);
             SafeTap.installRowBounce(this);
 
             CardView frame = new CardView(context);
             frame.setRadius(dp(10)); frame.setCardElevation(0);
-            frame.setCardBackgroundColor(ContextCompat.getColor(context, R.color.bg_elevated));
+            frame.setCardBackgroundColor(AccentColors.getColor(context, R.color.bg_elevated));
             cover = new ImageView(context);
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
             frame.addView(cover, new FrameLayout.LayoutParams(-1, -1));
@@ -436,12 +436,12 @@ public class PlaylistSuggestionsView extends LinearLayout {
             textsLp.setMargins(dp(10), 0, dp(8), 0);
             addView(texts, textsLp);
             title = new TextView(context);
-            title.setTextColor(ContextCompat.getColor(context, R.color.text_primary));
+            title.setTextColor(AccentColors.getColor(context, R.color.text_primary));
             title.setTextSize(13f); title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             title.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
             texts.addView(title, new LayoutParams(-1, -2));
             subtitle = new TextView(context);
-            subtitle.setTextColor(ContextCompat.getColor(context, R.color.text_secondary));
+            subtitle.setTextColor(AccentColors.getColor(context, R.color.text_secondary));
             subtitle.setTextSize(11f); subtitle.setSingleLine(true); subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
             texts.addView(subtitle, new LayoutParams(-1, -2));
 
@@ -470,8 +470,8 @@ public class PlaylistSuggestionsView extends LinearLayout {
         }
 
         private void paintAdd(boolean done) {
-            int accent = ContextCompat.getColor(getContext(), R.color.accent);
-            addBackground.setColor(done ? ContextCompat.getColor(getContext(), R.color.success) : ColorUtils.setAlphaComponent(accent, 36));
+            int accent = AccentColors.getColor(getContext(), R.color.accent);
+            addBackground.setColor(done ? AccentColors.getColor(getContext(), R.color.success) : ColorUtils.setAlphaComponent(accent, 36));
             addIcon.setImageResource(done ? R.drawable.ic_check : R.drawable.ic_add);
             addIcon.setColorFilter(done ? Color.WHITE : accent);
         }
@@ -520,8 +520,8 @@ public class PlaylistSuggestionsView extends LinearLayout {
             if (total < 2) return;
             float d = density();
             float active = count <= 5 ? position : position * (total - 1) / Math.max(1, count - 1);
-            int on = ContextCompat.getColor(getContext(), R.color.accent);
-            int off = ContextCompat.getColor(getContext(), R.color.border);
+            int on = AccentColors.getColor(getContext(), R.color.accent);
+            int off = AccentColors.getColor(getContext(), R.color.border);
             float x = 0;
             float cy = getHeight() / 2f;
             for (int i = 0; i < total; i++) {
