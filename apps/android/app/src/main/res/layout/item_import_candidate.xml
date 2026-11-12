@@ -20,5 +20,5 @@
             android:maxLines="1" android:ellipsize="end"/>
     </LinearLayout>
     <TextView android:id="@+id/btnCandidateListen" android:layout_width="40dp" android:layout_height="40dp"
-        android:gravity="center" android:text="▶" android:textColor="@color/accent" android:textSize="15sp"/>
+        android:gravity="center" android:text="▶" android:textColor="?attr/colorPrimary" android:textSize="15sp"/>
 </LinearLayout>

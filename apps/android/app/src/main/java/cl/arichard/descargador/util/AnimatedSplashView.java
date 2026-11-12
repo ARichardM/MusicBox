@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -61,14 +62,20 @@ public final class AnimatedSplashView extends View {
         cube = BitmapFactory.decodeResource(getResources(), R.drawable.logo_cube);
         paint.setFilterBitmap(true);
         paint.setDither(true);
+        boolean orange = "orange".equals(AccentColors.selected(context));
+        if (orange) paint.setColorFilter(new ColorMatrixColorFilter(new float[]{
+                0, 0, 1, 0, 0,
+                .15f, .68f, 0, 0, 0,
+                1, 0, 0, 0, 0,
+                0, 0, 0, 1, 0}));
         waveformPaint.setStyle(Paint.Style.STROKE);
         waveformPaint.setStrokeCap(Paint.Cap.ROUND);
         waveformPaint.setStrokeJoin(Paint.Join.ROUND);
-        waveformPaint.setColor(Color.rgb(0x50, 0xE9, 0xFF));
+        waveformPaint.setColor(orange ? Color.rgb(0xFF, 0xBD, 0x7A) : Color.rgb(0x50, 0xE9, 0xFF));
         waveformGlowPaint.setStyle(Paint.Style.STROKE);
         waveformGlowPaint.setStrokeCap(Paint.Cap.ROUND);
         waveformGlowPaint.setStrokeJoin(Paint.Join.ROUND);
-        waveformGlowPaint.setColor(Color.rgb(0x20, 0xBF, 0xFF));
+        waveformGlowPaint.setColor(orange ? Color.rgb(0xFF, 0x9F, 0x43) : Color.rgb(0x20, 0xBF, 0xFF));
         // Let the window renderer composite this view directly. A dedicated full-screen layer is expensive to
         // recreate while the splash is animating and caused visible stalls on older Samsung GPUs.
     }

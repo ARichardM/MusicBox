@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <attr name="musicboxAccentRipple" format="color"/>
+    <attr name="musicboxAccentSoft" format="color"/>
+    <attr name="musicboxAccentBorder" format="color"/>
+    <attr name="musicboxAccentHighlight" format="color"/>
+    <attr name="musicboxCoverStart" format="color"/>
+    <attr name="musicboxCoverEnd" format="color"/>
+    <attr name="musicboxDownloadStart" format="color"/>
+    <attr name="musicboxDownloadCenter" format="color"/>
+    <attr name="musicboxDownloadEnd" format="color"/>
+</resources>

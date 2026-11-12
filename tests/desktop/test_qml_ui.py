@@ -46,15 +46,23 @@ class QmlUiTests(unittest.TestCase):
         self.assertTrue(engine.rootObjects())
         window = engine.rootObjects()[0]
         try:
+            self.assertTrue(QTest.qWaitForWindowExposed(window))
+            window.requestActivate()
             QTest.qWait(350)
             carousel = window.findChild(QObject, "playlistSuggestionsCarousel")
             card = carousel.property("currentItem")
             self.assertIsNotNone(card)
             start = card.mapToScene(QPointF(card.width() / 2, card.height() / 2)).toPoint()
+            QTest.mouseMove(window, start)
             QTest.mousePress(window, Qt.LeftButton, Qt.NoModifier, start)
-            QTest.qWait(100)
-            self.assertLess(card.scale(), .98)
-            QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, start)
+            try:
+                for _ in range(50):
+                    if card.scale() < .98:
+                        break
+                    QTest.qWait(20)
+                self.assertLess(card.scale(), .98)
+            finally:
+                QTest.mouseRelease(window, Qt.LeftButton, Qt.NoModifier, start)
             QTest.qWait(230)
             self.assertAlmostEqual(card.scale(), 1)
             self.assertEqual(window.property("plays"), 1)

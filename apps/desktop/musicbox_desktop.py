@@ -6,6 +6,8 @@ convivir con la interfaz Tkinter mientras se migran sus herramientas una a una.
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 import json
 from pathlib import Path
@@ -22,7 +24,7 @@ import uuid
 from collections import OrderedDict
 from copy import deepcopy
 
-from PySide6.QtCore import QFile, QObject, Property, QSettings, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QFile, QIODevice, QObject, Property, QSaveFile, QSettings, QStandardPaths, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -112,6 +114,7 @@ class MusicBoxBridge(QObject):
     historyChanged = Signal()
     busyChanged = Signal()
     statusChanged = Signal()
+    accentColorChanged = Signal()
     darkModeChanged = Signal()
     downloadStateChanged = Signal()
     downloadFilesChanged = Signal()
@@ -198,6 +201,8 @@ class MusicBoxBridge(QObject):
         self._auth_error = ""
         self._cloud_snapshot = {}
         self._dark_mode = self._settings.value("darkMode", True, bool)
+        saved_accent = self._settings.value("accentColor", "blue", str)
+        self._accent_color = saved_accent if saved_accent in ("blue", "orange") else "blue"
         self._sidebar_expanded = self._settings.value("sidebarExpanded", True, bool)
         self._search_generation = 0
         self._pending_search_query = ""
@@ -1771,6 +1776,47 @@ class MusicBoxBridge(QObject):
             self._schedule_cloud_save()
 
     @Slot(str)
+    def exportPlaylist(self, name):
+        rows = []
+        for track in self._resolved_playlist(name):
+            title = (track.get("title") or "").strip()
+            if not title or title == i18n.tr("Canción online"):
+                continue
+            artist = self._track_artist(track)
+            if artist in {"YouTube", "Artista desconocido", "Unknown artist"}:
+                artist = ""
+            album = (track.get("album") or "").strip()
+            if album in {"YouTube", "Álbum desconocido", "Unknown album"}:
+                album = ""
+            rows.append((title, artist, album))
+        if not rows:
+            self._show_notice(i18n.tr("La playlist no tiene canciones para compartir."), kind="info")
+            return
+
+        stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)[:48].strip(" .")
+        dialog = QFileDialog(None, i18n.tr("Compartir playlist (CSV)"))
+        dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        dialog.setNameFilter(i18n.tr("Archivos CSV") + " (*.csv)")
+        dialog.setDefaultSuffix("csv")
+        downloads = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+        if downloads:
+            dialog.setDirectory(downloads)
+        dialog.selectFile(f"MusicBox - {stem}.csv")
+        if not dialog.exec():
+            return
+
+        content = io.StringIO(newline="")
+        writer = csv.writer(content)
+        writer.writerow(("title", "artist", "album"))
+        writer.writerows(rows)
+        payload = content.getvalue().encode("utf-8")
+        output = QSaveFile(dialog.selectedFiles()[0])
+        if not output.open(QIODevice.OpenModeFlag.WriteOnly) or output.write(payload) != len(payload) or not output.commit():
+            self._show_notice(i18n.tr("No se pudo guardar la playlist."))
+            return
+        self._show_notice(i18n.tr("CSV guardado. Impórtalo con Soundiiz o TuneMyMusic."), kind="info")
+
+    @Slot(str)
     def deletePlaylist(self, name):
         name = name.strip()
         if not name or name == "Favoritos": return
@@ -2504,6 +2550,19 @@ class MusicBoxBridge(QObject):
         if data != incoming:
             self._schedule_cloud_save()
 
+    @Property(str, notify=accentColorChanged)
+    def accentColor(self):
+        return self._accent_color
+
+    @Slot(str)
+    def setAccentColor(self, value):
+        if value not in ("blue", "orange") or value == self._accent_color:
+            return
+        self._accent_color = value
+        self._settings.setValue("accentColor", value)
+        self.accentColorChanged.emit()
+        self._preference_changed("accentColor")
+
     @Slot()
     def toggleTheme(self):
         self._dark_mode = not self._dark_mode
@@ -2562,7 +2621,7 @@ class MusicBoxBridge(QObject):
 
     def _all_preferences(self):
         folders = self._settings.value("libraryFoldersJson", "", str)
-        return dict(self.downloadPrefs, darkMode=self._dark_mode, language=self.language,
+        return dict(self.downloadPrefs, darkMode=self._dark_mode, accentColor=self.accentColor, language=self.language,
                     windowsFolders=json.loads(folders) if folders else None)
 
     def _apply_preferences(self, state):
@@ -2575,6 +2634,8 @@ class MusicBoxBridge(QObject):
                 if key in pending: continue
                 if key in self._download_choices:
                     self.setDownloadPref(key, value)
+                elif key == "accentColor":
+                    self.setAccentColor(value)
                 elif key == "language":
                     self.setLanguage(value)
                 elif key == "darkMode" and isinstance(value, bool) and self._dark_mode != value:
@@ -2978,41 +3039,44 @@ class MusicBoxBridge(QObject):
         } for row in rows]
         self.historyChanged.emit()
 
+    def _resolved_playlist(self, name):
+        keys = self._playlists.get(name, [])
+        resolved = []
+        by_path = {row.get("path"): row for row in self._library_all}
+        id_rows = {vid: by_path[path] for path, vid in self._path_ids.items() if path in by_path}
+        for k in self._visible_playlist_keys(keys, by_path, id_rows):
+            vid = identity.bare_id(k) or self._path_ids.get(k, "")
+            row = by_path.get(k) or id_rows.get(vid)
+            if row is not None:
+                item = dict(row)
+                item["playlistKey"] = k
+                resolved.append(item)
+                continue
+            meta = self._online_tracks.get(identity.entry_for(vid)) or self._online_tracks.get(k)
+            if meta:
+                meta = dict(meta)
+                self._mark_local(meta, vid, meta.get("title", ""))
+                meta["favorite"] = self._is_fav(meta)
+                meta["web"] = True
+                meta["playlistKey"] = k
+                resolved.append(meta)
+            elif vid:
+                resolved.append({
+                    "id": vid,
+                    "title": i18n.tr("Canción online"),
+                    "subtitle": "YouTube",
+                    "url": f"https://www.youtube.com/watch?v={vid}",
+                    "thumbnail": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg",
+                    "web": True,
+                    "downloaded": False,
+                    "playlistKey": k
+                })
+        return resolved
+
     def _apply_library_view(self):
         rows = list(self._library_all)
         if self._library_playlist:
-            keys = self._playlists.get(self._library_playlist, [])
-            resolved = []
-            by_path = {row.get("path"): row for row in self._library_all}
-            id_rows = {vid: by_path[path] for path, vid in self._path_ids.items() if path in by_path}
-            for k in self._visible_playlist_keys(keys, by_path, id_rows):
-                vid = identity.bare_id(k) or self._path_ids.get(k, "")
-                row = by_path.get(k) or id_rows.get(vid)
-                if row is not None:
-                    item = dict(row)
-                    item["playlistKey"] = k
-                    resolved.append(item)
-                    continue
-                meta = self._online_tracks.get(identity.entry_for(vid)) or self._online_tracks.get(k)
-                if meta:
-                    meta = dict(meta)
-                    self._mark_local(meta, vid, meta.get("title", ""))
-                    meta["favorite"] = self._is_fav(meta)
-                    meta["web"] = True
-                    meta["playlistKey"] = k
-                    resolved.append(meta)
-                elif vid:
-                    resolved.append({
-                        "id": vid,
-                        "title": i18n.tr("Canción online"),
-                        "subtitle": "YouTube",
-                        "url": f"https://www.youtube.com/watch?v={vid}",
-                        "thumbnail": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg",
-                        "web": True,
-                        "downloaded": False,
-                        "playlistKey": k
-                    })
-            rows = resolved
+            rows = self._resolved_playlist(self._library_playlist)
         elif self._library_folder:
             roots = self._library_roots()
             rows = [row for row in rows if self._folder_of(row["path"], roots) == self._library_folder]

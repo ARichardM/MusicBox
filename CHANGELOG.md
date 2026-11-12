@@ -1,5 +1,17 @@
 # Historial de versiones
 
+## 2.4.5 — 12 de noviembre de 2026
+
+### Windows y Android
+
+- Configuración permite elegir azul o naranjo como color primario, conservándolo al cambiar entre tema claro y oscuro y sincronizando la preferencia con la cuenta.
+- Las playlists se pueden exportar como CSV con título, artista y álbum para compartirlas e importarlas.
+
+### Android
+
+- Un swipe corto hacia arriba sobre el minirreproductor abre el reproductor al soltar, incluso sobre el botón de pausa, sin pulsarlo ni cambiar de canción.
+- Se mantienen las correcciones de las tarjetas de Inicio de la versión 2.4.4.
+
 ## 2.4.4 — 12 de noviembre de 2026
 
 ### Android

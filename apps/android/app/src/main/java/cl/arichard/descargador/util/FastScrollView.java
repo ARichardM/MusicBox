@@ -72,7 +72,7 @@ public class FastScrollView extends View {
         float right = getWidth() - 3 * getResources().getDisplayMetrics().density;
         float top = thumbTop();
         rect.set(right - width, top, right, top + thumbHeight);
-        paint.setColor(ContextCompat.getColor(getContext(), dragging ? R.color.accent : R.color.text_secondary));
+        paint.setColor(AccentColors.getColor(getContext(), dragging ? R.color.accent : R.color.text_secondary));
         paint.setAlpha(dragging ? 255 : 170);
         canvas.drawRoundRect(rect, width / 2f, width / 2f, paint);
     }

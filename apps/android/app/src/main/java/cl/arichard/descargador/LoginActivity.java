@@ -9,7 +9,6 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.credentials.Credential;
 import androidx.credentials.CredentialManager;
@@ -24,7 +23,7 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.GoogleAuthProvider;
 
-public class LoginActivity extends AppCompatActivity {
+public class LoginActivity extends AppearanceActivity {
     public static final String EXTRA_REVOKED = "revoked";
     private Button login;
     private View progress;

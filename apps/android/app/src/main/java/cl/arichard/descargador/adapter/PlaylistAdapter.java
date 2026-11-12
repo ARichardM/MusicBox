@@ -1,4 +1,6 @@
 package cl.arichard.descargador.adapter;
+import cl.arichard.descargador.util.AccentColors;
+
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -48,7 +50,7 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
     .setInterpolator(new android.view.animation.OvershootInterpolator(2.6f)).start();
   // Dos destellos suaves en el azul de MusicBox, como las canciones recién agregadas.
   android.graphics.drawable.GradientDrawable glow=new android.graphics.drawable.GradientDrawable();
-  glow.setColor(androidx.core.content.ContextCompat.getColor(context,R.color.accent));
+  glow.setColor(AccentColors.getColor(context,R.color.accent));
   glow.setCornerRadius(16*density);glow.setAlpha(0);row.setForeground(glow);
   android.animation.ValueAnimator pulse=android.animation.ValueAnimator.ofFloat(0f,1f);
   pulse.setStartDelay(260);pulse.setDuration(1500);
@@ -75,7 +77,7 @@ public class PlaylistAdapter extends RecyclerView.Adapter<PlaylistAdapter.Holder
    if (play != null) {
     int size = Math.round(12 * context.getResources().getDisplayMetrics().density);
     play.setBounds(0, 0, size, size); androidx.core.graphics.drawable.DrawableCompat.setTint(play,
-      androidx.core.content.ContextCompat.getColor(context, R.color.text_secondary));
+      AccentColors.getColor(context, R.color.text_secondary));
     label.setSpan(new android.text.style.ImageSpan(play, android.text.style.ImageSpan.ALIGN_CENTER), start, start + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
    }
    label.append("  ").append(cl.arichard.descargador.util.Clicks.format(plays)); h.count.setText(label);

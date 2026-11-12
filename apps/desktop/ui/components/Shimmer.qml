@@ -8,7 +8,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: root.cornerRadius
-        color: Theme.dark ? "#24262B" : "#E2E5EA"
+        color: Theme.dark ? Theme.adaptiveColor("#24262B") : Theme.adaptiveColor("#E2E5EA")
     }
     Rectangle {
         id: wave
@@ -17,7 +17,7 @@ Item {
         gradient: Gradient {
             orientation: Gradient.Horizontal
             GradientStop { position: 0; color: "#00FFFFFF" }
-            GradientStop { position: 0.5; color: Theme.dark ? "#553A3D44" : "#AAF7F8FA" }
+            GradientStop { position: 0.5; color: Theme.dark ? Theme.adaptiveColor("#553A3D44") : "#AAF7F8FA" }
             GradientStop { position: 1; color: "#00FFFFFF" }
         }
         NumberAnimation on x {

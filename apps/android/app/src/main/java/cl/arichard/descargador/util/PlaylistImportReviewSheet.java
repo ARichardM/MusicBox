@@ -79,7 +79,7 @@ public final class PlaylistImportReviewSheet {
     }
 
     private int dp(float value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
-    private int color(int id) { return ContextCompat.getColor(activity, id); }
+    private int color(int id) { return AccentColors.getColor(activity, id); }
 
     private void open() {
         dialog = new BottomSheetDialog(activity);

@@ -4,4 +4,5 @@
     <external-files-path name="external_music" path="Music/" />
     <external-files-path name="external_downloads" path="Download/" />
     <cache-path name="updates" path="updates/" />
+    <cache-path name="playlist_exports" path="playlist_exports/" />
 </paths>

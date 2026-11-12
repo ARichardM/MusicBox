@@ -129,4 +129,7 @@
     <string name="letra">Letra</string>
     <string name="buscando_letra">Buscando letra…</string>
     <string name="sin_letra_disponible">Sin letra disponible</string>
+    <string name="color_primario">Color primario</string>
+    <string name="color_azul">Azul</string>
+    <string name="color_naranjo">Naranjo</string>
 </resources>

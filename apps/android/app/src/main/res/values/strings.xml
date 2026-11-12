@@ -129,4 +129,7 @@
     <string name="letra">Lyrics</string>
     <string name="buscando_letra">Searching lyrics…</string>
     <string name="sin_letra_disponible">No lyrics available</string>
+    <string name="color_primario">Accent color</string>
+    <string name="color_azul">Blue</string>
+    <string name="color_naranjo">Orange</string>
 </resources>

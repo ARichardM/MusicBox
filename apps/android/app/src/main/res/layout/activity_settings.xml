@@ -108,6 +108,20 @@
             <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp"
                 android:layout_marginBottom="16dp" android:background="@color/bg_primary"/>
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/color_primario" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
+            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/accentColorToggle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+                app:singleSelection="true" app:selectionRequired="true">
+                <com.google.android.material.button.MaterialButton android:id="@+id/accentBlue" style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/color_azul" android:textAllCaps="false"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/accentOrange" style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:text="@string/color_naranjo" android:textAllCaps="false"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp" android:background="@color/bg_primary"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="@string/idioma" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
             <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/languageToggle"
                 android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"

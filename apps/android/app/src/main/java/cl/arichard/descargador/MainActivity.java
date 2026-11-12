@@ -2,6 +2,9 @@ package cl.arichard.descargador;
 
 import cl.arichard.descargador.util.StorageUtil;
 
+import cl.arichard.descargador.util.AccentColors;
+import cl.arichard.descargador.util.PlaylistShare;
+
 import android.Manifest;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -33,7 +36,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.appcompat.widget.PopupMenu;
 import androidx.core.app.ActivityCompat;
@@ -74,7 +76,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.LinkedHashMap;
 
-public class MainActivity extends AppCompatActivity implements PlayerManager.PlaybackListener {
+public class MainActivity extends AppearanceActivity implements PlayerManager.PlaybackListener {
 
     /** Verification is deliberately account-free; preview and release keep the real sign-in flow. */
     static boolean isVerificationPackage(String packageName) {
@@ -89,8 +91,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
     private boolean currentTabIsSearch = true;
     private boolean tabDragging;
     private int tabMotionGeneration;
-    private View playerPreview, playerPreviewScrim;
-    private boolean playerPreviewCommitted;
 
     private static final Pattern YOUTUBE = Pattern.compile("(?:youtu\\.be/|youtube(?:\\.com)?/.*?[?&]v=|youtube\\.com/(?:shorts|embed)/)([A-Za-z0-9_-]{11})");
     private static final String PREFS_NAME = "musicbox_prefs";
@@ -625,8 +625,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         boolean changed = currentTabIsSearch != isSearch;
         if (changed) saveLibraryNavigation();
         currentTabIsSearch = isSearch;
-        int primary = ContextCompat.getColor(this, R.color.text_primary);
-        int muted = ContextCompat.getColor(this, R.color.text_secondary);
+        int primary = AccentColors.getColor(this, R.color.text_primary);
+        int muted = AccentColors.getColor(this, R.color.text_secondary);
         navTabSearch.setSelected(isSearch); navTabLibrary.setSelected(!isSearch);
         navIconSearch.setColorFilter(isSearch ? primary : muted); navLabelSearch.setTextColor(isSearch ? primary : muted);
         navIconLibrary.setColorFilter(isSearch ? muted : primary); navLabelLibrary.setTextColor(isSearch ? muted : primary);
@@ -740,7 +740,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             View chip = (View) item[0];
             boolean selected = item[1].equals(uiState.searchFilter);
             chip.setBackgroundResource(selected ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
-            ((TextView) chip).setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
+            ((TextView) chip).setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_primary));
             chip.animate().cancel(); chip.setScaleX(.96f); chip.setScaleY(.96f);
             chip.animate().scaleX(1f).scaleY(1f).setDuration(130).start();
         }
@@ -854,9 +854,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             CardView circle = new CardView(this); circle.setRadius(dp(25)); circle.setCardElevation(0);
             circle.addView(photo, new FrameLayout.LayoutParams(-1,-1)); row.addView(circle, new LinearLayout.LayoutParams(dp(50),dp(50)));
             cl.arichard.descargador.util.ImageLoader.getInstance().load(artist.photo, photo);
-            TextView name = new TextView(this); name.setText(artist.name); name.setTextColor(ContextCompat.getColor(this,R.color.text_primary)); name.setTextSize(15); name.setTypeface(null,android.graphics.Typeface.BOLD);
+            TextView name = new TextView(this); name.setText(artist.name); name.setTextColor(AccentColors.getColor(this,R.color.text_primary)); name.setTextSize(15); name.setTypeface(null,android.graphics.Typeface.BOLD);
             LinearLayout.LayoutParams textLp = new LinearLayout.LayoutParams(0,-2,1); textLp.setMargins(dp(14),0,dp(8),0); row.addView(name,textLp);
-            ImageView arrow = new ImageView(this); arrow.setImageResource(R.drawable.ic_arrow_back); arrow.setRotation(180); arrow.setColorFilter(ContextCompat.getColor(this,R.color.text_secondary)); row.addView(arrow,new LinearLayout.LayoutParams(dp(20),dp(20)));
+            ImageView arrow = new ImageView(this); arrow.setImageResource(R.drawable.ic_arrow_back); arrow.setRotation(180); arrow.setColorFilter(AccentColors.getColor(this,R.color.text_secondary)); row.addView(arrow,new LinearLayout.LayoutParams(dp(20),dp(20)));
             row.setOnClickListener(v -> { Intent intent=new Intent(this,ArtistActivity.class); intent.putExtra(ArtistActivity.EXTRA_ID,artist.browseId); intent.putExtra(ArtistActivity.EXTRA_NAME,artist.name); intent.putExtra(ArtistActivity.EXTRA_PHOTO,artist.photo); startActivity(intent); });
             cl.arichard.descargador.util.SafeTap.installRowTap(row); layoutSearchArtists.addView(row);
         }
@@ -1104,7 +1104,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         CardView circle = new CardView(this);
         circle.setRadius(size / 2f);
         circle.setCardElevation(0);
-        circle.setCardBackgroundColor(ContextCompat.getColor(this, R.color.bg_card));
+        circle.setCardBackgroundColor(AccentColors.getColor(this, R.color.bg_card));
         ImageView photo = new ImageView(this);
         photo.setScaleType(ImageView.ScaleType.CENTER_CROP);
         circle.addView(photo, new FrameLayout.LayoutParams(-1, -1));
@@ -1113,14 +1113,14 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         View ring = new View(this);
         android.graphics.drawable.GradientDrawable oval = new android.graphics.drawable.GradientDrawable();
         oval.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        oval.setStroke(dp(2), ContextCompat.getColor(this, R.color.border));
+        oval.setStroke(dp(2), AccentColors.getColor(this, R.color.border));
         ring.setBackground(oval);
         framed.addView(ring, new FrameLayout.LayoutParams(size, size));
         bubble.addView(framed, new LinearLayout.LayoutParams(size, size));
 
         TextView name = new TextView(this);
         name.setText(artistName);
-        name.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        name.setTextColor(AccentColors.getColor(this, R.color.text_primary));
         name.setTextSize(12f);
         name.setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD);
         name.setGravity(android.view.Gravity.CENTER);
@@ -1166,7 +1166,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         androidx.cardview.widget.CardView cv = new androidx.cardview.widget.CardView(this);
         cv.setRadius(dp(16));
         cv.setCardElevation(0f);
-        cv.setCardBackgroundColor(ContextCompat.getColor(this, R.color.bg_card));
+        cv.setCardBackgroundColor(AccentColors.getColor(this, R.color.bg_card));
         ImageView iv = new ImageView(this);
         iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
         cv.addView(iv, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -1191,7 +1191,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
 
         TextView title = new TextView(this);
         title.setText(result.getTitle());
-        title.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        title.setTextColor(AccentColors.getColor(this, R.color.text_primary));
         title.setTextSize(13f);
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         title.setSingleLine(true);
@@ -1199,7 +1199,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         title.setPadding(dp(2), dp(8), dp(2), 0);
         TextView channel = new TextView(this);
         channel.setText(RecommendationEngine.artistName(result));
-        channel.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        channel.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
         channel.setTextSize(11f);
         channel.setSingleLine(true);
         channel.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1323,7 +1323,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             card.addView(cover, new LinearLayout.LayoutParams(dp(40), dp(40)));
             TextView title = new TextView(this);
             title.setText(cl.arichard.descargador.util.Tr.name(name));
-            title.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+            title.setTextColor(AccentColors.getColor(this, R.color.text_primary));
             title.setTextSize(13); title.setTypeface(null, android.graphics.Typeface.BOLD);
             title.setMaxLines(2); title.setEllipsize(android.text.TextUtils.TruncateAt.END);
             title.setIncludeFontPadding(false);
@@ -1348,7 +1348,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 this, android.R.layout.simple_dropdown_item_1line, queries) {
             @Override public View getView(int position, View recycled, android.view.ViewGroup parent) {
                 TextView row = (TextView) super.getView(position, recycled, parent);
-                row.setTextColor(ContextCompat.getColor(MainActivity.this, R.color.text_primary));
+                row.setTextColor(AccentColors.getColor(MainActivity.this, R.color.text_primary));
                 row.setTextSize(15);
                 row.setSingleLine(true);
                 row.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -1357,7 +1357,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 row.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_search, 0, 0, 0);
                 row.setCompoundDrawablePadding(dp(12));
                 row.setCompoundDrawableTintList(android.content.res.ColorStateList.valueOf(
-                        ContextCompat.getColor(MainActivity.this, R.color.text_secondary)));
+                        AccentColors.getColor(MainActivity.this, R.color.text_secondary)));
                 return row;
             }
         };
@@ -1491,8 +1491,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         sectionRecentPlays.setVisibility(View.VISIBLE);
         layoutRecentPlaysCards.removeAllViews();
 
-        int textColor = ContextCompat.getColor(this, R.color.text_primary);
-        int subColor = ContextCompat.getColor(this, R.color.text_secondary);
+        int textColor = AccentColors.getColor(this, R.color.text_primary);
+        int subColor = AccentColors.getColor(this, R.color.text_secondary);
 
         for (int i = 0; i < recents.size(); i++) {
             Song s = recents.get(i);
@@ -1844,6 +1844,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         menuAction(menu, cl.arichard.descargador.util.Tr.t("Editar nombre y descripción"), R.drawable.ic_edit, false).setOnMenuItemClickListener(item -> {
             showEditPlaylistDialog(name); return true;
         });
+        addSharePlaylistAction(menu, name);
         boolean auto = manager.isAutoDownloadEnabled(name);
         menuAction(menu, auto ? cl.arichard.descargador.util.Tr.t("Desactivar descarga automática") : cl.arichard.descargador.util.Tr.t("Activar descarga automática"),
                 auto ? R.drawable.ic_downloaded_badge : R.drawable.ic_download, false)
@@ -1862,6 +1863,15 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
             return true;
         });
         menu.show();
+    }
+
+    private void addSharePlaylistAction(PopupMenu menu, String name) {
+        menuAction(menu, cl.arichard.descargador.util.Tr.t("Compartir playlist (CSV)"), R.drawable.ic_share, false)
+                .setOnMenuItemClickListener(item -> {
+                    List<Song> songs = PlaylistManager.getInstance(this).resolveSongs(name, allSongs);
+                    PlaylistShare.show(this, findViewById(R.id.bottomBarArea), name, songs);
+                    return true;
+                });
     }
 
     private void showEditPlaylistDialog(String oldName) {
@@ -2047,6 +2057,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         final int importPlaylists = 2;
         menuAction(menu, locate, 0, cl.arichard.descargador.util.Tr.t("Ir a la canción actual"), R.drawable.ic_locate_playing, false);
         menuAction(menu, importPlaylists, 1, cl.arichard.descargador.util.Tr.t("Importar playlists"), R.drawable.ic_playlist, false);
+        if (currentLibraryMode == 3 && isViewingSubList) {
+            addSharePlaylistAction(menu, currentSubListName);
+        }
         menu.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == locate) {
                 locatePlayingSong();
@@ -2134,7 +2147,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         boolean selected = !artist.isEmpty();
         btnPlaylistArtist.setSelected(selected);
         btnPlaylistArtist.setText(selected ? artist : cl.arichard.descargador.util.Tr.t("Artistas"));
-        btnPlaylistArtist.setTextColor(ContextCompat.getColor(this, selected ? R.color.accent : R.color.text_primary));
+        btnPlaylistArtist.setTextColor(AccentColors.getColor(this, selected ? R.color.accent : R.color.text_primary));
         cl.arichard.descargador.util.ArtistAvatarLoader.getInstance(this)
                 .load(visible && selected ? artist : "", btnPlaylistArtist, dp(20));
         btnPlaylistArtist.setContentDescription(cl.arichard.descargador.util.Tr.t("Filtrar por artista")
@@ -2195,7 +2208,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         for (int i = 0; i < chips.length; i++) {
             boolean selected = modes[i] == currentLibraryMode;
             chips[i].setBackgroundResource(selected ? R.drawable.bg_chip_active : R.drawable.bg_chip_inactive);
-            chips[i].setTextColor(ContextCompat.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
+            chips[i].setTextColor(AccentColors.getColor(this, selected ? R.color.chip_active_text : R.color.text_secondary));
         }
     }
 
@@ -2490,7 +2503,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         if (drawable != null) {
             drawable = drawable.mutate();
             drawable.setTint(critical ? android.graphics.Color.rgb(255, 69, 58)
-                    : ContextCompat.getColor(this, R.color.text_secondary));
+                    : AccentColors.getColor(this, R.color.text_secondary));
             item.setIcon(drawable);
         }
         return item;
@@ -2506,7 +2519,7 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         bulkLabel(R.id.labelBulkQueue, "Cola");
         bulkLabel(R.id.labelBulkPlaylist, "Playlist");
         bulkLabel(R.id.labelBulkDelete, "Eliminar");
-        int primary = ContextCompat.getColor(this, R.color.text_primary), red = ContextCompat.getColor(this, R.color.heart_red);
+        int primary = AccentColors.getColor(this, R.color.text_primary), red = AccentColors.getColor(this, R.color.heart_red);
         for (int id : new int[]{R.id.iconBulkPlay, R.id.iconBulkNext, R.id.iconBulkQueue, R.id.iconBulkPlaylist})
             ((ImageView) findViewById(id)).setColorFilter(primary);
         ((ImageView) findViewById(R.id.iconBulkDelete)).setColorFilter(red);
@@ -2571,8 +2584,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         boolean all = songAdapter != null && songAdapter.areAllSelected();
         android.graphics.drawable.GradientDrawable disc = new android.graphics.drawable.GradientDrawable();
         disc.setShape(android.graphics.drawable.GradientDrawable.OVAL);
-        if (all) disc.setColor(ContextCompat.getColor(this, R.color.accent));
-        else disc.setStroke(dp(2), ContextCompat.getColor(this, R.color.border));
+        if (all) disc.setColor(AccentColors.getColor(this, R.color.accent));
+        else disc.setStroke(dp(2), AccentColors.getColor(this, R.color.border));
         checkSelectAll.setBackground(disc);
         checkSelectAll.setText(all ? "✓" : "");
     }
@@ -2727,11 +2740,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                 () -> animateMiniTrackChange(1, () -> PlayerManager.getInstance().skipPrevious()),
                 () -> miniPlayerLayout.performClick());
 
-        ((cl.arichard.descargador.util.SwipeActionsLayout) miniPlayerLayout).setVerticalDragListener(
-                new cl.arichard.descargador.util.SwipeActionsLayout.VerticalDragListener() {
-                    @Override public void onDrag(float distance) { previewPlayer(distance); }
-                    @Override public void onEnd(float distance, boolean cancelled) { releasePlayerPreview(distance, cancelled); }
-                });
         btnMiniPlayPause.setOnClickListener(v -> PlayerManager.getInstance().togglePlayPause());
         ((cl.arichard.descargador.util.SwipeActionsLayout) miniPlayerLayout).setHorizontalDragListener(
                 new cl.arichard.descargador.util.SwipeActionsLayout.HorizontalDragListener() {
@@ -2746,71 +2754,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
                     }
                 });
         btnMiniNext.setOnClickListener(v -> animateMiniTrackChange(-1, () -> PlayerManager.getInstance().playNext()));
-    }
-
-    private void previewPlayer(float distance) {
-        if (PlayerManager.getInstance().getCurrentSong() == null) return;
-        android.view.ViewGroup scene = findViewById(R.id.mainGestureRoot);
-        if (playerPreview == null) {
-            playerPreviewCommitted = false;
-            playerPreviewScrim = new View(this); playerPreviewScrim.setBackgroundColor(0xFF000000);
-            playerPreviewScrim.setAlpha(0); scene.addView(playerPreviewScrim, new android.widget.RelativeLayout.LayoutParams(-1, -1));
-            playerPreview = getLayoutInflater().inflate(R.layout.activity_now_playing, scene, false);
-            scene.addView(playerPreview, new android.widget.RelativeLayout.LayoutParams(-1, -1));
-            // The queue sheet only makes sense in the real screen, where it has its drag behavior.
-            playerPreview.findViewById(R.id.queueSheet).setVisibility(View.GONE);
-            ((TextView) playerPreview.findViewById(R.id.txtPlayingFromName)).setText(PlayerManager.getInstance().playingFromLabel());
-            Song song = PlayerManager.getInstance().getCurrentSong();
-            ((TextView) playerPreview.findViewById(R.id.txtNowPlayingTitle)).setText(song.getTitle());
-            ((TextView) playerPreview.findViewById(R.id.txtNowPlayingArtist)).setText(song.getArtist());
-            CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), playerPreview.findViewById(R.id.imgNowPlayingCover));
-            ((ImageView) playerPreview.findViewById(R.id.btnPlayPauseIcon)).setImageResource(PlayerManager.getInstance().isPlaying() ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
-            android.widget.SeekBar seek = playerPreview.findViewById(R.id.seekBar);
-            seek.setMax(Math.max(1, PlayerManager.getInstance().getDuration())); seek.setProgress(PlayerManager.getInstance().getCurrentPosition());
-            ((TextView) playerPreview.findViewById(R.id.txtCurrentTime)).setText(playerTime(PlayerManager.getInstance().getCurrentPosition()));
-            ((TextView) playerPreview.findViewById(R.id.txtTotalTime)).setText(playerTime(PlayerManager.getInstance().getDuration()));
-            playerPreview.findViewById(R.id.tabSelectorMp4).setVisibility(PlayerManager.getInstance().hasVideo() ? View.VISIBLE : View.GONE);
-            int repeat = PlayerManager.getInstance().getRepeatMode();
-            ImageView repeatIcon = playerPreview.findViewById(R.id.btnRepeat);
-            repeatIcon.setImageResource(repeat == PlayerManager.REPEAT_ONE ? R.drawable.ic_repeat_one : R.drawable.ic_repeat);
-            repeatIcon.setAlpha(repeat == PlayerManager.REPEAT_OFF ? .45f : 1f);
-            repeatIcon.setColorFilter(ContextCompat.getColor(this, repeat == PlayerManager.REPEAT_OFF ? R.color.text_primary : R.color.accent));
-            ImageView shuffleIcon = playerPreview.findViewById(R.id.btnShuffle);
-            boolean shuffle = PlayerManager.getInstance().isShuffle();
-            shuffleIcon.setAlpha(shuffle ? 1f : .45f);
-            shuffleIcon.setColorFilter(ContextCompat.getColor(this, shuffle ? R.color.accent : R.color.text_primary));
-            ImageView favoriteIcon = playerPreview.findViewById(R.id.btnNowPlayingFavorite);
-            boolean favorite = song.isOnline()
-                    ? PlaylistManager.getInstance(this).isOnlineTrackInPlaylist("Favoritos", song.getVideoId())
-                    : PlaylistManager.getInstance(this).isFavorite(song.getPath());
-            favoriteIcon.setImageResource(favorite ? R.drawable.ic_favorite_filled : R.drawable.ic_favorite);
-            favoriteIcon.clearColorFilter();
-            ((TextView) playerPreview.findViewById(R.id.txtRepeatMode)).setText(repeat == PlayerManager.REPEAT_ONE ? cl.arichard.descargador.util.Tr.t("Repetir canci\u00f3n") : repeat == PlayerManager.REPEAT_ALL ? cl.arichard.descargador.util.Tr.t("Repetir lista") : cl.arichard.descargador.util.Tr.t("Bucle desactivado"));
-        }
-        playerPreview.animate().cancel();
-        float height = Math.max(1, scene.getHeight());
-        playerPreview.setTranslationY(Math.max(0, Math.min(height, height + distance)));
-        playerPreviewScrim.setAlpha(Math.min(.35f, Math.max(0, -distance / height) * .35f));
-    }
-    private String playerTime(int ms) { return String.format(java.util.Locale.ROOT, "%02d:%02d", ms / 60000, (ms / 1000) % 60); }
-    private void releasePlayerPreview(float distance, boolean cancelled) {
-        if (playerPreview == null) return;
-        float height = Math.max(1, findViewById(R.id.mainGestureRoot).getHeight());
-        boolean open = !cancelled && -distance > Math.min(height * .22f, 160 * getResources().getDisplayMetrics().density);
-        playerPreviewCommitted = open;
-        playerPreview.animate().translationY(open ? 0 : height).setDuration(230)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator()).withEndAction(() -> {
-                    if (open) {
-                        startActivity(new Intent(this, NowPlayingActivity.class)); overridePendingTransition(0, 0);
-                    } else clearPlayerPreview();
-                }).start();
-        playerPreviewScrim.animate().alpha(open ? .35f : 0).setDuration(230).start();
-    }
-    private void clearPlayerPreview() {
-        android.view.ViewGroup scene = findViewById(R.id.mainGestureRoot);
-        if (playerPreview != null) { playerPreview.animate().cancel(); scene.removeView(playerPreview); playerPreview = null; }
-        if (playerPreviewScrim != null) { scene.removeView(playerPreviewScrim); playerPreviewScrim = null; }
-        playerPreviewCommitted = false;
     }
 
     private void animateMiniTrackChange(int direction, Runnable change) {
@@ -3082,7 +3025,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         cl.arichard.descargador.download.DownloadManager.get(this).addObserver(downloadObserver);
         cl.arichard.descargador.download.DownloadManager.get(this).resumePending();
         renderManagedDownloads();
-        if (playerPreview != null && playerPreviewCommitted) clearPlayerPreview();
         refreshDiscoveryContent();
         cl.arichard.descargador.data.ClickStats clicks = cl.arichard.descargador.data.ClickStats.getInstance(this);
         // Solo al abrir la app: volver de otra pantalla no cambia las recomendaciones que ya estás viendo.
@@ -3131,7 +3073,6 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         }
         super.onPause();
         PlayerManager.getInstance().removeListener(this);
-        if (playerPreview != null && playerPreviewCommitted) findViewById(R.id.mainGestureRoot).postDelayed(this::clearPlayerPreview, 180);
     }
 
     @Override

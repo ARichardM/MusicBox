@@ -21,7 +21,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: height / 2
-        color: Theme.dark ? "#202125" : "#DCE2EB"
+        color: Theme.dark ? Theme.adaptiveColor("#202125") : Theme.adaptiveColor("#DCE2EB")
     }
 
     Rectangle {
@@ -33,7 +33,7 @@ Item {
         radius: height / 2
         x: target ? row.x + target.x : 0
         width: target ? target.width : 0
-        color: Theme.dark ? "#34363D" : "#FFFFFF"
+        color: Theme.dark ? Theme.adaptiveColor("#34363D") : "#FFFFFF"
         border.width: Theme.dark ? 0 : 1
         border.color: Theme.line
         Behavior on x { NumberAnimation { duration: 230; easing.type: Easing.OutCubic } }

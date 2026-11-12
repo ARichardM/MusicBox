@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -13,7 +15,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.content.ContextCompat;
 import androidx.core.os.LocaleListCompat;
@@ -35,7 +36,7 @@ import java.util.Iterator;
 import java.util.List;
 
 /** Account, appearance and connected devices. */
-public final class SettingsActivity extends AppCompatActivity {
+public final class SettingsActivity extends AppearanceActivity {
     private static final String DEVICES_KEY = "devices_json";
     private SharedPreferences cloudPrefs;
     private boolean updatingControls;
@@ -80,6 +81,7 @@ public final class SettingsActivity extends AppCompatActivity {
         findViewById(R.id.btnSettingsBack).setOnClickListener(v -> finish());
         setupLanguage();
         setupTheme();
+        setupAccentColor();
         findViewById(R.id.btnAddFolder).setOnClickListener(v -> pickFolder.launch(null));
         findViewById(R.id.rowDownloader).setOnClickListener(v -> startActivity(new Intent(this, DownloaderActivity.class)));
         cl.arichard.descargador.util.SafeTap.installRowTap(findViewById(R.id.rowDownloader));
@@ -266,7 +268,7 @@ public final class SettingsActivity extends AppCompatActivity {
                         foundRelease = release;
                         swapText(status, Tr.f("Hay una versión nueva: %s. Toca para ver las novedades.", release.version));
                         button.setText(Tr.t("Ver novedades y actualizar"));
-                        showBadge(Tr.t("Nueva"), Color.rgb(10, 132, 255), Color.WHITE);
+                        showBadge(Tr.t("Nueva"), AccentColors.getColor(this, R.color.accent), AccentColors.onAccent(this));
                         break;
                     case UP_TO_DATE:
                         swapText(status, Tr.t("Estás al día. Tienes la última versión de MusicBox."));
@@ -308,6 +310,18 @@ public final class SettingsActivity extends AppCompatActivity {
         findViewById(R.id.rowTheme).setOnClickListener(v -> toggle.toggle());
     }
 
+    private void setupAccentColor() {
+        MaterialButtonToggleGroup group = findViewById(R.id.accentColorToggle);
+        group.check("orange".equals(AccentColors.selected(this)) ? R.id.accentOrange : R.id.accentBlue);
+        group.addOnButtonCheckedListener((toggle, id, checked) -> {
+            if (!checked) return;
+            String value = id == R.id.accentOrange ? "orange" : "blue";
+            if (value.equals(AccentColors.selected(this))) return;
+            getSharedPreferences("musicbox_prefs", MODE_PRIVATE).edit().putString(AccentColors.KEY, value).apply();
+            CloudSyncManager.preferenceChanged(this, AccentColors.KEY);
+        });
+    }
+
     /** Language follows the system by default; the toggle stores an app-specific override. */
     private void setupLanguage() {
         MaterialButtonToggleGroup group = findViewById(R.id.languageToggle);
@@ -343,7 +357,7 @@ public final class SettingsActivity extends AppCompatActivity {
         reset.setText(Tr.t("Restablecer"));
         reset.setTextSize(12);
         reset.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        reset.setTextColor(ContextCompat.getColor(this, R.color.accent));
+        reset.setTextColor(AccentColors.getColor(this, R.color.accent));
         reset.setPadding(dp(6), dp(2), dp(6), dp(12));
         reset.setOnClickListener(v -> { LibraryFolders.reset(this); renderFolders(); });
         container.addView(reset);
@@ -363,7 +377,7 @@ public final class SettingsActivity extends AppCompatActivity {
         name.setText(title);
         name.setTextSize(15);
         name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        name.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        name.setTextColor(AccentColors.getColor(this, R.color.text_primary));
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         texts.addView(name);
@@ -371,7 +385,7 @@ public final class SettingsActivity extends AppCompatActivity {
             TextView detail = new TextView(this);
             detail.setText(path);
             detail.setTextSize(12);
-            detail.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+            detail.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
             detail.setSingleLine(true);
             detail.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
             texts.addView(detail);
@@ -382,7 +396,7 @@ public final class SettingsActivity extends AppCompatActivity {
             remove.setText("✕");
             remove.setTextSize(16);
             remove.setGravity(Gravity.CENTER);
-            remove.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+            remove.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
             remove.setContentDescription(Tr.t("Quitar carpeta"));
             remove.setBackgroundResource(R.drawable.bg_settings_icon_button);
             remove.setOnClickListener(v -> onRemove.run());
@@ -478,11 +492,11 @@ public final class SettingsActivity extends AppCompatActivity {
         platform.setText(device.optString("platform", "").isEmpty() ? "?" : device.optString("platform", ""));
         platform.setTextSize(11);
         platform.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        platform.setTextColor(ContextCompat.getColor(this, R.color.text_secondary));
+        platform.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
         platform.setBackgroundResource(R.drawable.bg_platform_chip);
         platform.setPadding(dp(10), dp(4), dp(10), dp(4));
         TextView name = new TextView(this);
-        name.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
+        name.setTextColor(AccentColors.getColor(this, R.color.text_primary));
         name.setTextSize(16);
         name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         name.setSingleLine(true);
@@ -497,7 +511,7 @@ public final class SettingsActivity extends AppCompatActivity {
         long seen = device.optLong("lastSeen", 0);
         String date = seen > 0 ? DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(seen)) : Tr.t("Sin actividad reciente");
         TextView detail = new TextView(this);
-        detail.setTextColor(ContextCompat.getColor(this, isCurrent ? R.color.accent : R.color.text_secondary));
+        detail.setTextColor(AccentColors.getColor(this, isCurrent ? R.color.accent : R.color.text_secondary));
         detail.setTextSize(13);
         detail.setPadding(0, dp(5), 0, 0);
         detail.setText(isCurrent ? Tr.t("Este dispositivo") + " · " + date : date);

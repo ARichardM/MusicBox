@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
@@ -11,7 +13,6 @@ import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import cl.arichard.descargador.data.PlaylistManager;
 import cl.arichard.descargador.model.Song;
@@ -23,7 +24,7 @@ import com.yausername.youtubedl_android.YoutubeDL;
 import com.yausername.youtubedl_android.YoutubeDLRequest;
 import java.io.File;
 
-public class NowPlayingActivity extends AppCompatActivity implements PlayerManager.PlaybackListener {
+public class NowPlayingActivity extends AppearanceActivity implements PlayerManager.PlaybackListener {
     private static final java.util.concurrent.ExecutorService LYRICS_IO =
             java.util.concurrent.Executors.newFixedThreadPool(2);
 
@@ -248,8 +249,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             player.attachOnlineWebView(videoHostLayout);
             player.setVideoMode(true);
         }
-        int activeText = ContextCompat.getColor(this, R.color.chip_active_text);
-        int inactiveText = ContextCompat.getColor(this, R.color.text_secondary);
+        int activeText = AccentColors.getColor(this, R.color.chip_active_text);
+        int inactiveText = AccentColors.getColor(this, R.color.text_secondary);
 
         if (isLyricsMode) {
             tabSelectorMp3.setBackground(null);
@@ -791,7 +792,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         });
         for (int i = 0; i < menu.getMenu().size(); i++) {
             android.graphics.drawable.Drawable icon = menu.getMenu().getItem(i).getIcon();
-            if (icon != null) icon.mutate().setTint(ContextCompat.getColor(this, R.color.text_primary));
+            if (icon != null) icon.mutate().setTint(AccentColors.getColor(this, R.color.text_primary));
         }
         menu.show();
     }
@@ -842,7 +843,7 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
     private void updateShuffleButton(boolean active) {
         btnShuffle.setSelected(active);
         btnShuffle.setAlpha(active ? 1.0f : 0.45f);
-        btnShuffle.setColorFilter(active ? ContextCompat.getColor(this, R.color.accent) : ContextCompat.getColor(this, R.color.text_primary));
+        btnShuffle.setColorFilter(active ? AccentColors.getColor(this, R.color.accent) : AccentColors.getColor(this, R.color.text_primary));
     }
 
     private String repeatLabel(int mode) {
@@ -856,15 +857,15 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
         if (mode == PlayerManager.REPEAT_OFF) {
             btnRepeat.setAlpha(0.45f);
             btnRepeat.setImageResource(R.drawable.ic_repeat);
-            btnRepeat.setColorFilter(ContextCompat.getColor(this, R.color.text_primary));
+            btnRepeat.setColorFilter(AccentColors.getColor(this, R.color.text_primary));
         } else if (mode == PlayerManager.REPEAT_ALL) {
             btnRepeat.setAlpha(1.0f);
             btnRepeat.setImageResource(R.drawable.ic_repeat);
-            btnRepeat.setColorFilter(ContextCompat.getColor(this, R.color.accent));
+            btnRepeat.setColorFilter(AccentColors.getColor(this, R.color.accent));
         } else {
             btnRepeat.setAlpha(1.0f);
             btnRepeat.setImageResource(R.drawable.ic_repeat_one);
-            btnRepeat.setColorFilter(ContextCompat.getColor(this, R.color.accent));
+            btnRepeat.setColorFilter(AccentColors.getColor(this, R.color.accent));
         }
     }
 
@@ -974,8 +975,8 @@ public class NowPlayingActivity extends AppCompatActivity implements PlayerManag
             }
             tv.setMinHeight(0);
             tv.setText(line.text);
-            int primary = ContextCompat.getColor(NowPlayingActivity.this, R.color.text_primary);
-            int secondary = ContextCompat.getColor(NowPlayingActivity.this, R.color.text_secondary);
+            int primary = AccentColors.getColor(NowPlayingActivity.this, R.color.text_primary);
+            int secondary = AccentColors.getColor(NowPlayingActivity.this, R.color.text_secondary);
             if (!synced) {
                 tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f);
                 tv.setTypeface(null, android.graphics.Typeface.NORMAL);

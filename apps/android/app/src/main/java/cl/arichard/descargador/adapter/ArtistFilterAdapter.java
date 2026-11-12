@@ -1,5 +1,7 @@
 package cl.arichard.descargador.adapter;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -58,7 +60,7 @@ public final class ArtistFilterAdapter extends RecyclerView.Adapter<ArtistFilter
         String label = artist.isEmpty() ? Tr.t("Todos los artistas") : artist;
         boolean checked = artist.equalsIgnoreCase(selected);
         holder.name.setText(label);
-        holder.name.setTextColor(ContextCompat.getColor(context, checked ? R.color.accent : R.color.text_primary));
+        holder.name.setTextColor(AccentColors.getColor(context, checked ? R.color.accent : R.color.text_primary));
         holder.check.setVisibility(checked ? View.VISIBLE : View.INVISIBLE);
         holder.itemView.setActivated(checked);
         holder.itemView.setContentDescription(label + (checked ? ", " + Tr.t("Seleccionado") : ""));

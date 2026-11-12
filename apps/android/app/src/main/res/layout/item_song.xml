@@ -40,7 +40,7 @@
             android:layout_height="22dp"
             android:layout_gravity="center"
             android:src="@drawable/ic_play_arrow"
-            app:tint="@color/accent"
+            app:tint="?attr/colorPrimary"
             android:background="@drawable/bg_play_circle"
             android:visibility="gone"/>
 
@@ -85,7 +85,7 @@
                     android:contentDescription="@string/descargada_en_el_dispositivo"
                     android:src="@drawable/ic_downloaded_badge"
                     android:background="@drawable/bg_download_badge"
-                    app:tint="@color/accent"
+                    app:tint="?attr/colorPrimary"
                     android:visibility="visible"/>
 
                 <cl.arichard.descargador.util.LoadingRingView

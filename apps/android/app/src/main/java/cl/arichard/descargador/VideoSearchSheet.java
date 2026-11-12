@@ -1,5 +1,7 @@
 package cl.arichard.descargador;
 
+import cl.arichard.descargador.util.AccentColors;
+
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.drawable.GradientDrawable;
@@ -203,8 +205,8 @@ public final class VideoSearchSheet {
     private void bindCheck(TextView check, boolean on) {
         GradientDrawable disc = new GradientDrawable();
         disc.setShape(GradientDrawable.OVAL);
-        if (on) disc.setColor(ContextCompat.getColor(activity, R.color.accent));
-        else disc.setStroke(dp(2), ContextCompat.getColor(activity, R.color.border));
+        if (on) disc.setColor(AccentColors.getColor(activity, R.color.accent));
+        else disc.setStroke(dp(2), AccentColors.getColor(activity, R.color.border));
         check.setBackground(disc);
         check.setText(on ? "✓" : "");
     }

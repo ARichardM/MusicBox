@@ -1,6 +1,8 @@
 package cl.arichard.descargador.adapter;
 
 import cl.arichard.descargador.util.Tr;
+import cl.arichard.descargador.util.AccentColors;
+
 import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -304,7 +306,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         View row = holder.itemView;
         float density = row.getResources().getDisplayMetrics().density;
         android.graphics.drawable.GradientDrawable glow = new android.graphics.drawable.GradientDrawable();
-        glow.setColor(androidx.core.content.ContextCompat.getColor(row.getContext(), R.color.accent));
+        glow.setColor(AccentColors.getColor(row.getContext(), R.color.accent));
         glow.setCornerRadius(16 * density);
         glow.setAlpha(0);
         row.setForeground(glow);
@@ -384,7 +386,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             boolean fromFolder = isLocalFile && !savedOnline && !isMusicBoxFile(song.getPath());
             holder.imgDownloadedBadge.setImageResource(fromFolder ? R.drawable.ic_folder_badge : R.drawable.ic_downloaded_badge);
             holder.imgDownloadedBadge.setImageTintList(android.content.res.ColorStateList.valueOf(
-                    ContextCompat.getColor(context, fromFolder ? R.color.text_secondary : R.color.accent)));
+                    AccentColors.getColor(context, fromFolder ? R.color.text_secondary : R.color.accent)));
             holder.imgDownloadedBadge.setContentDescription(Tr.t(fromFolder ? "De una carpeta" : "Descargada en el dispositivo"));
             holder.imgDownloadedBadge.setVisibility((isLocalFile || savedOnline) && !downloading && !selectionMode
                     ? View.VISIBLE : View.GONE);
@@ -444,8 +446,8 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
         Song current = PlayerManager.getInstance().getCurrentSong();
         boolean isPlayingThis = !selectionMode && current != null && current.getPath() != null && current.getPath().equals(song.getPath());
 
-        int accentColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.accent);
-        int primaryTextColor = ContextCompat.getColor(holder.itemView.getContext(), R.color.text_primary);
+        int accentColor = AccentColors.getColor(holder.itemView.getContext(), R.color.accent);
+        int primaryTextColor = AccentColors.getColor(holder.itemView.getContext(), R.color.text_primary);
 
         if (selectionMode) {
             // Selection mode UI

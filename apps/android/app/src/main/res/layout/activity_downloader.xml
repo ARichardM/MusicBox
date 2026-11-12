@@ -52,27 +52,27 @@
                             android:layout_weight="1" android:textColor="@color/text_secondary" android:textSize="13sp"/>
                         <TextView android:id="@+id/btnPasteLinks" android:layout_width="wrap_content" android:layout_height="40dp"
                             android:gravity="center" android:minWidth="64dp" android:paddingStart="12dp" android:paddingEnd="12dp"
-                            android:text="@string/pegar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:text="@string/pegar" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                             android:background="@drawable/bg_text_button"/>
                         <TextView android:id="@+id/btnClearLinks" android:layout_width="wrap_content" android:layout_height="40dp"
                             android:layout_marginStart="8dp" android:gravity="center" android:minWidth="64dp"
                             android:paddingStart="12dp" android:paddingEnd="12dp"
-                            android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:text="@string/limpiar" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                             android:background="@drawable/bg_text_button"/>
                     </LinearLayout>
                     <TextView android:id="@+id/btnSearchCovers" android:layout_width="match_parent" android:layout_height="44dp"
                         android:layout_marginTop="10dp" android:gravity="center" android:text="@string/buscar_con_portadas"
-                        android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                        android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                         android:background="@drawable/bg_text_button"/>
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                         android:layout_marginTop="8dp" android:orientation="horizontal">
                         <TextView android:id="@+id/btnImportList" android:layout_width="0dp" android:layout_height="44dp"
                             android:layout_weight="1" android:gravity="center"
-                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                             android:background="@drawable/bg_text_button"/>
                         <TextView android:id="@+id/btnImportFolder" android:layout_width="0dp" android:layout_height="44dp"
                             android:layout_weight="1" android:layout_marginStart="8dp" android:gravity="center"
-                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                             android:background="@drawable/bg_text_button"/>
                     </LinearLayout>
                     <TextView android:id="@+id/txtLinkError" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -158,7 +158,7 @@
                         </LinearLayout>
                         <TextView android:id="@+id/btnCookies" android:layout_width="wrap_content" android:layout_height="40dp"
                             android:gravity="center" android:minWidth="72dp" android:paddingStart="12dp" android:paddingEnd="12dp"
-                            android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                            android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                             android:background="@drawable/bg_text_button"/>
                     </LinearLayout>
                 </LinearLayout>
@@ -168,7 +168,7 @@
                     android:layout_marginTop="16dp" android:orientation="horizontal">
                     <TextView android:id="@+id/btnDownload" android:layout_width="0dp" android:layout_height="54dp"
                         android:layout_weight="1" android:gravity="center" android:text="@string/descargar"
-                        android:textColor="#FFFFFF" android:textSize="16sp" android:textStyle="bold"
+                        android:textColor="?attr/colorOnPrimary" android:textSize="16sp" android:textStyle="bold"
                         android:background="@drawable/bg_button_accent"/>
                     <TextView android:id="@+id/btnCancelAll" android:layout_width="0dp" android:layout_height="54dp"
                         android:layout_weight="0.6" android:layout_marginStart="10dp" android:gravity="center"
@@ -187,7 +187,7 @@
                             android:textSize="16sp" android:textStyle="bold"/>
                         <TextView android:id="@+id/btnClearJobs" android:layout_width="wrap_content" android:layout_height="36dp"
                             android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
-                            android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp"
+                            android:text="@string/limpiar" android:textColor="?attr/colorPrimary" android:textSize="13sp"
                             android:textStyle="bold" android:background="@drawable/bg_text_button"/>
                     </LinearLayout>
                     <androidx.core.widget.NestedScrollView android:id="@+id/jobsScroll" android:layout_width="match_parent" android:layout_height="wrap_content" android:scrollbars="vertical">
@@ -226,7 +226,7 @@
                     android:textSize="15sp"/>
                 <TextView android:id="@+id/btnHistoryAll" android:layout_width="wrap_content" android:layout_height="40dp"
                     android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
-                    android:text="@string/todos" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"/>
+                    android:text="@string/todos" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"/>
             </LinearLayout>
             <TextView android:id="@+id/txtHistoryStatus" android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:layout_marginTop="10dp" android:layout_marginStart="4dp" android:textColor="@color/text_secondary" android:textSize="12sp"/>
@@ -241,12 +241,12 @@
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:gravity="center_vertical" android:orientation="horizontal">
                 <TextView android:id="@+id/btnHistoryPrev" android:layout_width="48dp" android:layout_height="44dp"
-                    android:gravity="center" android:text="◀" android:textColor="@color/accent" android:textSize="16sp"
+                    android:gravity="center" android:text="◀" android:textColor="?attr/colorPrimary" android:textSize="16sp"
                     android:background="@drawable/bg_text_button"/>
                 <TextView android:id="@+id/txtHistoryPage" android:layout_width="0dp" android:layout_height="wrap_content"
                     android:layout_weight="1" android:gravity="center" android:textColor="@color/text_secondary" android:textSize="12sp"/>
                 <TextView android:id="@+id/btnHistoryNext" android:layout_width="48dp" android:layout_height="44dp"
-                    android:gravity="center" android:text="▶" android:textColor="@color/accent" android:textSize="16sp"
+                    android:gravity="center" android:text="▶" android:textColor="?attr/colorPrimary" android:textSize="16sp"
                     android:background="@drawable/bg_text_button"/>
             </LinearLayout>
         </LinearLayout>
@@ -260,7 +260,7 @@
                     android:text="@string/registro" android:textColor="@color/text_primary" android:textSize="16sp" android:textStyle="bold"/>
                 <TextView android:id="@+id/btnLogClear" android:layout_width="wrap_content" android:layout_height="36dp"
                     android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"
-                    android:text="@string/limpiar" android:textColor="@color/accent" android:textSize="13sp" android:textStyle="bold"
+                    android:text="@string/limpiar" android:textColor="?attr/colorPrimary" android:textSize="13sp" android:textStyle="bold"
                     android:background="@drawable/bg_text_button"/>
             </LinearLayout>
             <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"

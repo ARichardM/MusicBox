@@ -28,7 +28,7 @@
         android:layout_marginStart="10dp"
         android:padding="3dp"
         android:src="@drawable/ic_check"
-        app:tint="@color/accent"
+        app:tint="?attr/colorPrimary"
         android:contentDescription="@null"
         android:importantForAccessibility="no"/>
 </LinearLayout>

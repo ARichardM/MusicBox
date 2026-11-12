@@ -20,8 +20,8 @@ import android.view.animation.OvershootInterpolator;
  * in the middle. {@link #setActive(boolean)} fades it in and out.
  */
 public final class LoadingRingView extends View {
-    private static final int CYAN = Color.rgb(70, 221, 251);
-    private static final int BLUE = Color.rgb(10, 132, 255);
+    private final int highlight;
+    private final int primary;
 
     private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -41,8 +41,10 @@ public final class LoadingRingView extends View {
 
     public LoadingRingView(Context context, AttributeSet attrs) {
         super(context, attrs);
+        highlight = AccentColors.adaptive(context, Color.rgb(70, 221, 251));
+        primary = AccentColors.getColor(context, cl.arichard.descargador.R.color.accent);
         track.setStyle(Paint.Style.STROKE);
-        track.setColor(Color.argb(46, 140, 190, 255));
+        track.setColor(AccentColors.adaptive(context, Color.argb(46, 140, 190, 255)));
         arc.setStyle(Paint.Style.STROKE);
         arc.setStrokeCap(Paint.Cap.ROUND);
         label.setColor(Color.WHITE);
@@ -133,7 +135,7 @@ public final class LoadingRingView extends View {
         label.setTextSize(Math.max(8.5f * density, size * 0.27f));
         bounds.set(getPaddingLeft() + inset, getPaddingTop() + inset, w - getPaddingRight() - inset, h - getPaddingBottom() - inset);
         arc.setShader(new SweepGradient(w / 2f, h / 2f,
-                new int[]{Color.argb(0, 70, 221, 251), CYAN, BLUE}, new float[]{0f, 0.55f, 1f}));
+                new int[]{highlight & 0x00FFFFFF, highlight, primary}, new float[]{0f, 0.55f, 1f}));
     }
 
     @Override protected void onDraw(Canvas canvas) {
@@ -145,7 +147,7 @@ public final class LoadingRingView extends View {
             }
             if (shown <= 0.002f) return;
             arc.setShader(null);
-            arc.setColor(mix(BLUE, CYAN, shown));
+            arc.setColor(mix(primary, highlight, shown));
             canvas.drawArc(bounds, -90f, 360f * shown, false, arc);
             return;
         }

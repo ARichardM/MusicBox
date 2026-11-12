@@ -232,7 +232,7 @@ public final class UpdateChecker {
 
     private static void show(Activity activity, Release release, String current, SharedPreferences prefs) {
         float d = activity.getResources().getDisplayMetrics().density;
-        int cyan = Color.rgb(70, 221, 251);
+        int cyan = AccentColors.adaptive(activity, Color.rgb(70, 221, 251));
         int muted = Color.rgb(142, 147, 163);
         BottomSheetDialog dialog = new BottomSheetDialog(activity);
         LinearLayout root = new LinearLayout(activity);
@@ -240,7 +240,8 @@ public final class UpdateChecker {
         int pad = Math.round(24 * d);
         root.setPadding(pad, Math.round(28 * d), pad, pad);
         GradientDrawable surface = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.rgb(28, 36, 48), Color.rgb(17, 21, 28)});
+                new int[]{AccentColors.adaptive(activity, Color.rgb(28, 36, 48)),
+                        AccentColors.adaptive(activity, Color.rgb(17, 21, 28))});
         float r = 28 * d;
         surface.setCornerRadii(new float[]{r, r, r, r, 0, 0, 0, 0});
         root.setBackground(surface);
@@ -297,7 +298,7 @@ public final class UpdateChecker {
         progressBox.setLayoutParams(progressParams);
         ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
         bar.setMax(1000);
-        bar.getProgressDrawable().setColorFilter(Color.rgb(10, 132, 255), android.graphics.PorterDuff.Mode.SRC_IN);
+        bar.getProgressDrawable().setColorFilter(AccentColors.getColor(activity, cl.arichard.descargador.R.color.accent), android.graphics.PorterDuff.Mode.SRC_IN);
         progressBox.addView(bar, new LinearLayout.LayoutParams(-1, Math.round(8 * d)));
         TextView status = label(activity, "", 13, muted, false);
         ((LinearLayout.LayoutParams) status.getLayoutParams()).topMargin = Math.round(8 * d);
@@ -306,8 +307,8 @@ public final class UpdateChecker {
 
         GradientDrawable pill = new GradientDrawable();
         pill.setCornerRadius(26 * d);
-        pill.setColor(Color.rgb(10, 132, 255));
-        TextView update = button(activity, Tr.t("Actualizar ahora"), Color.WHITE, pill);
+        pill.setColor(AccentColors.getColor(activity, cl.arichard.descargador.R.color.accent));
+        TextView update = button(activity, Tr.t("Actualizar ahora"), AccentColors.onAccent(activity), pill);
         LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(-1, Math.round(52 * d));
         updateParams.topMargin = Math.round(22 * d);
         update.setLayoutParams(updateParams);
