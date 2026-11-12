@@ -81,6 +81,8 @@ public class HomePolishDeviceTest {
                 if (root.getChildAt(index) instanceof cl.arichard.descargador.util.AnimatedSplashView) return false;
             return true;
         }));
+        if (activity instanceof MainActivity) waitFor(() -> main(() ->
+                new androidx.lifecycle.ViewModelProvider((MainActivity) activity).get(MainUiState.class).libraryLoaded));
         return activity;
     }
 
@@ -119,7 +121,8 @@ public class HomePolishDeviceTest {
                 try { render.invoke(activity); } catch (Exception e) { throw new AssertionError(e); } });
             Field listField = MainActivity.class.getDeclaredField("layoutTopLibraryList"); listField.setAccessible(true);
             LinearLayout list = (LinearLayout) listField.get(activity);
-            assertEquals(1, (int) main(list::getChildCount));
+            waitFor(() -> main(() -> list.getChildCount() == 1
+                    && "Muestra duplicada".contentEquals(((TextView) list.getChildAt(0).findViewById(R.id.txtSongTitle)).getText())));
             assertEquals("Muestra duplicada", main(() -> ((TextView) list.getChildAt(0).findViewById(R.id.txtSongTitle)).getText().toString()));
             assertEquals(3, (int) main(library::size));
             assertEquals(before, stats.exportJson().toString());
@@ -184,8 +187,9 @@ public class HomePolishDeviceTest {
         MainActivity activity = (MainActivity) launch(PreviewMainActivity.class);
         action(() -> activity.findViewById(R.id.navTabSearch).performClick());
         waitFor(() -> main(() -> activity.findViewById(R.id.tabSearch).getTranslationX() == 0f));
-        view("inputSearch").click();
         AppCompatAutoCompleteTextView input = activity.findViewById(R.id.inputSearch);
+        waitFor(() -> main(() -> input.getAdapter() != null && input.getAdapter().getCount() > 0));
+        view("inputSearch").click();
         waitFor(() -> main(input::isPopupShowing));
         waitFor(() -> main(() -> {
             Rect visible = new Rect();
@@ -193,14 +197,34 @@ public class HomePolishDeviceTest {
             return visible.bottom < device.getDisplayHeight() * .85;
         }));
         Thread.sleep(400);
-        Rect field = view("searchField").getVisibleBounds();
-        List<UiObject2> queries = device.findObjects(By.text(java.util.regex.Pattern.compile("Verificación reciente .*")));
-        assertFalse("Recent query rows are visible", queries.isEmpty());
-        Rect available = main(() -> { Rect frame = new Rect(); input.getWindowVisibleDisplayFrame(frame); return frame; });
-        for (UiObject2 query : queries) {
-            Rect row = query.getVisibleBounds();
-            assertTrue("Dropdown stays below the search bar", row.top >= field.bottom);
-            assertTrue("Dropdown stays above the keyboard", row.bottom <= available.bottom);
+        // El popup es otra ventana: accesibilidad puede ocultar el árbol de la actividad.
+        Rect field = main(() -> {
+            View anchor = activity.findViewById(R.id.searchField);
+            int[] location = new int[2];
+            anchor.getLocationOnScreen(location);
+            return new Rect(location[0], location[1], location[0] + anchor.getWidth(), location[1] + anchor.getHeight());
+        });
+        AtomicReference<String> popupGeometry = new AtomicReference<>("");
+        try { waitFor(() -> {
+            List<UiObject2> queries = device.findObjects(By.text(java.util.regex.Pattern.compile("Verificación reciente .*")));
+            Rect available = main(() -> { Rect frame = new Rect(); input.getWindowVisibleDisplayFrame(frame); return frame; });
+            popupGeometry.set("field=" + field + "; available=" + available + "; rows=" + queries.size()
+                    + "; showing=" + main(input::isPopupShowing));
+            if (queries.isEmpty()) return false;
+            try {
+                for (UiObject2 query : queries) {
+                    Rect row = query.getVisibleBounds();
+                    popupGeometry.set(popupGeometry.get() + "; row=" + row);
+                    if (row.height() == 0 || row.top < field.bottom || row.bottom > available.bottom) return false;
+                }
+                return true;
+            } catch (androidx.test.uiautomator.StaleObjectException changingKeyboardLayout) {
+                return false; // El teclado puede recrear las filas mientras se consulta accesibilidad.
+            }
+        }); } catch (AssertionError failure) {
+            device.takeScreenshot(new java.io.File(context.getExternalFilesDir(null), "recent-queries-missing.png"));
+            device.dumpWindowHierarchy(new java.io.File(context.getExternalFilesDir(null), "recent-queries-missing.xml"));
+            throw new AssertionError(popupGeometry.get(), failure);
         }
         assertTrue(main(input::getDropDownHeight) <= Math.round(216 * context.getResources().getDisplayMetrics().density));
         action(() -> { input.dismissDropDown(); input.clearFocus(); });

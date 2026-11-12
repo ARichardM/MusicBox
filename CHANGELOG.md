@@ -1,5 +1,13 @@
 # Historial de versiones
 
+## 2.4.4 — 12 de noviembre de 2026
+
+### Android
+
+- Corregimos las secciones vacías de Inicio cuando un refresco interrumpe la aparición de sus tarjetas.
+- Verificación en Samsung de playlists, búsqueda, letras, sugerencias, reproducción automática y descargas en segundo plano.
+- Ajustamos la sincronización de las pruebas de gestos con las animaciones y la carga de biblioteca.
+
 ## 2.4.3 — 11 de noviembre de 2026
 
 ### Windows y Android

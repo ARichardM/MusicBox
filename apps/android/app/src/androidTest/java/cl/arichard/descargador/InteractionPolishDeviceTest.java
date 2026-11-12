@@ -89,11 +89,14 @@ public class InteractionPolishDeviceTest {
                 return true;
             });
             device.wait(Until.findObject(By.text(Tr.t("Ver detalles"))), 5000).click();
+            waitFor(() -> device.hasObject(By.text(Tr.t("Ver menos"))));
+            instrumentation.waitForIdleSync();
+            Thread.sleep(450); // La hoja cambia de altura al expandir las notas.
             String heading = Tr.t("¡Hay una versión nueva!");
             Rect sheetHeading = device.wait(Until.findObject(By.text(heading)), 5000).getVisibleBounds();
             Rect notes = device.wait(Until.findObject(By.clazz("android.widget.ScrollView").scrollable(true)), 5000).getVisibleBounds();
             assertTrue(device.swipe(notes.centerX(), notes.bottom - 30, notes.centerX(), notes.top + 30, 30));
-            assertFalse(device.hasObject(By.textStartsWith("•  Verification note 1.")));
+            assertTrue(device.wait(Until.gone(By.textStartsWith("•  Verification note 1.")), 4000));
             assertTrue(device.swipe(notes.centerX(), notes.top + 30, notes.centerX(), notes.bottom - 30, 30));
             assertTrue(device.wait(Until.hasObject(By.textStartsWith("•  Verification note 1.")), 4000));
             assertEquals(sheetHeading.top, device.findObject(By.text(heading)).getVisibleBounds().top, 5);

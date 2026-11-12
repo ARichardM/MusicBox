@@ -25,7 +25,7 @@ import java.util.function.Supplier;
 import static org.junit.Assert.*;
 import static org.junit.Assume.*;
 
-/** Runs against the separate preview app and never deletes or downloads user files. */
+/** Usa audios sintéticos de verification y nunca borra ni descarga archivos del usuario. */
 @RunWith(AndroidJUnit4.class)
 public class DeviceGestureTest {
     private UiDevice device;
@@ -42,6 +42,13 @@ public class DeviceGestureTest {
     private void action(Runnable action) { main(() -> { action.run(); return true; }); }
     private UiObject2 view(String id) {
         UiObject2 object = device.wait(Until.findObject(By.res(pkg, id)), 12000);
+        if (object == null) {
+            try {
+                java.io.File out = context.getExternalFilesDir(null);
+                device.takeScreenshot(new java.io.File(out, "missing-" + id + ".png"));
+                device.dumpWindowHierarchy(new java.io.File(out, "missing-" + id + ".xml"));
+            } catch (java.io.IOException error) { throw new AssertionError(error); }
+        }
         assertNotNull("Visible view: " + id, object); return object;
     }
     private android.app.Activity resumed() {
@@ -68,7 +75,12 @@ public class DeviceGestureTest {
         assumeTrue("Use the independent verification app", pkg.endsWith(".verification"));
         device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         Configurator.getInstance().setWaitForIdleTimeout(0).setWaitForSelectorTimeout(3000);
-        songs = MusicScanner.scanAllMusic(context); assumeTrue("At least 6 local songs", songs.size() >= 6);
+        songs = new ArrayList<>();
+        for (Song song : MusicScanner.scanAllMusic(context))
+            if (song.getPath().contains("/" + pkg + "/files/Music/Verification/")) songs.add(song);
+        assumeTrue("At least 6 synthetic verification songs", songs.size() >= 6);
+        context.getSharedPreferences("library_navigation", 0).edit().clear().commit();
+        context.getSharedPreferences("musicbox_prefs", 0).edit().putBoolean("all_permissions_requested_v1", true).commit();
         Intent intent = new Intent(context, PreviewMainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         android.app.Activity launched = InstrumentationRegistry.getInstrumentation().startActivitySync(intent);
         waitFor(() -> main(launched::hasWindowFocus)); view("navTabSearch");
@@ -79,11 +91,25 @@ public class DeviceGestureTest {
     }
 
     @Test public void pageSwipesWorkWhileCarouselsFiltersAndVerticalListsKeepTheirGestures() throws Exception {
-        // Starting a local song makes the recent carousel visible in this independent app.
+        // El historial requiere escucha sostenida; preparamos datos para probar el gesto.
+        cl.arichard.descargador.data.SearchHistoryManager history =
+                cl.arichard.descargador.data.SearchHistoryManager.getInstance(context);
+        history.recordPlayedSong(songs.get(0));
+        history.recordPlayedSong(songs.get(1));
         action(() -> { player.playNext(); }); waitFor(() -> main(() -> !player.isLoading()));
         action(() -> { if (player.isPlaying()) player.togglePlayPause(); });
         // Refresh discovery after recording the play.
         page(false); view("chipSongs").click(); page(true);
+        android.app.Activity home = resumed();
+        waitFor(() -> main(() -> home.findViewById(R.id.sectionRecentPlays).getVisibility() == android.view.View.VISIBLE));
+        action(() -> {
+            androidx.core.widget.NestedScrollView discovery = home.findViewById(R.id.containerSearchDiscovery);
+            android.view.View recent = home.findViewById(R.id.recentPlaysScroll);
+            Rect position = new Rect();
+            recent.getDrawingRect(position);
+            discovery.offsetDescendantRectToMyCoords(recent, position);
+            discovery.scrollTo(0, position.top);
+        });
         Rect carousel = view("recentPlaysScroll").getVisibleBounds();
         for (int i = 0; i < 3; i++) swipe(carousel, true);
         assertTrue("Carousel must not change page", device.hasObject(By.res(pkg, "navTabSearch").selected(true)));

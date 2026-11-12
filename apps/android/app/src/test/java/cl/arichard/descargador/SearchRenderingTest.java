@@ -21,6 +21,35 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 28, application = Application.class, qualifiers = "es")
 public class SearchRenderingTest {
+    @Test public void repeatedHomeRefreshFinishesPendingRecentAndLibraryCards() throws Exception {
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup().visible()) {
+            MainActivity activity = controller.get();
+            java.util.List<cl.arichard.descargador.model.Song> songs = java.util.Arrays.asList(
+                    new cl.arichard.descargador.model.Song(1, "Primera", "Prueba", "", 180000, "/fixture/first.wav", "Prueba", 0),
+                    new cl.arichard.descargador.model.Song(2, "Segunda", "Prueba", "", 180000, "/fixture/second.wav", "Prueba", 0));
+            for (String kind : new String[]{"RecentPlays", "TopLibrary"}) {
+                Field generation = MainActivity.class.getDeclaredField(kind.equals("RecentPlays")
+                        ? "recentPlaysGeneration" : "topLibraryGeneration");
+                generation.setAccessible(true);
+                Method render = MainActivity.class.getDeclaredMethod("render" + kind, java.util.List.class);
+                render.setAccessible(true);
+                generation.setInt(activity, 1);
+                render.invoke(activity, songs);
+                // Otro resultado idéntico llega antes de que se creen las tarjetas diferidas.
+                generation.setInt(activity, 2);
+                render.invoke(activity, songs);
+                org.robolectric.Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(100));
+                android.widget.LinearLayout cards = activity.findViewById(kind.equals("RecentPlays")
+                        ? R.id.layoutRecentPlaysCards : R.id.layoutTopLibraryList);
+                assertEquals(kind, 2, cards.getChildCount());
+                generation.setInt(activity, 3);
+                render.invoke(activity, songs);
+                org.robolectric.Shadows.shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(100));
+                assertEquals("Sin duplicados al refrescar " + kind, 2, cards.getChildCount());
+            }
+        }
+    }
+
     private MainUiState state(MainActivity activity) throws Exception {
         Field field = MainActivity.class.getDeclaredField("uiState");
         field.setAccessible(true);

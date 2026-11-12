@@ -1429,7 +1429,8 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         final int generation = topCollectionsGeneration;
         StringBuilder signature = new StringBuilder();
         for (CollectionRank item : ranked) signature.append(item.playlist).append(item.name).append(item.plays);
-        if (signature.toString().equals(lastTopCollections)) return;
+        if (signature.toString().equals(lastTopCollections)
+                && layoutTopCollections.getChildCount() == ranked.size()) return;
         lastTopCollections = signature.toString();
         layoutTopCollections.removeAllViews();
         if (ranked.isEmpty()) { sectionTopCollections.setVisibility(View.GONE); return; }
@@ -1480,7 +1481,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         final int generation = recentPlaysGeneration;
         StringBuilder signature = new StringBuilder();
         for (Song song : recents) signature.append(song.getPath()).append(song.getTitle());
-        if (signature.toString().equals(lastRecentPlays)) return; lastRecentPlays = signature.toString();
+        if (signature.toString().equals(lastRecentPlays)
+                && layoutRecentPlaysCards.getChildCount() == recents.size()) return;
+        lastRecentPlays = signature.toString();
         if (recents.isEmpty()) {
             sectionRecentPlays.setVisibility(View.GONE);
             return;
@@ -1565,7 +1568,9 @@ public class MainActivity extends AppCompatActivity implements PlayerManager.Pla
         cl.arichard.descargador.data.ClickStats stats = cl.arichard.descargador.data.ClickStats.getInstance(this);
         StringBuilder signature = new StringBuilder();
         for (Song song : topSongs) signature.append(song.getPath()).append(song.getTitle()).append(':').append(stats.count(song));
-        if (signature.toString().equals(lastTopLibrary)) return; lastTopLibrary = signature.toString();
+        if (signature.toString().equals(lastTopLibrary)
+                && layoutTopLibraryList.getChildCount() == topSongs.size()) return;
+        lastTopLibrary = signature.toString();
         if (topSongs.isEmpty()) {
             sectionTopLibrary.setVisibility(View.GONE);
             return;
