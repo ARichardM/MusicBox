@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 from urllib.parse import parse_qs, urlsplit
+import animated_artwork
 import hashlib
 import random
 import re
@@ -123,6 +124,23 @@ class MusicBoxBridge(QObject):
     sidebarChanged = Signal()
     authChanged = Signal()
     discoveryChanged = Signal()
+    animatedArtworkReady = Signal(str, str)
+
+    @Slot(str, str, str, str, int)
+    def requestAnimatedArtwork(self, key, title, artist, album, duration):
+        if artist == i18n.tr("Artista desconocido"):
+            return
+        if album in ("YouTube", i18n.tr("Álbum desconocido")):
+            album = ""
+
+        def worker():
+            try:
+                url = animated_artwork.resolve(title, artist, album, duration)
+            except (OSError, ValueError):
+                url = ""
+            self.animatedArtworkReady.emit(key, url)
+
+        threading.Thread(target=worker, daemon=True, name="animated-artwork").start()
     forYouChanged = Signal()
     homeLoadingChanged = Signal()
     playlistLinkDetected = Signal(str)
