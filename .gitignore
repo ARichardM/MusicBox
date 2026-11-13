@@ -60,3 +60,9 @@ datos/
 # Archivos locales del editor y capturas de trabajo
 .idea/
 attachments/
+
+# Grafo de conocimiento y caché local de análisis
+graphify-out/
+
+# Scripts personales locales de prueba
+script_musica.py

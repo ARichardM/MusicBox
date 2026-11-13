@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>MusicBox Web</title>
+  <meta name="description" content="MusicBox Web - Reproductor de música online y offline con interfaz exacta a Desktop.">
+  <meta name="theme-color" content="#161618">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="192x192" href="logo_cube.png">
+  <link rel="apple-touch-icon" href="logo_cube.png">
+  <link rel="stylesheet" href="style.css?v=2.4.2">
+</head>
+<body>
+  <!-- Pantalla de Login (Exacta a Desktop Main.qml:800-810) -->
+  <div class="login-screen-overlay" id="login-overlay" style="display:none;">
+    <div class="login-dialog-box">
+      <div class="brand-mark" id="login-brand-mark" style="width:92px;height:92px;margin:0 auto 16px;">
+        <div class="brand-glow" style="width:115px;height:115px;opacity:0.85;"></div>
+        <img src="logo_cube.png" style="width:92px;height:92px;" class="brand-cube" alt="MusicBox" draggable="false">
+        <canvas id="login-brand-canvas" width="184" height="184" style="width:92px;height:92px;"></canvas>
+      </div>
+
+      <h1 class="login-title">Tu música, en todos lados</h1>
+      <p class="login-subtitle">Inicia sesión para sincronizar tu biblioteca, favoritos, playlists y preferencias.</p>
+
+      <button class="google-login-button" id="google-login-btn">
+        <img src="icons/google.svg" class="google-logo" alt="">
+        <span id="google-login-label">Continuar con Google</span>
+      </button>
+
+      <div class="login-spinner-wrap" id="login-spinner" style="display:none;">
+        <div class="spinner-ring"></div>
+      </div>
+
+      <div class="login-error-text" id="login-error-text" style="display:none;"></div>
+
+      <button class="guest-login-button" id="guest-login-btn">Continuar como invitado</button>
+
+      <p class="login-footer-hint">Las descargas permanecen únicamente en este dispositivo.</p>
+    </div>
+  </div>
+
+  <div class="app-layout" id="app-layout">
+    <!-- Barra Lateral (Exacta a Desktop: 230px expandido / 76px colapsado) -->
+    <aside class="sidebar" id="app-sidebar">
+      <!-- Marca y Logo Oficial (BrandMark: Cubo 3D + Onda Cian Animada) -->
+      <div class="sidebar-header" id="sidebar-header">
+        <div class="brand-mark" id="brand-mark" title="MusicBox Web">
+          <div class="brand-glow" id="brand-glow"></div>
+          <img src="logo_cube.png" class="brand-cube" alt="MusicBox" draggable="false">
+          <canvas id="brand-canvas" width="88" height="88"></canvas>
+        </div>
+        <div class="brand-text" id="brand-text">
+          <span class="brand-title">MusicBox</span>
+          <span class="brand-subtitle">Web</span>
+        </div>
+      </div>
+
+      <!-- Botón Flotante para Colapsar/Expandir en el borde derecho -->
+      <button class="sidebar-toggle-btn" id="sidebar-toggle-btn" title="Contraer panel" aria-label="Alternar panel lateral">
+        <img src="icons/sidebar_collapse.svg" id="sidebar-toggle-icon" alt="">
+      </button>
+
+      <!-- Navegación Primaria (Exacta a Desktop: Inicio, Mi música, Descargas, Historial) -->
+      <nav class="nav-section">
+        <button class="nav-item active" data-view="home" id="nav-home" title="Inicio">
+          <img src="icons/search.svg" class="nav-icon" alt="">
+          <span class="nav-label">Inicio</span>
+        </button>
+        <button class="nav-item" data-view="library" id="nav-library" title="Mi música">
+          <img src="icons/music.svg" class="nav-icon" alt="">
+          <span class="nav-label">Mi música</span>
+        </button>
+        <button class="nav-item" data-view="downloads" id="nav-downloads" title="Descargas">
+          <img src="icons/download.svg" class="nav-icon" alt="">
+          <span class="nav-label">Descargas</span>
+        </button>
+        <button class="nav-item" data-view="history" id="nav-history" title="Historial">
+          <img src="icons/history.svg" class="nav-icon" alt="">
+          <span class="nav-label">Historial</span>
+        </button>
+      </nav>
+
+      <!-- Espaciador flexible para empujar Configuración al fondo -->
+      <div style="flex:1;"></div>
+
+      <!-- Pie de Sidebar: ÚNICAMENTE el botón de Configuración (Idéntico a Desktop Main.qml:217) -->
+      <div class="sidebar-footer-clean">
+        <button class="account-btn" id="settings-btn" title="Configuración">
+          <div class="account-avatar" id="sidebar-account-avatar">
+            <span id="sidebar-account-initial">U</span>
+          </div>
+          <span class="account-label" id="sidebar-account-label">Configuración</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Superficie Principal de Contenido (Borde redondeado de 24px hacia el panel) -->
+    <div class="main-view-wrap">
+      <main class="main-surface" id="main-surface">
+        <div class="content-scroll" id="main-content">
+          <!-- El contenido de cada vista se renderiza dinámicamente aquí -->
+        </div>
+      </main>
+
+      <!-- Cajón Lateral de Letras Sincronizadas -->
+      <aside class="drawer" id="lyrics-drawer">
+        <div class="drawer-header">
+          <div class="drawer-title">
+            <img src="icons/lyrics.svg" class="drawer-icon" alt="">
+            <span>Letras</span>
+          </div>
+          <button class="icon-btn" id="close-lyrics-btn" title="Cerrar letras">
+            <img src="icons/close.svg" alt="">
+          </button>
+        </div>
+        <div class="lyrics-body" id="lyrics-body">
+          <div class="lyrics-empty">Reproduce una canción para ver su letra</div>
+        </div>
+      </aside>
+
+      <!-- Cajón Lateral de Cola de Reproducción -->
+      <aside class="drawer" id="queue-drawer">
+        <div class="drawer-header">
+          <div class="drawer-title">
+            <img src="icons/queue.svg" class="drawer-icon" alt="">
+            <span>Cola de reproducción</span>
+          </div>
+          <div class="drawer-actions">
+            <button class="pill-btn-sm" id="clear-queue-btn">Limpiar</button>
+            <button class="icon-btn" id="close-queue-btn" title="Cerrar cola">
+              <img src="icons/close.svg" alt="">
+            </button>
+          </div>
+        </div>
+        <div class="queue-body" id="queue-body"></div>
+      </aside>
+
+      <!-- Mini Dock de Video / IFrame de YouTube (Garantiza sonido sin bloqueos de navegador y permite ver video) -->
+      <div class="video-dock" id="video-dock">
+        <div class="video-dock-header">
+          <span class="video-dock-title" id="video-dock-title">Reproduciendo</span>
+          <div style="display:flex;gap:4px;">
+            <button class="icon-btn-sm" id="minimize-video-btn" title="Minimizar">
+              <img src="icons/collapse.svg" alt="">
+            </button>
+            <button class="icon-btn-sm" id="hide-video-dock-btn" title="Ocultar vista de video">
+              <img src="icons/close.svg" alt="">
+            </button>
+          </div>
+        </div>
+        <div class="video-dock-body" id="yt-player-container">
+          <div id="yt-player-host"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra de Reproductor Inferior Fija (Exacta al estilo Desktop y amada por el usuario) -->
+  <footer class="player-bar" id="bottom-player">
+    <div class="player-left">
+      <div class="now-playing-cover-wrap">
+        <img src="logo_cube.png" id="player-thumb" class="now-playing-thumb" alt="Carátula">
+        <div class="player-thumb-shimmer" id="player-thumb-shimmer"></div>
+      </div>
+      <div class="now-playing-info">
+        <div class="marquee-wrap">
+          <div class="now-playing-title" id="player-title">MusicBox Web</div>
+        </div>
+        <div class="now-playing-artist" id="player-artist">Selecciona una canción para escuchar</div>
+      </div>
+      <button class="icon-btn" id="player-fav-btn" title="Favorito">
+        <img src="icons/heart.svg" class="nav-icon" alt="Favorito">
+      </button>
+      <span class="offline-pill" id="playback-source-badge" style="display:none;">⚡ Offline</span>
+    </div>
+
+    <div class="player-center">
+      <div class="player-controls">
+        <button class="control-btn" id="shuffle-btn" title="Aleatorio">
+          <img src="icons/shuffle.svg" class="nav-icon" alt="Aleatorio">
+        </button>
+        <button class="control-btn" id="prev-btn" title="Anterior">
+          <img src="icons/previous.svg" class="nav-icon" alt="Anterior">
+        </button>
+        <button class="play-pause-btn" id="play-pause-btn" title="Reproducir / Pausar">
+          <img src="icons/play.svg" id="play-pause-icon" alt="Play">
+        </button>
+        <button class="control-btn" id="next-btn" title="Siguiente">
+          <img src="icons/next.svg" class="nav-icon" alt="Siguiente">
+        </button>
+        <button class="control-btn" id="repeat-btn" title="Repetir">
+          <img src="icons/repeat.svg" id="repeat-icon" class="nav-icon" alt="Repetir">
+        </button>
+      </div>
+
+      <div class="progress-container">
+        <span class="time-label" id="current-time">0:00</span>
+        <div class="progress-bar-wrap" id="progress-wrap">
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+            <div class="progress-thumb" id="progress-thumb"></div>
+          </div>
+        </div>
+        <span class="time-label" id="total-time">0:00</span>
+      </div>
+    </div>
+
+    <div class="player-right">
+      <button class="control-btn" id="video-toggle-btn" title="Ver / Ocultar video">
+        <img src="icons/video.svg" class="nav-icon" alt="Video">
+      </button>
+      <button class="control-btn" id="lyrics-toggle-btn" title="Letras">
+        <img src="icons/lyrics.svg" class="nav-icon" alt="Letras">
+      </button>
+      <button class="control-btn" id="queue-toggle-btn" title="Cola">
+        <img src="icons/queue.svg" class="nav-icon" alt="Cola">
+      </button>
+      <div class="volume-container">
+        <button class="icon-btn-ghost" id="mute-btn" title="Silenciar / Activar sonido">
+          <img src="icons/volume.svg" id="volume-icon" class="nav-icon" alt="Volumen">
+        </button>
+        <div class="volume-bar-wrap" id="volume-wrap">
+          <div class="volume-track">
+            <div class="volume-fill" id="volume-fill" style="width: 80%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Modal: Configuración (Desktop Main.qml:568-710 EXACTO) -->
+  <div class="modal-backdrop" id="settings-modal" style="display:none;">
+    <div class="modal-card modal-settings">
+      <div class="modal-header">
+        <h2 class="modal-title">Configuración</h2>
+        <button class="icon-btn" id="close-settings-btn" title="Cerrar">
+          <img src="icons/close.svg" alt="">
+        </button>
+      </div>
+
+      <div class="modal-scroll-body">
+        <!-- Tarjeta de Usuario / Sesión (Desktop Main.qml:580) -->
+        <div class="settings-user-card">
+          <div class="settings-user-avatar" id="modal-user-avatar">
+            <span id="modal-user-initial">U</span>
+          </div>
+          <div class="settings-user-details">
+            <div class="settings-user-name" id="modal-user-name">Usuario MusicBox</div>
+            <div class="settings-user-email" id="modal-user-email">openmusicbox.duckdns.org</div>
+          </div>
+        </div>
+
+        <!-- Sección: Apariencia (Desktop Main.qml:590) -->
+        <div class="settings-section-title">APARIENCIA</div>
+        <div class="settings-block">
+          <!-- Tema Oscuro / Claro Switch -->
+          <div class="settings-row">
+            <div class="settings-row-left">
+              <div class="settings-icon-box">
+                <img src="icons/moon.svg" id="settings-theme-icon" alt="">
+              </div>
+              <span class="settings-row-label">Tema oscuro</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="settings-dark-switch" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="settings-divider"></div>
+
+          <!-- Color Primario: Azul / Naranjo (Desktop Main.qml:604) -->
+          <div class="settings-col">
+            <span class="settings-col-label">Color primario</span>
+            <div class="choice-group">
+              <button class="choice-pill active" id="color-blue-btn" data-color="blue">Azul</button>
+              <button class="choice-pill" id="color-orange-btn" data-color="orange">Naranjo</button>
+            </div>
+          </div>
+
+          <div class="settings-divider"></div>
+
+          <!-- Idioma (Desktop Main.qml:611) -->
+          <div class="settings-col">
+            <span class="settings-col-label">Idioma</span>
+            <div class="segmented-bar">
+              <button class="segment-btn active" data-lang="auto">Automático</button>
+              <button class="segment-btn" data-lang="es">Español</button>
+              <button class="segment-btn" data-lang="en">English</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sección: Descargas y Servidor -->
+        <div class="settings-section-title">DESCARGAS Y SERVIDOR</div>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-info-text">
+              <div class="setting-name">Cookies de YouTube</div>
+              <div class="setting-desc" id="cookies-status-desc">Verificando en servidor...</div>
+            </div>
+            <label class="pill-btn file-label" for="cookies-file-input">
+              <img src="icons/cookie.svg" style="width:16px;height:16px;" alt="">
+              <span>Subir cookies.txt</span>
+              <input type="file" id="cookies-file-input" accept=".txt" style="display:none;">
+            </label>
+          </div>
+
+          <div class="settings-divider"></div>
+
+          <div class="settings-row">
+            <div class="settings-info-text">
+              <div class="setting-name">Música sin conexión (IndexedDB)</div>
+              <div class="setting-desc" id="offline-storage-desc">Calculando espacio...</div>
+            </div>
+            <button class="pill-btn-danger" id="clear-offline-btn">
+              <img src="icons/trash.svg" style="width:14px;height:14px;" alt="">
+              <span>Borrar descargas</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sección: Estadísticas (Desktop Main.qml:655) -->
+        <div class="settings-section-title">ESTADÍSTICAS</div>
+        <div class="settings-block cursor-pointer" id="stats-block-btn">
+          <div class="settings-row">
+            <div class="settings-info-text">
+              <div class="setting-name" style="font-size:16px;">Ver mis estadísticas ›</div>
+              <div class="setting-desc" id="stats-clicks-summary">0 reproducciones en tu historial</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sección: Acerca de (Desktop Main.qml:684) -->
+        <div class="settings-section-title">ACERCA DE</div>
+        <div class="settings-block">
+          <div class="settings-row">
+            <div class="settings-info-text">
+              <div class="setting-name" style="font-size:18px;">MusicBox</div>
+              <div class="setting-desc">Versión 2.4.0 Web</div>
+            </div>
+            <div class="badge-uptodate">
+              <span class="badge-dot"></span>
+              <span>Al día</span>
+            </div>
+          </div>
+          <div class="setting-desc" style="margin-top:8px;">
+            Estás al día. Tienes la última versión de MusicBox Web con reproducción híbrida y soporte PWA.
+          </div>
+          <div style="margin-top:14px;">
+            <a href="landing.html" target="_blank" class="pill-btn" style="text-decoration:none;display:inline-flex;">
+              <img src="icons/external.svg" style="width:16px;height:16px;" alt="">
+              <span>Ver página de presentación (Landing)</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Botón de Cerrar Sesión (Desktop Main.qml:709) -->
+        <button class="logout-red-button" id="logout-button">
+          Cerrar sesión
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Estadísticas (Desktop Main.qml:530-566 EXACTO) -->
+  <div class="modal-backdrop" id="stats-modal" style="display:none;">
+    <div class="modal-card modal-settings" style="max-width: 640px;">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" style="font-size:22px;">Tu música en cifras</h2>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Cada reproducción cuenta</div>
+        </div>
+        <button class="icon-btn" id="close-stats-btn" title="Cerrar"><img src="icons/close.svg" alt=""></button>
+      </div>
+      <div class="modal-scroll-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+          <div class="settings-block" style="padding:16px;">
+            <div id="stats-time-val" style="font-size:24px;font-weight:800;color:var(--text-primary);margin-bottom:4px;">0 min</div>
+            <div style="font-size:12px;color:var(--text-muted);">Tiempo escuchado</div>
+          </div>
+          <div class="settings-block" style="padding:16px;">
+            <div id="stats-plays-val" style="font-size:24px;font-weight:800;color:var(--text-primary);margin-bottom:4px;">0</div>
+            <div style="font-size:12px;color:var(--text-muted);">Reproducciones</div>
+          </div>
+        </div>
+        <div class="settings-section-title" style="margin-bottom:10px;">TUS CANCIONES MÁS ESCUCHADAS</div>
+        <div class="tracks-list" id="stats-ranked-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Crear Nueva Playlist -->
+  <div class="modal-backdrop" id="new-playlist-modal" style="display:none;">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h2 class="modal-title">Nueva Playlist</h2>
+        <button class="icon-btn" id="close-new-playlist-btn"><img src="icons/close.svg" alt=""></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="new-playlist-name" class="modal-input" placeholder="Nombre de la playlist..." maxlength="40">
+        <div class="modal-actions">
+          <button class="pill-btn-ghost" id="cancel-new-playlist-btn">Cancelar</button>
+          <button class="pill-btn-accent" id="confirm-new-playlist-btn">Crear Playlist</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Añadir a Playlist -->
+  <div class="modal-backdrop" id="add-to-playlist-modal" style="display:none;">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h2 class="modal-title">Agregar a Playlist</h2>
+        <button class="icon-btn" id="close-add-playlist-btn"><img src="icons/close.svg" alt=""></button>
+      </div>
+      <div class="modal-body">
+        <div class="playlists-picker-list" id="playlists-picker-list"></div>
+        <div class="modal-actions">
+          <button class="pill-btn-ghost" id="cancel-add-playlist-btn">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Menú Contextual Flotante de Opciones de Pista -->
+  <div class="context-menu" id="track-context-menu" style="display:none;">
+    <div class="context-item" id="ctx-play-next">
+      <img src="icons/next.svg" class="ctx-icon" alt="">
+      <span>Reproducir a continuación</span>
+    </div>
+    <div class="context-item" id="ctx-add-queue">
+      <img src="icons/queue.svg" class="ctx-icon" alt="">
+      <span>Agregar a la cola</span>
+    </div>
+    <div class="context-divider"></div>
+    <div class="context-item" id="ctx-toggle-fav">
+      <img src="icons/heart.svg" class="ctx-icon" alt="" id="ctx-fav-icon">
+      <span id="ctx-fav-text">Agregar a favoritas</span>
+    </div>
+    <div class="context-item" id="ctx-add-playlist">
+      <img src="icons/playlist.svg" class="ctx-icon" alt="">
+      <span>Agregar a playlist</span>
+    </div>
+    <div class="context-item" id="ctx-download">
+      <img src="icons/download.svg" class="ctx-icon" alt="">
+      <span id="ctx-download-text">Descargar canción</span>
+    </div>
+  </div>
+
+  <!-- Firebase App, Auth y Firestore SDKs Oficiales -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    window.__ytReady = false;
+    window.onYouTubeIframeAPIReady = function() {
+      window.__ytReady = true;
+      if (typeof window.initYTPlayer === "function") {
+        window.initYTPlayer();
+      }
+    };
+  </script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="app.js?v=2.4.2"></script>
+</body>
+</html>

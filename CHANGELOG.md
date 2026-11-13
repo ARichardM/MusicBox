@@ -2,6 +2,12 @@
 
 ## 2.4.5 — 12 de noviembre de 2026
 
+### Web
+
+- Lanzamiento de la versión web de MusicBox en producción con HTTPS (`openmusicbox.duckdns.org`), soporte PWA y landing page de presentación.
+- Paridad 1:1 con la versión de escritorio en sus 11 módulos principales (Inicio, Mi música, Descargas locales con IndexedDB, Historial, Reproductor inferior, Letras sincronizadas, Cola de reproducción, Video dock flotante, Configuración y Estadísticas).
+- Autenticación oficial de Google mediante Firebase Auth y sincronización bidireccional de biblioteca, favoritos y preferencias con Firestore.
+
 ### Windows y Android
 
 - Configuración permite elegir azul o naranjo como color primario, conservándolo al cambiar entre tema claro y oscuro y sincronizando la preferencia con la cuenta.

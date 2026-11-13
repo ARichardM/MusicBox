@@ -1,0 +1,21 @@
+services:
+  musicbox_web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: musicbox_web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8005:8005"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 512M
+        reservations:
+          memory: 128M
+    volumes:
+      - ./frontend:/app/frontend:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+

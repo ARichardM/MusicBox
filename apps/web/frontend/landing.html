@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusicBox Web - Tu música, en todos lados</title>
+  <meta name="description" content="Reproductor de música online y offline sin anuncios. Busca, reproduce y descarga con interfaz exacta a MusicBox Desktop.">
+  <meta name="theme-color" content="#161618">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="192x192" href="logo_cube.png">
+  <link rel="apple-touch-icon" href="logo_cube.png">
+  <link rel="stylesheet" href="style.css?v=2.4.2">
+  <style>
+    /* Estilos específicos de la Landing Page */
+    body {
+      overflow-y: auto;
+      background: radial-gradient(circle at 50% -20%, #162438 0%, #000000 65%);
+      min-height: 100vh;
+      display: block;
+    }
+    .landing-nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .landing-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+    }
+    .landing-hero {
+      max-width: 900px;
+      margin: 60px auto 40px;
+      text-align: center;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(80, 233, 255, 0.3);
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+    }
+    .hero-title {
+      font-size: clamp(38px, 6vw, 64px);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #ffffff 40%, var(--cyan) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-desc {
+      font-size: clamp(16px, 2.2vw, 20px);
+      color: var(--text-muted);
+      line-height: 1.5;
+      max-width: 680px;
+      margin-bottom: 36px;
+    }
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 60px;
+    }
+    .cta-btn-primary {
+      height: 52px;
+      padding: 0 36px;
+      border-radius: 26px;
+      background: linear-gradient(135deg, var(--accent) 0%, #0056b3 100%);
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px var(--accent-glow);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .cta-btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px var(--accent-glow);
+    }
+    .cta-btn-secondary {
+      height: 52px;
+      padding: 0 32px;
+      border-radius: 26px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-line);
+      color: var(--text-primary);
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      transition: background-color 0.12s ease;
+    }
+    .cta-btn-secondary:hover {
+      background: var(--bg-card-hover);
+    }
+    /* Features Grid */
+    .features-section {
+      max-width: 1100px;
+      margin: 40px auto 80px;
+      padding: 0 24px;
+    }
+    .section-headline {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 40px;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--bg-sidebar);
+      border: 1px solid var(--border-line);
+      border-radius: 24px;
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--accent);
+    }
+    .feature-icon-box {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: var(--accent-soft);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .feature-icon-box img {
+      width: 26px;
+      height: 26px;
+    }
+    .feature-title {
+      font-size: 19px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .feature-text {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    /* Landing Footer */
+    .landing-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 40px 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header de Navegación -->
+  <header class="landing-nav">
+    <a href="./" class="landing-brand">
+      <div class="brand-mark">
+        <div class="brand-glow" style="opacity: 0.8;"></div>
+        <img src="logo_cube.png" class="brand-cube" alt="MusicBox">
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">MusicBox</span>
+        <span class="brand-subtitle">Web</span>
+      </div>
+    </a>
+    <div style="display:flex;gap:12px;">
+      <a href="./" class="cta-btn-primary" style="height:42px;padding:0 22px;font-size:14px;">Abrir Reproductor</a>
+    </div>
+  </header>
+
+  <!-- Hero Principal -->
+  <section class="landing-hero">
+    <div class="hero-badge">
+      <span>✨ Versión 2.4.0 Oficial</span>
+      <span>·</span>
+      <span>Paridad Total con Desktop</span>
+    </div>
+
+    <h1 class="hero-title">Tu música, en todos lados.<br>Sin anuncios. Sin límites.</h1>
+
+    <p class="hero-desc">
+      MusicBox Web traslada toda la potencia y elegancia de MusicBox Desktop al navegador.
+      Busca en millones de canciones, disfruta de letras sincronizadas en tiempo real y descarga tus pistas favoritas para escucharlas sin conexión.
+    </p>
+
+    <div class="hero-actions">
+      <a href="./" class="cta-btn-primary">
+        <img src="icons/play.svg" style="width:20px;height:20px;filter:brightness(0) invert(1);" alt="">
+        <span>Comenzar a escuchar gratis</span>
+      </a>
+      <a href="./#install" class="cta-btn-secondary" id="pwa-install-landing-btn">
+        <img src="icons/download.svg" style="width:18px;height:18px;" alt="">
+        <span>Instalar App PWA</span>
+      </a>
+    </div>
+
+    <!-- Previsualización del Logo Oficial -->
+    <div style="position:relative;margin-top:20px;">
+      <div style="width:160px;height:160px;margin:0 auto;position:relative;">
+        <div class="brand-glow" style="opacity:0.9;width:200px;height:200px;left:-20px;top:-20px;"></div>
+        <img src="logo_cube.png" style="width:160px;height:160px;object-fit:contain;position:relative;z-index:2;" alt="MusicBox Cube">
+      </div>
+    </div>
+  </section>
+
+  <!-- Sección de Características -->
+  <section class="features-section">
+    <h2 class="section-headline">¿Por qué MusicBox Web?</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon-box">
+          <img src="icons/download.svg" alt="">
+        </div>
+        <h3 class="feature-title">Modo 100% Offline</h3>
+        <p class="feature-text">Guarda canciones directamente en tu dispositivo con IndexedDB. Reproduce sin gastar datos y sin depender de conexión a internet.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon-box">
+          <img src="icons/music.svg" alt="">
+        </div>
+        <h3 class="feature-title">Catálogo Completo</h3>
+        <p class="feature-text">Busca por canción, artista, álbum o pega enlaces directamente. Accede a discografías, sencillos y canciones recomendadas.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon-box">
+          <img src="icons/lyrics.svg" alt="">
+        </div>
+        <h3 class="feature-title">Letras Sincronizadas</h3>
+        <p class="feature-text">Sigue tus canciones verso a verso en tiempo real con desplazamiento automático inteligente y compatibilidad con LRCLIB.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon-box">
+          <img src="icons/sun.svg" alt="">
+        </div>
+        <h3 class="feature-title">Diseño idéntico a Desktop</h3>
+        <p class="feature-text">Panel lateral colapsable, reproductor inferior fijo, animaciones fluidas a 60 FPS y temas oscuro y claro adaptables.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon-box">
+          <img src="icons/google.svg" alt="">
+        </div>
+        <h3 class="feature-title">Sincronización de Cuenta</h3>
+        <p class="feature-text">Inicia sesión con Google para sincronizar tus playlists, favoritos y preferencias entre todos tus dispositivos.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon-box">
+          <img src="icons/sparkle.svg" alt="">
+        </div>
+        <h3 class="feature-title">Ligero y Respetuoso</h3>
+        <p class="feature-text">Optimizado para un consumo mínimo de memoria y CPU. Sin rastreadores intrusivos ni publicidad.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pie de Página -->
+  <footer class="landing-footer">
+    <p>MusicBox Web v2.4.0 · Desarrollado con pasión para una experiencia musical libre y moderna.</p>
+    <p style="margin-top:8px;"><a href="./" style="color:var(--accent);text-decoration:none;font-weight:600;">Abrir aplicación web</a></p>
+  </footer>
+</body>
+</html>
