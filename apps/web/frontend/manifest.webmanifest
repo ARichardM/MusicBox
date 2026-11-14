@@ -1,0 +1,23 @@
+{
+  "name": "MusicBox",
+  "short_name": "MusicBox",
+  "description": "Tu m?sica, en todos lados. La experiencia de MusicBox en tu navegador.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#161618",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "logo_cube.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo_cube.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

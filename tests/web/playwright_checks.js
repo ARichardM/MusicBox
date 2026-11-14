@@ -1,0 +1,83 @@
+const { chromium } = require('playwright');
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const base = process.env.MUSICBOX_TEST_URL || 'http://127.0.0.1:8015';
+const artifacts = path.resolve('apps/web/.test-artifacts');
+fs.mkdirSync(artifacts,{recursive:true});
+
+(async () => {
+  const browser = await chromium.launch({headless:false});
+  const reports = [];
+  try {
+    for (const viewport of [{width:390,height:844},{width:1280,height:800},{width:360,height:740},{width:768,height:1024}]) {
+      const context = await browser.newContext({viewport,locale:'es-CL',serviceWorkers:viewport.width === 390 ? 'allow' : 'block'});
+      const page = await context.newPage();
+      const errors=[]; page.on('pageerror',error=>errors.push(error.message));
+      // Firebase is disabled in verification; avoid loading third-party identity scripts in tests.
+      await page.route('**/www.gstatic.com/firebasejs/**',route=>route.abort());
+      await page.goto(base + '/?verification=1');
+      await page.waitForFunction(() => typeof storage !== 'undefined' && storage.db && typeof importLocalFiles === 'function');
+      const result = await page.evaluate(fs.readFileSync('tests/web/browser_checks.js','utf8'));
+      if (viewport.width === 1280) reports.push({test:'Firestore simulado',...await page.evaluate(fs.readFileSync('tests/web/cloud_checks.js','utf8'))});
+      assert.equal(errors.length,0,JSON.stringify(errors));
+      reports.push({...result,errors});
+      await page.evaluate(async () => {
+        document.getElementById('toast-container')?.replaceChildren();
+        document.getElementById('close-queue-btn').click(); document.getElementById('close-lyrics-btn').click();
+        state.searchQuery=''; await loadHomeView();
+        document.getElementById('main-content').scrollTop=0;
+        document.querySelector('.main-surface').scrollLeft=0;
+      });
+      await page.locator('#for-you-grid .for-you-card[data-track-id]').first().waitFor({timeout:45000});
+      await page.locator('#main-content img').evaluateAll(images => Promise.all(images.filter(img => {
+        const rect=img.getBoundingClientRect(); return rect.top < innerHeight && rect.bottom > 0 && rect.left < innerWidth;
+      }).map(img => img.complete ? Promise.resolve() : new Promise(resolve => {img.addEventListener('load',resolve,{once:true});img.addEventListener('error',resolve,{once:true});setTimeout(resolve,8000);} ))));
+      await page.screenshot({path:path.join(artifacts,`home-${viewport.width}.png`),fullPage:true,animations:'disabled'});
+      if (viewport.width <= 680) {
+        await page.locator('.player-left').click();
+        await page.screenshot({path:path.join(artifacts,`player-${viewport.width}.png`),fullPage:true,animations:'disabled'});
+        const controls = await page.locator('#next-btn').boundingBox();
+        assert(controls.x >= 0 && controls.x + controls.width <= viewport.width);
+      }
+      if (viewport.width === 390) {
+        await page.evaluate(async () => { await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; });
+        await page.reload();
+        await page.waitForFunction(()=>navigator.serviceWorker.controller && typeof storage !== 'undefined' && storage.db);
+        await context.setOffline(true);
+        await page.reload();
+        await page.waitForFunction(()=>typeof storage !== 'undefined' && storage.db);
+        const offline = await page.evaluate(async () => {
+          state.isMuted=true; const tracks=await storage.getAllOfflineTracks(); await playTrack(tracks[0]);
+          return {db:storage.db.name,count:tracks.length,offline:state.isOfflinePlayback,src:audio.src};
+        });
+        assert(offline.count>=3 && offline.offline && offline.src.startsWith('blob:'),'Offline shell and local audio');
+        await page.waitForFunction(()=>audio.readyState>=2);
+        reports.push({test:'PWA sin conexión',passed:true,database:offline.db});
+        await context.setOffline(false);
+      }
+      if (viewport.width === 1280 && fs.existsSync(path.join(artifacts,'verification-video.mp4'))) {
+        await page.locator('#nav-library').click();
+        const chooserPromise=page.waitForEvent('filechooser');
+        await page.getByRole('button',{name:'Importar canciones',exact:true}).click();
+        const chooser=await chooserPromise; await chooser.setFiles(path.join(artifacts,'verification-video.mp4'));
+        await page.waitForFunction(async()=> (await storage.getAllOfflineTracks()).some(t=>t.id.startsWith('local:')));
+        await page.evaluate(async()=>{state.isMuted=true;const track=(await storage.getAllOfflineTracks()).find(t=>t.id.startsWith('local:'));await playTrack(track);});
+        await page.waitForFunction(()=>audio.videoWidth>0);
+        await page.locator('#video-toggle-btn').click();
+        assert(await page.locator('#local-media-player').isVisible(),'Imported MP4 visible in video dock');
+        await page.evaluate(()=>audio.pause());
+        const downloadPromise=page.waitForEvent('download');
+        await page.evaluate(()=>openTrackContextMenu({clientX:40,clientY:40},state.currentTrack));
+        await page.locator('#ctx-save-file').click();
+        const exported=await downloadPromise;const exportPath=path.join(artifacts,'exported-video.mp4');await exported.saveAs(exportPath);
+        assert.equal(fs.statSync(exportPath).size,fs.statSync(path.join(artifacts,'verification-video.mp4')).size,'Exported file keeps all original bytes');
+        reports.push({test:'Importación y reproducción de MP4 local',passed:true});
+        reports.push({test:'Guardar archivo MP4 desde el navegador',passed:true});
+      }
+      await context.close();
+    }
+    fs.writeFileSync(path.join(artifacts,'browser-results.json'),JSON.stringify(reports,null,2));
+    console.log(JSON.stringify(reports.map(r=>({test:r.test,viewport:r.viewport,passed:r.passed,errors:r.errors})),null,2));
+  } finally { await browser.close(); }
+})().catch(error=>{console.error(error);process.exitCode=1;});

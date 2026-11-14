@@ -60,3 +60,6 @@ datos/
 # Archivos locales del editor y capturas de trabajo
 .idea/
 attachments/
+apps/web/frontend/runtime-config.js
+apps/web/backend/cookies.txt
+apps/web/.test-artifacts/
