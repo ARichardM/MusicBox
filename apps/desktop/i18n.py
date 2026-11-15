@@ -158,6 +158,7 @@ EN = {
     "Aquí agregaremos nuevas opciones próximamente": "New options will be added here soon",
     "Aquí verás los archivos terminados": "Finished files will show up here",
     "Artista desconocido": "Unknown artist",
+    "Álbum desconocido": "Unknown album",
     "Auto-descarga": "Auto-download",
     "Auto-descarga activada: las nuevas canciones se descargarán al agregarse":
         "Auto-download is on: new songs are downloaded as soon as they are added",

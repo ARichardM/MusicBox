@@ -39,6 +39,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
     private TextView tabSelectorMp3, tabSelectorMp4, tabSelectorLyrics;
     private FrameLayout containerCoverArt, containerVideoPlayer, containerLyrics, videoHostLayout;
     private ImageView imgNowPlayingCover;
+    private AnimatedArtwork animatedArtwork;
     private TextView txtTitle, txtArtist;
     private SeekBar seekBar;
     private TextView txtCurrentTime, txtTotalTime;
@@ -140,6 +141,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         playerTopBar = findViewById(R.id.playerTopBar);
         artworkArea = findViewById(R.id.playerArtworkArea);
         discContainer = findViewById(R.id.discContainer);
+        animatedArtwork = new AnimatedArtwork((FrameLayout) discContainer);
         videoCardView = findViewById(R.id.videoCardView);
         videoFadeTop = findViewById(R.id.videoFadeTop);
         videoFadeBottom = findViewById(R.id.videoFadeBottom);
@@ -296,6 +298,15 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
             containerVideoPlayer.setVisibility(View.VISIBLE);
             if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
             artworkArea.post(this::layoutArtwork);
+        }
+        updateAnimatedArtwork(player.getCurrentSong());
+    }
+
+    private void updateAnimatedArtwork(Song song) {
+        if (screenResumed && isMp3Mode && !isLyricsMode) {
+            animatedArtwork.show(song);
+        } else {
+            animatedArtwork.clear();
         }
     }
 
@@ -536,6 +547,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
     @Override
     protected void onPause() {
         screenResumed = false;
+        animatedArtwork.clear();
         recyclerLyrics.removeCallbacks(lyricsTick);
         PlayerManager.getInstance().savePosition();
         super.onPause();
@@ -558,6 +570,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         if (imgNowPlayingCover != null) {
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), imgNowPlayingCover);
         }
+        updateAnimatedArtwork(song);
 
         loadLyricsForSong(song, false);
     }
