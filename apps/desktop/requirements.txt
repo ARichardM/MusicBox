@@ -8,4 +8,4 @@ pywebview>=6.2.1,<7
 sounddevice>=0.5,<1
 PySide6>=6.8,<7
 mutagen>=1.47,<2
-google-auth-oauthlib>=1.2,<2
+google-auth-oauthlib>=1.5.0,<2
