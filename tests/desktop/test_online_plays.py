@@ -25,6 +25,12 @@ def make_bridge():
     bridge._recorded_source = ""
     bridge._recent_paths = []
     bridge._path_ids = {}
+    bridge._library_playlist = ""
+    bridge._listening_started = False
+    bridge._listening_elapsed = 0
+    bridge._listening_sample = None
+    bridge._last_listening_save = 0
+    bridge._settings = SimpleNamespace(setValue=lambda *args: None)
     bridge.saved = 0
     bridge.cloud_saves = 0
     bridge._save_clicks = lambda: setattr(bridge, "saved", bridge.saved + 1)
@@ -49,21 +55,28 @@ class OnlinePlayTests(unittest.TestCase):
                 rows = bridge._clicks_stats.listening_rows()
                 self.assertEqual(rows[0]["ms"] if rows else 0, expected)
 
-    def test_an_online_play_is_counted_once_per_start(self):
+    def test_an_online_play_is_not_counted_at_start(self):
         bridge = make_bridge()
         bridge._current = {"id": "abc123", "url": "https://www.youtube.com/watch?v=abc123", "title": "Canción"}
         bridge._playback_state_changed(QMediaPlayer.PlayingState)
         bridge._playback_state_changed(QMediaPlayer.PlayingState)
-        self.assertEqual(bridge._clicks_stats.count("yt:abc123"), 1)
-        self.assertEqual((bridge.saved, bridge.cloud_saves), (1, 1))
-        self.assertEqual([key for key, _title, _score in bridge._clicks_stats.seeds(4)], ["yt:abc123"])
+        self.assertEqual(bridge._clicks_stats.count("yt:abc123"), 0)
+        self.assertEqual((bridge.saved, bridge.cloud_saves), (0, 0))
 
-    def test_playing_again_after_a_new_start_counts_again(self):
+    def test_thirty_seconds_of_real_progress_count_once_and_new_play_can_count_again(self):
         bridge = make_bridge()
         bridge._current = {"id": "abc123", "url": "u", "title": "Canción"}
-        bridge._playback_state_changed(QMediaPlayer.PlayingState)
-        bridge._recorded_source = ""  # lo que hace playOnline al iniciar de nuevo
-        bridge._playback_state_changed(QMediaPlayer.PlayingState)
+        position = [0]
+        bridge._player = SimpleNamespace(playbackState=lambda: QMediaPlayer.PlayingState, position=lambda: position[0])
+        for replay in range(2):
+            bridge._listening_sample = None
+            bridge._listening_started = False
+            bridge._listening_elapsed = 0
+            for second in range(36):
+                position[0] = second * 1000
+                with patch("time.monotonic", return_value=float(second)):
+                    bridge._sample_listening()
+                self.assertEqual(bridge._clicks_stats.count("yt:abc123"), replay + int(second >= 30))
         self.assertEqual(bridge._clicks_stats.count("yt:abc123"), 2)
 
     def test_paused_or_without_id_is_not_counted(self):

@@ -80,7 +80,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
     private cl.arichard.descargador.player.QueueSheet queuePanel;
     private final cl.arichard.descargador.util.SongDeleter.SystemPrompt deletePrompt = cl.arichard.descargador.util.SongDeleter.prompter(this);
 
-    private View playerTopBar, artworkArea, discContainer, videoFadeTop, videoFadeBottom, playingFromBlock;
+    private View playerTopBar, artworkArea, discContainer, videoFadeTop, videoFadeBottom, coverFadeTop, coverFadeBottom, playingFromBlock;
     private androidx.cardview.widget.CardView videoCardView;
     /** Pantalla completa del video (como en YouTube Music): llena la parte alta y se funde con el fondo. */
     private boolean immersive;
@@ -142,6 +142,8 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         artworkArea = findViewById(R.id.playerArtworkArea);
         discContainer = findViewById(R.id.discContainer);
         animatedArtwork = new AnimatedArtwork((FrameLayout) discContainer);
+        coverFadeTop = addCoverFade(R.drawable.bg_video_fade_top, 120, android.view.Gravity.TOP);
+        coverFadeBottom = addCoverFade(R.drawable.bg_video_fade_bottom, 190, android.view.Gravity.BOTTOM);
         videoCardView = findViewById(R.id.videoCardView);
         videoFadeTop = findViewById(R.id.videoFadeTop);
         videoFadeBottom = findViewById(R.id.videoFadeBottom);
@@ -149,6 +151,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         // La portada y el video se acomodan al espacio libre cada vez que este cambia (rotación, cola, barras).
         artworkArea.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> layoutArtwork());
         videoCardView.setOnClickListener(v -> setVideoFullscreen(!immersive));
+        discContainer.setOnClickListener(v -> { if (isMp3Mode && !isLyricsMode) setVideoFullscreen(!immersive); });
 
         lyricsHeaderRow = findViewById(R.id.lyricsHeaderRow);
         txtLyricsBadge = findViewById(R.id.txtLyricsBadge);
@@ -167,6 +170,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         txtCurrentTime = findViewById(R.id.txtCurrentTime);
         txtTotalTime = findViewById(R.id.txtTotalTime);
         seekBar = findViewById(R.id.seekBar);
+        waveBinder = new cl.arichard.descargador.util.WaveBinder(this, (cl.arichard.descargador.util.WaveSeekBar) seekBar);
 
         btnShuffle = findViewById(R.id.btnShuffle);
         btnPrevious = findViewById(R.id.btnPrevious);
@@ -282,7 +286,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
             containerCoverArt.setVisibility(View.VISIBLE);
             containerVideoPlayer.setVisibility(View.INVISIBLE); // Keep measured and rendering
             if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
-            setImmersiveNow(false);
+            setImmersiveNow(savedZoom(true));
         } else {
             tabSelectorMp4.setBackgroundResource(R.drawable.bg_chip_active);
             tabSelectorMp4.setTextColor(activeText);
@@ -297,6 +301,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
             containerCoverArt.setVisibility(View.GONE);
             containerVideoPlayer.setVisibility(View.VISIBLE);
             if (containerLyrics != null) containerLyrics.setVisibility(View.GONE);
+            if (immersive != savedZoom(false)) setImmersiveNow(savedZoom(false));
             artworkArea.post(this::layoutArtwork);
         }
         updateAnimatedArtwork(player.getCurrentSong());
@@ -316,12 +321,6 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
     private void layoutArtwork() {
         int width = artworkArea.getWidth(), height = artworkArea.getHeight();
         if (width <= 0 || height <= 0) return;
-        int side = Math.min(width, height);
-        FrameLayout.LayoutParams disc = (FrameLayout.LayoutParams) discContainer.getLayoutParams();
-        if (disc.width != side || disc.height != side || disc.gravity != android.view.Gravity.CENTER) {
-            disc.width = side; disc.height = side; disc.gravity = android.view.Gravity.CENTER;
-            discContainer.setLayoutParams(disc);
-        }
         applyVideoFrame(immersiveProgress);
     }
 
@@ -333,43 +332,66 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         int areaWidth = artworkArea.getWidth(), areaHeight = artworkArea.getHeight();
         if (areaWidth <= 0 || areaHeight <= 0 || txtTitle.getHeight() <= 0) return;
         PlayerManager player = PlayerManager.getInstance();
-        float aspect = player.getVideoAspect();
+        float aspect = isMp3Mode ? 1f : player.getVideoAspect();
         int screenWidth = getResources().getDisplayMetrics().widthPixels;
         int pad = dp(20);
         // Reposo: a todo el ancho de la pantalla (el video se pega a los bordes), sin pasarse del alto libre.
-        int width0 = Math.min(areaWidth + 2 * pad, Math.round(areaHeight * aspect));
+        int width0 = isMp3Mode ? Math.min(areaWidth, areaHeight) : Math.min(areaWidth + 2 * pad, Math.round(areaHeight * aspect));
         int height0 = Math.round(width0 / aspect);
         int left0 = (areaWidth - width0) / 2, top0 = (areaHeight - height0) / 2;
         // Pantalla completa: se mide en pantalla y se pasa a coordenadas del contenedor.
         int[] container = new int[2], title = new int[2];
-        containerVideoPlayer.getLocationInWindow(container);
+        (isMp3Mode ? containerCoverArt : containerVideoPlayer).getLocationInWindow(container);
         txtTitle.getLocationInWindow(title);
         int left1 = -container[0], top1 = -container[1];
         int width1 = screenWidth, height1 = Math.max(areaHeight, title[1]);
         float t = Math.max(0f, Math.min(1f, progress));
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) videoCardView.getLayoutParams();
+        androidx.cardview.widget.CardView frame = isMp3Mode ? (androidx.cardview.widget.CardView) discContainer : videoCardView;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) frame.getLayoutParams();
         lp.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
         lp.leftMargin = Math.round(left0 + (left1 - left0) * t);
         lp.topMargin = Math.round(top0 + (top1 - top0) * t);
         lp.width = Math.round(width0 + (width1 - width0) * t);
         lp.height = Math.round(height0 + (height1 - height0) * t);
-        videoCardView.setLayoutParams(lp);
+        frame.setLayoutParams(lp);
         // Un video que no llena el ancho (p. ej. cuadrado) conserva las esquinas redondeadas en reposo.
-        float radius0 = width0 >= areaWidth + 2 * pad - 2 ? 0f : dp(20);
-        videoCardView.setRadius(radius0 * (1f - t));
-        videoFadeTop.setAlpha(t);
-        videoFadeBottom.setAlpha(t);
+        float radius0 = isMp3Mode ? dp(26) : width0 >= areaWidth + 2 * pad - 2 ? 0f : dp(20);
+        frame.setRadius(radius0 * (1f - t));
+        if (isMp3Mode) {
+            // El recuadro mide siempre lo ancho de la pantalla; el lado corto de la imagen (el cuadrado central de una portada, aunque
+            // venga dentro de una miniatura 16:9) se ajusta a ese ancho y queda centrado: no se recorta el arte al ampliar.
+            android.graphics.drawable.Drawable art = imgNowPlayingCover.getDrawable();
+            if (art != null && art.getIntrinsicWidth() > 0 && art.getIntrinsicHeight() > 0) {
+                float dw = art.getIntrinsicWidth(), dh = art.getIntrinsicHeight();
+                float scale = lp.width / Math.min(dw, dh);
+                android.graphics.Matrix matrix = new android.graphics.Matrix();
+                matrix.setScale(scale, scale);
+                matrix.postTranslate((lp.width - dw * scale) / 2f, (lp.height - dh * scale) / 2f);
+                imgNowPlayingCover.setScaleType(ImageView.ScaleType.MATRIX);
+                imgNowPlayingCover.setImageMatrix(matrix);
+            } else imgNowPlayingCover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            int shade = Math.round(0x1C * (1f - t));
+            frame.setCardBackgroundColor(0xFF000000 | (shade << 16) | (shade << 8) | shade);
+            animatedArtwork.fit(t > .001f, lp.width);
+        }
+        (isMp3Mode ? coverFadeTop : videoFadeTop).setAlpha(t);
+        (isMp3Mode ? coverFadeBottom : videoFadeBottom).setAlpha(t);
         playingFromBlock.setAlpha(1f - t);
         // La barra superior queda por encima del video cuando este sube hasta el borde.
         playerTopBar.setTranslationZ(t > 0f ? dp(24) : 0f);
     }
 
+    private boolean savedZoom(boolean mp3) {
+        return getSharedPreferences("player", MODE_PRIVATE).getBoolean(mp3 ? "zoom_mp3" : "zoom_mp4", false);
+    }
+
     private void setVideoFullscreen(boolean on) {
-        if (on == immersive || isMp3Mode) return;
+        if (on == immersive || isLyricsMode) return;
+        getSharedPreferences("player", MODE_PRIVATE).edit().putBoolean(isMp3Mode ? "zoom_mp3" : "zoom_mp4", on).apply();
         immersive = on;
         if (immersiveAnimator != null) immersiveAnimator.cancel();
         PlayerManager player = PlayerManager.getInstance();
-        if (on) player.setVideoFill(true);
+        if (on && !isMp3Mode) player.setVideoFill(true);
         immersiveAnimator = android.animation.ValueAnimator.ofFloat(immersiveProgress, on ? 1f : 0f);
         immersiveAnimator.setDuration(320);
         immersiveAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator());
@@ -384,12 +406,21 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         immersiveAnimator.start();
     }
 
+    private View addCoverFade(int background, int height, int gravity) {
+        View fade = new View(this);
+        fade.setBackgroundResource(background);
+        fade.setAlpha(0f);
+        ((FrameLayout) discContainer).addView(fade, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dp(height), gravity));
+        return fade;
+    }
+
     /** Sale de la pantalla completa sin animar (al volver a MP3 o al cerrar). */
     private void setImmersiveNow(boolean on) {
         if (immersiveAnimator != null) immersiveAnimator.cancel();
         immersive = on;
         immersiveProgress = on ? 1f : 0f;
-        PlayerManager.getInstance().setVideoFill(on);
+        PlayerManager.getInstance().setVideoFill(on && !isMp3Mode);
         if (artworkArea != null) applyVideoFrame(immersiveProgress);
     }
 
@@ -434,7 +465,17 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         queueBehavior = com.google.android.material.bottomsheet.BottomSheetBehavior.from(sheet);
         applyQueueInset();
         queueBehavior.setHideable(false);
+        // A translated match-parent sheet would extend below the screen by its expanded offset.
         queueBehavior.setFitToContents(false);
+        sheet.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            android.view.View parent = (android.view.View) sheet.getParent();
+            int available = parent.getHeight() - queueBehavior.getExpandedOffset();
+            if (available > 0 && sheet.getLayoutParams().height != available) {
+                android.view.ViewGroup.LayoutParams params = sheet.getLayoutParams();
+                params.height = available;
+                sheet.setLayoutParams(params);
+            }
+        });
         queueBehavior.setExpandedOffset(Math.round(88 * density) + systemBars.top);
         queueBehavior.setHalfExpandedRatio(.5f);
         queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED);
@@ -563,12 +604,16 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         updateVideoAvailability();
         txtTitle.setText(song.getTitle());
         txtArtist.setText(song.getArtist());
+        if (!followingOutgoing) waveBinder.bind(song);
         updatePlayingFrom();
 
         updateFavoriteButton(song);
 
         if (imgNowPlayingCover != null) {
             CoverArtLoader.getInstance().loadSongCover(song.getCoverPath(), imgNowPlayingCover);
+            // La portada llega de forma asíncrona: al llegar se vuelve a decidir si se ve entera o recortada.
+            imgNowPlayingCover.postDelayed(() -> applyVideoFrame(immersiveProgress), 350);
+            imgNowPlayingCover.postDelayed(() -> applyVideoFrame(immersiveProgress), 1200);
         }
         updateAnimatedArtwork(song);
 
@@ -777,11 +822,45 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         btnFavorite.setContentDescription(favorite ? cl.arichard.descargador.util.Tr.t("Quitar de favoritos") : cl.arichard.descargador.util.Tr.t("Agregar a favoritos"));
     }
 
+    /** Confirma el cambio de crossfade con un aviso breve sobre el reproductor, ya que el menú se cierra al tocar. */
+    private void announceCrossfade(int seconds) {
+        TextView note = new TextView(this);
+        note.setText(cl.arichard.descargador.util.Tr.t(seconds > 0 ? "Crossfade activado" : "Crossfade desactivado") + (seconds > 0 ? " · " + seconds + " s" : ""));
+        note.setTextColor(AccentColors.getColor(this, R.color.chip_active_text));
+        note.setTextSize(14);
+        note.setTypeface(null, android.graphics.Typeface.BOLD);
+        note.setBackgroundResource(R.drawable.bg_chip_active);
+        note.setPadding(dp(18), dp(10), dp(18), dp(10));
+        note.setElevation(dp(12));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL);
+        lp.topMargin = dp(96);
+        android.view.ViewGroup content = (android.view.ViewGroup) getWindow().getDecorView().findViewById(android.R.id.content);
+        content.addView(note, lp);
+        boolean still = android.provider.Settings.Global.getFloat(getContentResolver(),
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+        note.setAlpha(still ? 1f : 0f); note.setTranslationY(still ? 0f : -dp(12));
+        note.animate().alpha(1f).translationY(0).setDuration(still ? 0 : 200).withEndAction(() ->
+                note.animate().alpha(0f).setStartDelay(1400).setDuration(still ? 0 : 260).withEndAction(() -> content.removeView(note)).start()).start();
+        note.setContentDescription(note.getText());
+        note.announceForAccessibility(note.getText());
+    }
+
     private void showPlayerMenu(View anchor) {
         Song song = PlayerManager.getInstance().getCurrentSong();
         if (song == null) return;
         androidx.appcompat.widget.PopupMenu menu = new androidx.appcompat.widget.PopupMenu(this, anchor);
         menu.setForceShowIcon(true);
+        PlayerManager player = PlayerManager.getInstance();
+        menu.getMenu().add("Crossfade").setIcon(R.drawable.ic_queue).setCheckable(true)
+                .setChecked(player.getCrossfadeSeconds() > 0).setOnMenuItemClickListener(item -> {
+                    player.setCrossfadeEnabled(player.getCrossfadeSeconds() == 0);
+                    int seconds = player.getCrossfadeSeconds();
+                    announceCrossfade(seconds);
+                    waveBinder.reset();
+                    updateCrossfadeZone(player.getDuration());
+                    waveBinder.bind(player.getCurrentSong());
+                    return true;
+                });
         menu.getMenu().add(cl.arichard.descargador.util.Tr.t("Agregar a playlist")).setIcon(R.drawable.ic_playlist).setOnMenuItemClickListener(item -> {
             cl.arichard.descargador.util.SongActions.addToPlaylist(this, song, () -> updateSongInfo(PlayerManager.getInstance().getCurrentSong())); return true;
         });
@@ -813,22 +892,63 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         PlayerManager player = PlayerManager.getInstance();
         boolean available = player.canShowVideo();
         updateModeSelectors();
-        if (!available && !isMp3Mode && !player.isVideoMode()) {
-            setMediaMode(true);
-            Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Esta canción no tiene video disponible"), Toast.LENGTH_SHORT).show();
-        }
+        tabSelectorMp3.removeCallbacks(leaveVideoRunnable);
+        if (!available && !isMp3Mode && !player.isVideoMode()) tabSelectorMp3.postDelayed(leaveVideoRunnable, CHIP_HIDE_DELAY_MS);
     }
+    private final Runnable leaveVideoRunnable = () -> {
+        PlayerManager player = PlayerManager.getInstance();
+        if (player.canShowVideo() || isMp3Mode || player.isVideoMode()) return;
+        setMediaMode(true);
+        Toast.makeText(this, cl.arichard.descargador.util.Tr.t("Esta canción no tiene video disponible"), Toast.LENGTH_SHORT).show();
+    };
 
+    private static final long CHIP_HIDE_DELAY_MS = 1800;
+    private final Runnable hideChipsRunnable = this::applyModeSelectors;
+
+    /** Los chips aparecen al instante con un fundido, pero solo se ocultan si la ausencia se mantiene: así no parpadean al cambiar de canción. */
     private void updateModeSelectors() {
         boolean video = PlayerManager.getInstance().canShowVideo();
         boolean lyrics = !currentLyrics.lines.isEmpty();
-        tabSelectorMp4.setVisibility(video ? View.VISIBLE : View.GONE);
-        tabSelectorLyrics.setVisibility(lyrics ? View.VISIBLE : View.GONE);
-        findViewById(R.id.playerSelectorPill).setVisibility(video || lyrics ? View.VISIBLE : View.GONE);
+        boolean growing = (video && tabSelectorMp4.getVisibility() != View.VISIBLE)
+                || (lyrics && tabSelectorLyrics.getVisibility() != View.VISIBLE);
+        boolean shrinking = (!video && tabSelectorMp4.getVisibility() == View.VISIBLE)
+                || (!lyrics && tabSelectorLyrics.getVisibility() == View.VISIBLE);
+        tabSelectorMp4.removeCallbacks(hideChipsRunnable);
+        if (shrinking && !growing) tabSelectorMp4.postDelayed(hideChipsRunnable, CHIP_HIDE_DELAY_MS);
+        else applyModeSelectors();
+    }
+
+    private void applyModeSelectors() {
+        boolean video = PlayerManager.getInstance().canShowVideo();
+        boolean lyrics = !currentLyrics.lines.isEmpty();
+        View pill = findViewById(R.id.playerSelectorPill);
+        boolean reveal = (video || lyrics) && pill.getVisibility() != View.VISIBLE;
+        revealChip(tabSelectorMp4, video);
+        revealChip(tabSelectorLyrics, lyrics);
+        pill.setVisibility(video || lyrics ? View.VISIBLE : View.GONE);
+        if (reveal) fadeIn(pill);
+    }
+
+    private void revealChip(View chip, boolean show) {
+        boolean wasVisible = chip.getVisibility() == View.VISIBLE;
+        if (show == wasVisible) return;
+        chip.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) fadeIn(chip);
+    }
+
+    private void fadeIn(View view) {
+        view.animate().cancel();
+        boolean still = android.provider.Settings.Global.getFloat(getContentResolver(),
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f;
+        if (still) { view.setAlpha(1f); view.setScaleX(1f); view.setScaleY(1f); return; }
+        view.setAlpha(0f); view.setScaleX(.92f); view.setScaleY(.92f);
+        view.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(260)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
     }
     @Override public void onVideoAvailabilityChanged(boolean available) { updateVideoAvailability(); layoutArtwork(); }
 
     private void updatePlaybackState(boolean isPlaying) {
+        ((cl.arichard.descargador.util.WaveSeekBar) seekBar).setPlaying(isPlaying);
         btnPlayPauseIcon.setImageResource(isPlaying ? R.drawable.ic_pause : R.drawable.ic_play_arrow);
         btnPlayPauseIcon.animate().cancel();
         btnPlayPauseIcon.setScaleX(.82f); btnPlayPauseIcon.setScaleY(.82f);
@@ -838,10 +958,52 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         btnPlayPauseCircle.setContentDescription(cl.arichard.descargador.util.Tr.t(isPlaying ? "Pausar" : "Reproducir"));
     }
 
+    // Durante un crossfade la barra y los tiempos siguen a la canción que sale; título y portada cambian a mitad de la mezcla.
+    private Song pendingSong;
+    private boolean followingOutgoing;
+    private final Runnable outgoingTick = new Runnable() {
+        @Override public void run() {
+            PlayerManager player = PlayerManager.getInstance();
+            int position = player.getOutgoingPosition(), duration = player.getOutgoingDuration();
+            if (!player.isCrossfading() || position < 0 || duration <= 0) { finishFollowingOutgoing(); return; }
+            long total = player.crossfadeTotalMs(), remaining = player.crossfadeRemainingMs();
+            if (pendingSong != null && total > 0 && remaining <= total / 2) {
+                Song next = pendingSong; pendingSong = null;
+                updateSongInfo(next);
+            }
+            if (!isUserSeeking) updateProgress(position, duration);
+            seekBar.postOnAnimation(this);
+        }
+    };
+
+    private void beginFollowingOutgoing(Song next) {
+        pendingSong = next;
+        if (followingOutgoing) return;
+        followingOutgoing = true;
+        seekBar.postOnAnimation(outgoingTick);
+    }
+
+    private void finishFollowingOutgoing() {
+        seekBar.removeCallbacks(outgoingTick);
+        followingOutgoing = false;
+        Song next = pendingSong;
+        pendingSong = null;
+        PlayerManager player = PlayerManager.getInstance();
+        followingOutgoing = false;
+        if (next != null) updateSongInfo(next);
+        waveBinder.bind(player.getCurrentSong());
+        updateProgress(player.getCurrentPosition(), player.getDuration());
+    }
+
+    private cl.arichard.descargador.util.WaveBinder waveBinder;
+
+    private void updateCrossfadeZone(int dur) { waveBinder.update(dur); }
+
     private void updateProgress(int pos, int dur) {
         if (dur > 0) {
             seekBar.setMax(dur);
             seekBar.setProgress(pos);
+            updateCrossfadeZone(dur);
             txtCurrentTime.setText(formatTime(pos));
             txtTotalTime.setText(formatTime(dur));
         } else {
@@ -891,7 +1053,11 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
 
     @Override
     public void onTrackChanged(Song song) {
-        runOnUiThread(() -> updateSongInfo(song));
+        runOnUiThread(() -> {
+            if (PlayerManager.getInstance().isCrossfading() && !followingOutgoing) beginFollowingOutgoing(song);
+            else if (followingOutgoing) pendingSong = song;
+            else updateSongInfo(song);
+        });
     }
 
     @Override
@@ -926,7 +1092,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
     @Override
     public void onProgressUpdate(int currentPos, int duration) {
         if (!isUserSeeking) {
-            runOnUiThread(() -> updateProgress(currentPos, duration));
+            runOnUiThread(() -> { if (!followingOutgoing) updateProgress(currentPos, duration); });
         }
     }
 

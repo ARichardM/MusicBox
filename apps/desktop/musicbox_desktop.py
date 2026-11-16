@@ -16,6 +16,8 @@ import sys
 import threading
 from urllib.parse import parse_qs, urlsplit
 import animated_artwork
+from crossfade import Crossfade
+import waveform
 import hashlib
 import random
 import re
@@ -121,6 +123,7 @@ class MusicBoxBridge(QObject):
     downloadFilesChanged = Signal()
     downloadLogChanged = Signal()
     playerChanged = Signal()
+    _waveReady = Signal(str, object)
     sidebarChanged = Signal()
     authChanged = Signal()
     discoveryChanged = Signal()
@@ -166,6 +169,7 @@ class MusicBoxBridge(QObject):
     downloadPrefsChanged = Signal()
     languageChanged = Signal()
     libraryFoldersChanged = Signal()
+    libraryRefreshChanged = Signal()
     updateChanged = Signal()
     _updateEvent = Signal(object)
     _searchFinished = Signal(object, str, int)
@@ -266,6 +270,7 @@ class MusicBoxBridge(QObject):
         self._player.seekableChanged.connect(lambda _: self._resume_recovered_track())
         self._queue = []
         self._queue_index = -1
+        self._playback_origin = ("", "")
         self._repeat_mode = int(self._settings.value("repeatMode", 0))
         self._shuffle = str(self._settings.value("shuffleOn", "false")).lower() == "true"
         self._queue_original = []
@@ -307,6 +312,7 @@ class MusicBoxBridge(QObject):
         # Modo video (selector MP3 / MP4): el flujo en línea trae imagen además de audio. Los videos que no ofrecen un
         # MP4 con sonido se recuerdan para no volver a intentarlo.
         self._video_mode = False
+        self._video_local = None  # Local song being watched through its YouTube video.
         self._no_video = set()
         self._video_check_url = ""
         self._checking_videos = set()
@@ -342,6 +348,7 @@ class MusicBoxBridge(QObject):
         self._playback_session_timer.start()
         self._listening_sample = None
         self._listening_started = False
+        self._listening_elapsed = 0
         self._last_listening_save = 0.0
         self._listening_timer = QTimer(self)
         self._listening_timer.setInterval(1000)
@@ -379,6 +386,7 @@ class MusicBoxBridge(QObject):
         self._artistSongsReady.connect(self._apply_artist_songs)
         self._albumReady.connect(self._apply_album)
         self._for_you = {"songs": [], "artists": [], "mode": ""}
+        self._for_you_retries = 0
         self._for_you_loading = False
         self._for_you_generation = 0
         self._playlist_sugg = {"playlist": "", "songs": [], "loading": False}
@@ -404,6 +412,9 @@ class MusicBoxBridge(QObject):
         self._autoplay_tried, self._autoplay_loading = "", False
         self._updateEvent.connect(self._handle_update_event)
         self._player.errorOccurred.connect(self._player_error)
+        self._waves, self._waves_pending = {}, set()
+        self._waveReady.connect(self._apply_wave)
+        self._crossfade = Crossfade(self)
         self._authResult.connect(self._apply_auth_result)
         self._remotePlaylists.connect(self._apply_remote_playlists)
         self._libraryScanReady.connect(self._apply_library_scan)
@@ -486,6 +497,7 @@ class MusicBoxBridge(QObject):
     @Slot()
     def flushListening(self):
         self._sample_listening()
+        if hasattr(self, "_crossfade"): self._crossfade.cancel()
         self._save_playback_session()
         self._save_clicks()
         self._settings.sync()
@@ -512,6 +524,7 @@ class MusicBoxBridge(QObject):
             "position": position,
             "online": online,
             "queueArtist": self._queue_artist,
+            "origin": list(getattr(self, "_playback_origin", ("", ""))),
         }
         self._settings.setValue("playbackSession", json.dumps(state, ensure_ascii=False, separators=(",", ":")))
 
@@ -536,6 +549,9 @@ class MusicBoxBridge(QObject):
                       if (row.get("path") or row.get("url")) == key), 0)
         self._current = current
         self._queue_artist = str(state.get("queueArtist", ""))
+        origin = state.get("origin")
+        if isinstance(origin, list) and len(origin) == 2 and all(isinstance(value, str) for value in origin):
+            self._playback_origin = tuple(origin)
         self._pending_seek = position
         self._play_when_ready = False
         if state.get("online") and current.get("url") and not path:
@@ -734,23 +750,26 @@ class MusicBoxBridge(QObject):
             self._online_waiting = False
         self.autoplayChanged.emit()
         self.playerChanged.emit()
-        if enabled and self._current.get("url") and not self._current.get("path"):
+        if enabled and self._current:
             self._maybe_autoplay(self._current)
 
     def _maybe_autoplay(self, item):
         """Al sonar lo último de la cola online, busca canciones parecidas y las deja a continuación."""
-        if getattr(self, "_queue_artist", ""):
+        if getattr(self, "_queue_artist", "") and not any(getattr(self, "_playback_origin", ("", ""))):
             return
-        video_id = item.get("id")
+        video_id = item.get("id") or self._path_ids.get(item.get("path", ""), "")
         if not self.autoplay or not video_id or self._autoplay_loading:
             return
         if video_id == self._autoplay_tried and (not getattr(self, "_autoplay_error", "") or getattr(self, "_autoplay_attempts", 0) >= 3):
             return
-        queue = self._online_queue
-        if queue and self._online_index < len(queue) - 1:
+        collection = bool(getattr(self, "_playback_origin", ("", ""))[0] or getattr(self, "_playback_origin", ("", ""))[1])
+        queue = self._queue if collection else self._online_queue
+        index = self._queue_index if collection else self._online_index
+        if queue and index < len(queue) - 1:
             return
-        if not queue or not 0 <= self._online_index < len(queue) or queue[self._online_index].get("id") != video_id:
+        if not collection and (not queue or not 0 <= index < len(queue) or queue[index].get("id") != video_id):
             self._online_queue, self._online_index = [dict(item)], 0
+        self._autoplay_collection = collection
         if video_id != self._autoplay_tried:
             self._autoplay_attempts = 0
         self._autoplay_attempts = getattr(self, "_autoplay_attempts", 0) + 1
@@ -758,10 +777,16 @@ class MusicBoxBridge(QObject):
         self._autoplay_tried, self._autoplay_loading = video_id, True
         self.playerChanged.emit()
         generation = self._online_generation
+        snapshot = [dict(row) for row in queue] if collection else []
 
         def work():
             try:
-                tracks = self._related_songs(video_id)
+                if snapshot:
+                    ids = [row.get("id") or self._path_ids.get(row.get("path", ""), "") for row in snapshot]
+                    seeds = playlist_seeds(ids, lambda seed: self._clicks_stats.count(song_key("", seed)))
+                    tracks = self._recommender.for_playlist(seeds, set(ids), [row.get("title", "") for row in snapshot], fresh=True).get("songs", [])
+                else:
+                    tracks = self._related_songs(video_id)
             except Exception:
                 tracks = []
             self._autoplayReady.emit(video_id, tracks or [], generation)
@@ -772,13 +797,15 @@ class MusicBoxBridge(QObject):
         if generation != self._online_generation:
             return
         self._autoplay_loading = False
-        queue = self._online_queue
+        collection = getattr(self, "_autoplay_collection", False)
+        queue = self._queue if collection else self._online_queue
         if not self.autoplay or not queue:
             return
-        if self._current.get("id") != video_id and queue[-1].get("id") != video_id:
+        current_id = self._current.get("id") or self._path_ids.get(self._current.get("path", ""), "")
+        if current_id != video_id and not collection and queue[-1].get("id") != video_id:
             self._maybe_autoplay(self._current)
             return
-        more = pick_autoplay(tracks, [track.get("id") for track in queue])
+        more = pick_autoplay(tracks, [track.get("id") or self._path_ids.get(track.get("path", ""), "") for track in queue])
         queue.extend(more)
         if more and hasattr(self, "_prefetch_timer"):
             self._prefetch_timer.start()
@@ -795,7 +822,7 @@ class MusicBoxBridge(QObject):
             if (self._current.get("path") or self._current.get("url")) in getattr(self, "_playback_failures", set()):
                 self._continue_after_failure()
             else:
-                self._advance_online(1)
+                self.skip(1) if collection else self._advance_online(1)
 
     def _reset_online_queue(self):
         self._online_generation += 1
@@ -839,7 +866,9 @@ class MusicBoxBridge(QObject):
         queue = [dict(track) for track in (tracks or []) if track.get("url")]
         if not queue or not 0 <= index < len(queue):
             return
+        self._playback_origin = ("", "")
         self._queue_artist = ""
+        self._video_local = None
         self._playback_failures = set()
         self._reset_online_queue()
         self._online_queue, self._online_index = queue, index
@@ -873,7 +902,14 @@ class MusicBoxBridge(QObject):
     def videoAvailable(self):
         current = self._current or {}
         if current.get("path"):
-            return self._player.hasVideo()
+            if self._player.hasVideo():
+                return True
+            # A downloaded song with a known YouTube id can still show its video (streamed, like on Android).
+            video_id = self._local_video_id(current)
+            if not video_id or video_id in self._no_video:
+                return False
+            cached = self._stream_cache.get(self._stream_key(self._watch_url(video_id), True))
+            return bool(cached and time.monotonic() - cached[0] < 600)
         url, video_id = current.get("url"), current.get("id")
         if not url or not video_id or video_id in self._no_video:
             return False
@@ -881,10 +917,27 @@ class MusicBoxBridge(QObject):
         return bool((self._video_mode and self._player.hasVideo())
                     or (cached and time.monotonic() - cached[0] < 600))
 
+    def _local_video_id(self, item):
+        video_id = (identity.bare_id(item.get("id")) or item.get("id")
+                    or identity.bare_id(item.get("playlistKey"))
+                    or self._path_ids.get(item.get("path", ""), "")
+                    or self._linked_ids.get(item.get("path", ""), ""))
+        return video_id if re.fullmatch(r"[A-Za-z0-9_-]{11}", str(video_id or "")) else ""
+
+    @staticmethod
+    def _watch_url(video_id):
+        return "https://www.youtube.com/watch?v=" + video_id
+
     @Slot()
     def _check_current_video(self):
         item = dict(self._current or {})
-        url = "" if item.get("path") else item.get("url") or ""
+        if item.get("path"):
+            local_id = self._local_video_id(item)
+            url = self._watch_url(local_id) if local_id and not self._player.hasVideo() else ""
+            if local_id:
+                item = {"id": local_id, "url": url, "kind": ""}
+        else:
+            url = item.get("url") or ""
         if url == self._video_check_url:
             return
         self._video_check_url = url
@@ -943,8 +996,34 @@ class MusicBoxBridge(QObject):
             return
         if value and not self.videoAvailable:
             return
-        self._video_mode = value
         current = dict(self._current or {})
+        if value and current.get("path") and not self._player.hasVideo():
+            # Downloaded song: keep it as the queue entry and stream its video from the same second.
+            video_id = self._local_video_id(current)
+            if not video_id:
+                return
+            was_playing = self.playing or bool(getattr(self, "_play_when_ready", True))
+            position = int(self._player.position())
+            self._video_local = current
+            self._video_mode = True
+            online = {key: current[key] for key in ("title", "artist", "album", "thumbnail", "duration") if current.get(key)}
+            online.update({"id": video_id, "url": self._watch_url(video_id), "kind": ""})
+            self._pending_seek = position
+            self._play_online(online, recovering=True, autoplay=False)
+            self._play_when_ready = was_playing
+            self.videoModeChanged.emit()
+            return
+        if not value and self._video_local is not None:
+            local, self._video_local = self._video_local, None
+            was_playing = self.playing or bool(getattr(self, "_play_when_ready", True))
+            position = int(self._player.position())
+            self._video_mode = False
+            self._start_local_track(local)
+            self._pending_seek = position
+            self._play_when_ready = was_playing
+            self.videoModeChanged.emit()
+            return
+        self._video_mode = value
         if current.get("url") and not current.get("path"):
             was_playing = self.playing or bool(getattr(self, "_play_when_ready", True))
             self._pending_seek = max(int(self._player.position()), int(self._pending_seek))
@@ -1059,7 +1138,7 @@ class MusicBoxBridge(QObject):
         generation = self._for_you_generation
         self._for_you_loading = True
         self.forYouChanged.emit()
-        known_ids = set(self._path_ids.values())
+        known_ids = set(self._path_ids.values()) | self._playlist_video_ids()
         known_titles = [row.get("title", "") for row in self._library_all]
         queries = list(self._recent_queries)
 
@@ -1073,6 +1152,15 @@ class MusicBoxBridge(QObject):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _playlist_video_ids(self) -> set:
+        """Ids de YouTube de todas las canciones que ya están en alguna playlist."""
+        ids = set()
+        for entries in self._playlists.values():
+            for entry in entries:
+                if isinstance(entry, str) and entry.startswith("youtube:"):
+                    ids.add(entry[len("youtube:"):])
+        return ids
+
     @Slot(object, int)
     def _apply_for_you(self, outcome, generation):
         if generation != self._for_you_generation:
@@ -1084,13 +1172,20 @@ class MusicBoxBridge(QObject):
             self.forYouChanged.emit()
             return
         songs = []
+        owned = self._playlist_video_ids()
         for item in outcome.get("songs", []):
             item = dict(item)
             video_id = item.get("id", "")
+            if video_id in owned:
+                continue  # ya está en una playlist: no se recomienda
             self._mark_local(item, video_id, item.get("title", ""))
             item["favorite"] = bool(f"youtube:{video_id}" in self._favorites or item.get("url", "") in self._favorites)
             songs.append(item)
         self._for_you = {"songs": songs, "artists": list(outcome.get("artists", [])), "mode": outcome.get("mode", "")}
+        # Un resultado casi vacío suele ser una respuesta incompleta de la red (p. ej. justo tras iniciar sesión): se reintenta solo.
+        if len(songs) < 6 and outcome.get("mode") != "offline" and self._for_you_retries < 2:
+            self._for_you_retries += 1
+            QTimer.singleShot(3500, self.refreshForYou)
         self._settings.setValue("artistDirectory", json.dumps(self._artist_directory, ensure_ascii=False, separators=(",", ":")))
         self.forYouChanged.emit()
         self._settings.setValue("forYouCache", json.dumps(self._recommender.snapshot(), ensure_ascii=False,
@@ -1411,22 +1506,31 @@ class MusicBoxBridge(QObject):
         key = song_key(current.get("title", ""), current.get("id") or self._path_ids.get(current.get("path", ""), ""))
         position = self._player.position()
         previous = self._listening_sample
-        playlist = self._library_playlist
-        if playlist:
+        playlist = getattr(self, "_playback_origin", ("", ""))[0]
+        if previous and previous[0] == key:
+            playlist = previous[5]
+        elif playlist:
             by_path = {row.get("path"): row for row in self._library_all}
             members = {self._playlist_entry_key(entry, by_path) for entry in self._playlists.get(playlist, [])}
             if not self._row_keys(current).intersection(members): playlist = ""
-        if previous and previous[0] == key:
-            playlist = previous[5]
-        if playing and current and not self._listening_started:
-            self._clicks_stats.record_listening(key, current.get("title", ""), current.get("artist", ""), current.get("thumbnail", ""), start=True, playlist=playlist)
-            self._listening_started = True
         if previous and previous[0] == key and previous[3]:
             wall = (now - previous[1]) * 1000
             delta = position - previous[2]
             if delta > 0 and wall > 0 and abs(delta - wall) < 1200:
-                self._clicks_stats.record_listening(key, current.get("title", ""), current.get("artist", ""), current.get("thumbnail", ""), millis=min(delta, wall), playlist=playlist)
-                if now - self._last_listening_save >= 5 or not playing:
+                self._listening_elapsed = getattr(self, "_listening_elapsed", 0) + min(delta, wall)
+                qualified = not self._listening_started and self._listening_elapsed >= 30_000
+                self._clicks_stats.record_listening(key, current.get("title", ""), current.get("artist", ""), current.get("thumbnail", ""), millis=min(delta, wall), start=qualified, playlist=playlist)
+                if qualified:
+                    self._listening_started = True
+                    self._clicks_stats.record(key, current.get("title", ""))
+                    path = current.get("path", "")
+                    if path:
+                        self._recent_paths = [path] + [entry for entry in self._recent_paths if entry != path][:49]
+                        self._settings.setValue("recentPlayed", self._recent_paths)
+                    self.libraryChanged.emit()
+                    self.foldersChanged.emit()
+                    self.playlistsChanged.emit()
+                if qualified or now - self._last_listening_save >= 5 or not playing:
                     self._settings.setValue("clickStats", json.dumps(self._clicks_stats.export(), ensure_ascii=False, separators=(",", ":")))
                     self._last_listening_save = now
                     self.discoveryChanged.emit()
@@ -1505,7 +1609,9 @@ class MusicBoxBridge(QObject):
     def downloadFailed(self): return self._download_failed
 
     @Property("QVariantMap", notify=playerChanged)
-    def currentTrack(self): return self._current
+    def currentTrack(self):
+        # En plena mezcla, título y portada cambian a mitad; hasta entonces se muestra la canción que sale.
+        return self._crossfade.held or self._current
 
     @Property("QVariantList", notify=playerChanged)
     def queue(self): return self._online_queue if self._online_queue_active() else self._queue
@@ -1542,13 +1648,165 @@ class MusicBoxBridge(QObject):
             self._audio.setDevice(device)
 
     @Property(int, notify=playerChanged)
-    def playerPosition(self): return self._player.position()
+    def playerPosition(self):
+        # En plena mezcla la barra y los tiempos siguen a la canción que sale hasta que termina.
+        outgoing = self._crossfade.outgoing
+        return outgoing.position() if outgoing is not None else self._player.position()
 
     @Property(int, notify=playerChanged)
-    def playerDuration(self): return self._player.duration()
+    def playerDuration(self):
+        outgoing = self._crossfade.outgoing
+        return outgoing.duration() if outgoing is not None else self._player.duration()
+
+    # ---- relieve de volumen y límites audibles (barra del crossfade) ----
+    def _wave_path(self, item) -> str:
+        if not item:
+            return ""
+        path = item.get("path") or ""
+        if path and Path(path).is_file():
+            return path
+        cached = self._prefetched.get(item.get("url", ""), "")
+        return cached if cached and Path(cached).is_file() else ""
+
+    def _wave_of(self, item):
+        path = self._wave_path(item)
+        return self._waves.get(path) if path else None
+
+    def _request_wave(self, item):
+        """Mide en segundo plano una canción cuyo audio ya está en disco; avisa a la interfaz al terminar."""
+        path = self._wave_path(item)
+        if not path or path in self._waves or path in self._waves_pending:
+            return
+        self._waves_pending.add(path)
+
+        def worker():
+            try:
+                folder = Path(QStandardPaths.writableLocation(QStandardPaths.CacheLocation)) / "waveforms"
+                envelope = waveform.load_or_analyse(path, folder, download_backend.find_ffmpeg())
+            except Exception:
+                envelope = None
+            self._waveReady.emit(path, envelope or {})
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(str, object)
+    def _apply_wave(self, path, envelope):
+        self._waves_pending.discard(path)
+        self._waves[path] = envelope or {}
+        self.playerChanged.emit()
+
+    def _warm_waves(self):
+        """La canción actual y la siguiente: así el relieve y los límites audibles están listos antes de la mezcla."""
+        if not self.crossfadeSeconds:
+            return
+        online = self._online_queue_active()
+        queue, index = (self._online_queue, self._online_index) if online else (self._queue, self._queue_index)
+        for target in (index, index + 1):
+            if 0 <= target < len(queue):
+                self._request_wave(queue[target])
+
+    def crossfade_end_ms(self, item=None) -> int:
+        """Instante (ms) en que la canción deja de sonar de verdad; la duración si no se sabe."""
+        duration = self._player.duration()
+        envelope = self._wave_of(item if item is not None else self._current)
+        if envelope and envelope.get("audibleEndMs", 0) > duration / 4:
+            return int(min(duration, envelope["audibleEndMs"]))
+        return duration
+
+    @Property("QVariantMap", notify=playerChanged)
+    def currentWave(self):
+        self._warm_waves()
+        return self._wave_of(self._crossfade.held or self._current) or {}
+
+    @Property("QVariantMap", notify=playerChanged)
+    def nextWave(self):
+        online = self._online_queue_active()
+        queue, index = (self._online_queue, self._online_index) if online else (self._queue, self._queue_index)
+        if self._crossfade.outgoing is not None:
+            return self._wave_of(self._current) or {}
+        target = index + 1
+        if target >= len(queue) and self._repeat_mode == 1:
+            target = 0
+        return (self._wave_of(queue[target]) if 0 <= target < len(queue) else None) or {}
+
+    @Property(bool, notify=playerChanged)
+    def mixing(self): return self._crossfade.outgoing is not None
+
+    @Property(int, notify=playerChanged)
+    def crossfadeZoneMs(self):
+        seconds = self.crossfadeSeconds
+        if not seconds or self.videoMode or self._repeat_mode == 2:
+            return 0
+        online = self._online_queue_active()
+        queue, index = (self._online_queue, self._online_index) if online else (self._queue, self._queue_index)
+        if len(queue) < 2 or (index + 1 >= len(queue) and self._repeat_mode != 1):
+            return 0
+        return seconds * 1000 if self.crossfade_end_ms() >= seconds * 2000 else 0
+
+    @Property(int, notify=playerChanged)
+    def crossfadeEndMs(self): return self.crossfade_end_ms()
+
+    # ---- pantalla abierta: al reabrir la app queda donde se dejó (junto con la canción y su minuto) ----
+    @Slot(int, str, str, str)
+    def saveView(self, page, library_filter, playlist, folder):
+        self._settings.setValue("sessionView", json.dumps({"page": page, "filter": library_filter, "playlist": playlist, "folder": folder},
+                                                          ensure_ascii=False, separators=(",", ":")))
+
+    @Property("QVariantMap", constant=True)
+    def sessionView(self):
+        try:
+            data = json.loads(self._settings.value("sessionView", "{}", str) or "{}")
+            return data if isinstance(data, dict) else {}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+
+    @Property(bool, notify=playerChanged)
+    def zoomMp3(self): return str(self._settings.value("zoomMp3", "false")).lower() == "true"
+
+    @Slot(bool)
+    def setZoomMp3(self, value):
+        """El zoom de la portada se recuerda: al volver a abrir el reproductor grande queda como se dejó."""
+        self._settings.setValue("zoomMp3", bool(value))
+
+    @Property(bool, notify=playerChanged)
+    def lyricsShown(self): return str(self._settings.value("lyricsShown", "true")).lower() != "false"
+
+    @Slot(bool)
+    def setLyricsShown(self, value):
+        """Si el usuario muestra u oculta la letra, su preferencia se conserva entre canciones."""
+        value = bool(value)
+        self._settings.setValue("lyricsShown", value)
+        self.playerChanged.emit()
+
+    @Property(bool, notify=playerChanged)
+    def crossfadeBar(self): return str(self._settings.value("crossfadeBar", "true")).lower() != "false"
+
+    @Slot(bool)
+    def setCrossfadeBar(self, value):
+        self._settings.setValue("crossfadeBar", bool(value))
+        self.playerChanged.emit()
 
     @Property(float, notify=playerChanged)
-    def volume(self): return self._audio.volume()
+    def volume(self):
+        fade = getattr(self, "_crossfade", None)
+        return fade.volume if fade and fade.outgoing is not None else self._audio.volume()
+
+    @Property(int, notify=playerChanged)
+    def crossfadeSeconds(self):
+        return max(0, min(12, int(self._settings.value("crossfadeSeconds", 0))))
+
+    @Slot(int)
+    def setCrossfadeSeconds(self, value):
+        self._crossfade.cancel()
+        if value > 0:
+            self._settings.setValue("crossfadeLastSeconds", max(1, min(12, value)))
+        self._settings.setValue("crossfadeSeconds", max(0, min(12, value)))
+        self.playerChanged.emit()
+        self._show_notice(i18n.tr("Crossfade activado · {n} s", n=value) if value else i18n.tr("Crossfade desactivado"), kind="info")
+
+    @Slot(bool)
+    def setCrossfadeEnabled(self, enabled):
+        self.setCrossfadeSeconds(int(self._settings.value("crossfadeLastSeconds", 5)) if enabled else 0)
 
     @Property(bool, notify=playerChanged)
     def muted(self): return self._audio.isMuted()
@@ -2158,12 +2416,13 @@ class MusicBoxBridge(QObject):
 
     @Slot(result=int)
     def locateCurrentTrack(self):
-        """Muestra toda la biblioteca y devuelve la fila actual sin cruzar listas por QML."""
+        """Reveal the playing song in its source collection, independently of the current view."""
         if not self._current:
             return -1
-        self._library_filter = "songs"
-        self._library_folder = ""
-        self._library_playlist = ""
+        playlist, folder = getattr(self, "_playback_origin", ("", ""))
+        self._library_playlist = playlist if playlist in self._playlists else ""
+        self._library_folder = folder if folder and any(row["name"] == folder for row in self._folders) else ""
+        self._library_filter = "playlists" if self._library_playlist else ("folders" if self._library_folder else "songs")
         self._library_artist = ""
         self._library_query = ""
         self._apply_library_view()
@@ -2171,6 +2430,67 @@ class MusicBoxBridge(QObject):
         video_id = self._current.get("id", "")
         return next((index for index, row in enumerate(self._library)
                      if (path and row.get("path") == path) or (video_id and row.get("id") == video_id)), -1)
+
+    def _playback_source(self):
+        """What the queue that is playing came from, as (kind, name): playlist, folder, artist, songs or search."""
+        playlist, folder = getattr(self, "_playback_origin", ("", ""))
+        if playlist:
+            return "Playlist", playlist
+        if folder:
+            return "Carpeta", folder
+        if getattr(self, "_queue_artist", ""):
+            return "Artista", self._queue_artist
+        queue, index, current = self._online_queue, self._online_index, self._current or {}
+        if queue and 0 <= index < len(queue) and queue[index].get("url") and queue[index].get("url") == current.get("url"):
+            return "Búsqueda de YouTube", ""
+        return "Canciones", ""
+
+    @Property(str, notify=playerChanged)
+    def playbackSourceKind(self):
+        return self._playback_source()[0]
+
+    @Property(str, notify=playerChanged)
+    def playbackSourceName(self):
+        return self._playback_source()[1]
+
+    @Slot(str)
+    def switchPlaybackPlaylist(self, name):
+        """Cambia desde el reproductor expandido a otra playlist y empieza a reproducirla."""
+        name = (name or "").strip()
+        if not name or name not in self._playlists:
+            return
+        self._library_playlist = name
+        self._library_folder = ""
+        self._library_artist = ""
+        self._library_query = ""
+        self._library_filter = "playlists"
+        self._apply_library_view()
+        if self._library_playlist != self._playlist_sugg["playlist"]:
+            self.loadPlaylistSuggestions(self._library_playlist, False)
+        if self._library:
+            first = random.choice(self._library) if self._shuffle else self._library[0]
+            self.playLibraryTrack(first)
+        else:
+            self._playback_origin = (name, "")
+            self.playerChanged.emit()
+
+    @Slot(int)
+    def stepPlaybackPlaylist(self, direction):
+        """Salta a la playlist anterior o siguiente desde el selector del reproductor."""
+        playlists = [row["name"] for row in self.visiblePlaylists]
+        if not playlists:
+            return
+        current = getattr(self, "_playback_origin", ("", ""))[0] or self._library_playlist
+        step = 1 if direction >= 0 else -1
+        if current in playlists:
+            target = playlists[(playlists.index(current) + step) % len(playlists)]
+        else:
+            target = playlists[0 if step > 0 else -1]
+        self.switchPlaybackPlaylist(target)
+
+    @Property("QVariantMap", notify=libraryChanged)
+    def libraryLocation(self):
+        return {"filter": self._library_filter, "playlist": self._library_playlist, "folder": self._library_folder}
 
     @Slot(str, str)
     def removeTrackFromPlaylist(self, playlist_name, track_key):
@@ -2955,17 +3275,40 @@ class MusicBoxBridge(QObject):
             self.statusChanged.emit()
 
     @Slot()
+    def refreshLibrary(self):
+        if self._library_scan_running:
+            return
+        self._library_refresh_requested = True
+        self.refresh()
+
+    @Property(bool, notify=libraryRefreshChanged)
+    def libraryRefreshing(self):
+        return self._library_scan_running
+
+    @Slot()
     def refresh(self):
         """Scan in the background; keep the cached library visible while it runs."""
         if self._library_scan_running:
             self._library_scan_pending = True
             return
         self._library_scan_running = True
+        self.libraryRefreshChanged.emit()
         self._library_scan_generation += 1
         generation = self._library_scan_generation
+        refresh_cloud = bool(getattr(self, "_library_refresh_requested", False) and self._user.get("uid"))
+        uid = self._user.get("uid")
+        baseline = deepcopy(self._sync_base_section) if refresh_cloud else {}
 
         def worker():
-            self._libraryScanReady.emit({"generation": generation, "files": self._scan_library_files()})
+            try:
+                result = {"generation": generation, "files": self._scan_library_files()}
+                if refresh_cloud:
+                    result["remote"] = self._cloud.load_state()
+                    result["uid"] = uid
+                    result["baseline"] = baseline
+            except Exception:
+                result = {"generation": generation, "error": True}
+            self._libraryScanReady.emit(result)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -3003,7 +3346,16 @@ class MusicBoxBridge(QObject):
         if not isinstance(result, dict) or result.get("generation") != self._library_scan_generation:
             return
         self._library_scan_running = False
-        self._apply_library_files(result.get("files") or [], persist_cache=True)
+        self.libraryRefreshChanged.emit()
+        if not result.get("error"):
+            if result.get("remote", {}).get("playlists"):
+                self._apply_remote_playlists({"syncedPlaylists": result["remote"]["playlists"],
+                                             "localSnapshot": result["baseline"], "uid": result["uid"]})
+            self._apply_library_files(result.get("files") or [], persist_cache=True)
+        if getattr(self, "_library_refresh_requested", False):
+            self._library_refresh_requested = False
+            message = "No se pudo actualizar la biblioteca." if result.get("error") else "Biblioteca actualizada"
+            self._show_notice(i18n.tr(message))
         if self._library_scan_pending:
             self._library_scan_pending = False
             self.refresh()
@@ -3497,6 +3849,7 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def pausePlayer(self):
+        self._crossfade.cancel()
         self._play_when_ready = False
         if self._player.playbackState() == QMediaPlayer.PlayingState:
             self._player.pause()
@@ -3522,6 +3875,7 @@ class MusicBoxBridge(QObject):
         item = dict(track or {})
         path = item.get("path", "")
         if not path or not Path(path).is_file(): return
+        self._playback_origin = (self._library_playlist, self._library_folder)
         self._playback_failures = set()
         self._queue_artist = ""
         self._queue = list(self._library)
@@ -3541,6 +3895,7 @@ class MusicBoxBridge(QObject):
             self.playOnline(track) if track.get("web") else self.playTrack(track)
             return
         self._playback_failures = set()
+        self._playback_origin = (self._library_playlist, self._library_folder)
         self._reset_online_queue()
         self._queue_artist = self._library_artist
         self._queue, self._queue_index = list(self._library), index
@@ -3552,14 +3907,19 @@ class MusicBoxBridge(QObject):
         if item.get("path"):
             self._start_local_track(dict(item))
         else:
-            # Una canción online dentro de una playlist sigue la playlist: sin cola online ni autoplay.
+            # Keep the playlist queue; radio is appended only when this queue reaches its end.
             self._reset_online_queue()
             self._play_online(dict(item), autoplay=False)
+            self._maybe_autoplay(item)
 
     def _start_local_track(self, item):
+        if hasattr(self, "_crossfade"): self._crossfade.cancel()
+        if self._video_local is not None and self._video_local.get("path") != item.get("path"):
+            self._video_local, self._video_mode = None, False  # A different song: back to audio mode.
         self._sample_listening()
         self._listening_sample = None
         self._listening_started = False
+        self._listening_elapsed = 0
         self._reset_online_queue()
         self._stream_generation += 1
         self._stream_resolving = False
@@ -3571,6 +3931,7 @@ class MusicBoxBridge(QObject):
         self._player.setSource(QUrl.fromLocalFile(path))
         self._player.play(); self.playerChanged.emit()
         self._prefetch_timer.start()
+        self._maybe_autoplay(item)
 
     def _playback_state_changed(self, state):
         if state == QMediaPlayer.PlayingState and not getattr(self, "_play_when_ready", True):
@@ -3578,29 +3939,6 @@ class MusicBoxBridge(QObject):
             return
         if hasattr(self, "_listening_timer"):
             self._sample_listening()
-        if state == QMediaPlayer.PlayingState:
-            path = self._current.get("path", "")
-            if path and Path(path).is_file() and path != self._recorded_source:
-                self._recorded_source = path
-                self._recent_paths = [entry for entry in self._recent_paths if entry != path]
-                self._recent_paths.insert(0, path)
-                self._recent_paths = self._recent_paths[:50]
-                title = self._current.get("title", "")
-                self._clicks_stats.record(song_key(title, self._path_ids.get(path, "")), title)
-                self._settings.setValue("recentPlayed", self._recent_paths)
-                self._save_clicks()
-                self.discoveryChanged.emit()
-                self.libraryChanged.emit()
-                self.foldersChanged.emit()
-                self.playlistsChanged.emit()
-                self._schedule_cloud_save()
-            elif not path and self._current.get("id") and self._current.get("url") != self._recorded_source:
-                self._recorded_source = self._current.get("url", "")
-                title = self._current.get("title", "")
-                self._clicks_stats.record(song_key(title, self._current["id"]), title)
-                self._save_clicks()
-                self.discoveryChanged.emit()
-                self._schedule_cloud_save()
         self.playerChanged.emit()
 
     @Slot("QVariantMap")
@@ -3608,10 +3946,12 @@ class MusicBoxBridge(QObject):
         self.playOnlineList([track], 0)
 
     def _play_online(self, track, recovering=False, autoplay=True):
+        if hasattr(self, "_crossfade"): self._crossfade.cancel()
         self._sample_listening()
         if not recovering:
             self._listening_sample = None
             self._listening_started = False
+            self._listening_elapsed = 0
         item = dict(track or {})
         url = item.get("url", "")
         if not url: return
@@ -3673,7 +4013,10 @@ class MusicBoxBridge(QObject):
                         "album": item.get("album", "Streaming")})
             except Exception as exc:
                 error = str(exc).splitlines()[-1]
-            self._streamReady.emit(item, stream or error)
+            try:
+                self._streamReady.emit(item, stream or error)
+            except RuntimeError:
+                pass  # The window can close while the resolver is waiting on the network.
         threading.Thread(target=resolve, daemon=True).start()
 
     @staticmethod
@@ -3752,7 +4095,10 @@ class MusicBoxBridge(QObject):
             path = youtube_streams.download_to_cache(url, STREAM_CACHE_DIR, self._download_audio)
         except Exception:
             path = ""
-        self._prefetchReady.emit(url, path)
+        try:
+            self._prefetchReady.emit(url, path)
+        except RuntimeError:
+            pass  # The window can close before a prefetch completes.
 
     @Slot(str, str)
     def _store_prefetch(self, url, path):
@@ -3792,6 +4138,7 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def togglePlayback(self):
+        self._crossfade.cancel()
         if not self._current: return
         self._play_when_ready = not self.playing
         if self.playing: self._player.pause()
@@ -3800,12 +4147,14 @@ class MusicBoxBridge(QObject):
 
     @Slot(int)
     def seek(self, milliseconds):
+        if hasattr(self, "_crossfade"): self._crossfade.cancel()
         self._sample_listening()
         self._listening_sample = None
         self._player.setPosition(max(0, milliseconds))
 
     @Slot(float)
     def setVolume(self, value):
+        self._crossfade.cancel()
         self._audio.setVolume(max(0.0, min(1.0, value)))
         if value > 0 and self._audio.isMuted(): self._audio.setMuted(False)
         self._settings.setValue("volume", self._audio.volume())
@@ -3813,12 +4162,14 @@ class MusicBoxBridge(QObject):
 
     @Slot()
     def toggleMute(self):
+        self._crossfade.cancel()
         self._audio.setMuted(not self._audio.isMuted())
         self._settings.setValue("muted", self._audio.isMuted())
         self.playerChanged.emit()
 
     @Slot(int)
     def skip(self, direction):
+        if hasattr(self, "_crossfade"): self._crossfade.cancel()
         if self._advance_online(1 if direction >= 0 else -1): return
         if not self._queue: return
         self._queue_index = (self._queue_index + (1 if direction >= 0 else -1)) % len(self._queue)
@@ -4026,11 +4377,18 @@ class MusicBoxBridge(QObject):
             return
         if self._player.mediaStatus() != QMediaPlayer.EndOfMedia: return
         if self._repeat_mode == 2 and self._current:
+            self._sample_listening()
+            self._listening_sample = None
+            self._listening_started = False
+            self._listening_elapsed = 0
             self._player.setPosition(0); self._player.play()
         elif self._advance_online(1):
             return
         elif self._repeat_mode == 1 or self._queue_index + 1 < len(self._queue):
             self.skip(1)
+        elif self.autoplay:
+            self._maybe_autoplay(self._current)
+            self._online_waiting = self._autoplay_loading
 
     @Slot(str)
     def openPath(self, value):

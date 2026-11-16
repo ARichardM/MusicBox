@@ -66,3 +66,5 @@ graphify-out/
 
 # Scripts personales locales de prueba
 script_musica.py
+.test-artifacts/
+apps/web/frontend/runtime-config.js

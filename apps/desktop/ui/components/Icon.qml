@@ -19,7 +19,7 @@ Image {
     Layout.maximumHeight: size
     sourceSize.width: size * 3
     sourceSize.height: size * 3
-    source: name === "" ? "" : "../icons/" + name + ".svg"
+    source: name === "" ? "" : Qt.resolvedUrl("../icons/" + name + ".svg")
     fillMode: Image.PreserveAspectFit
     smooth: true
     mipmap: true

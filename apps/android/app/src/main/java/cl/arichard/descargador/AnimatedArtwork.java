@@ -1,12 +1,14 @@
 package cl.arichard.descargador;
 
-import android.media.MediaPlayer;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.Player;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.C;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.graphics.SurfaceTexture;
 import android.util.LruCache;
-import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -28,7 +30,8 @@ import java.util.regex.Pattern;
 import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.util.Tr;
 
-final class AnimatedArtwork implements TextureView.SurfaceTextureListener {
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
+final class AnimatedArtwork {
     private static final ExecutorService LOOKUPS = Executors.newSingleThreadExecutor();
     private static final LruCache<String, String> CACHE = new LruCache<>(256);
     private static final Pattern BANDWIDTH = Pattern.compile("[:,]BANDWIDTH=(\\d+)");
@@ -38,18 +41,31 @@ final class AnimatedArtwork implements TextureView.SurfaceTextureListener {
     private String stream = "";
     private Future<?> lookup;
     private Runnable pending;
-    private MediaPlayer player;
+    private ExoPlayer player;
 
     AnimatedArtwork(FrameLayout container) {
         view = new TextureView(container.getContext());
         view.setAlpha(0);
         view.setVisibility(View.INVISIBLE);
         view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        view.setSurfaceTextureListener(this);
         container.addView(view, new FrameLayout.LayoutParams(-1, -1));
     }
 
+    /**
+     * Con la portada ampliada, la animación (cuadrada) conserva su proporción: ocupa el ancho y queda centrada en vez de
+     * estirarse o recortarse en un marco alto.
+     */
+    void fit(boolean square, int width) {
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) view.getLayoutParams();
+        int height = square ? Math.max(1, width) : FrameLayout.LayoutParams.MATCH_PARENT;
+        if (lp.height == height && lp.gravity == (square ? android.view.Gravity.CENTER : android.view.Gravity.NO_GRAVITY)) return;
+        lp.height = height;
+        lp.gravity = square ? android.view.Gravity.CENTER : android.view.Gravity.NO_GRAVITY;
+        view.setLayoutParams(lp);
+    }
+
     void show(Song song) {
+        android.util.Log.d("MusicBoxArtwork", "Artwork requested");
         if (song == null || song.getTitle() == null || song.getTitle().trim().isEmpty()
                 || song.getArtist() == null || song.getArtist().trim().isEmpty()
                 || song.getArtist().equals(Tr.t("Artista desconocido"))) {
@@ -78,10 +94,12 @@ final class AnimatedArtwork implements TextureView.SurfaceTextureListener {
                     result = resolve(request);
                     CACHE.put(cacheKey, result);
                 } catch (Exception ignored) {
+                    android.util.Log.w("MusicBoxArtwork", "Lookup unavailable: " + ignored.getClass().getSimpleName());
                     return;
                 }
             }
             String url = result;
+            android.util.Log.d("MusicBoxArtwork", "Lookup animation present: " + !url.isEmpty());
             main.post(() -> {
                 if (!request.equals(key) || url.isEmpty()) return;
                 stream = url;
@@ -102,38 +120,34 @@ final class AnimatedArtwork implements TextureView.SurfaceTextureListener {
     }
 
     private void startIfReady() {
-        if (stream.isEmpty() || !view.isAvailable() || player != null) return;
-        player = new MediaPlayer();
-        Surface surface = new Surface(view.getSurfaceTexture());
-        try {
-            player.setSurface(surface);
-            player.setDataSource(stream);
-            player.setVolume(0, 0);
-            player.setLooping(true);
-            player.setOnPreparedListener(media -> {
-                if (player == media) media.start();
-            });
-            player.setOnInfoListener((media, what, extra) -> {
-                if (player == media && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                    view.setAlpha(1);
-                }
-                return false;
-            });
-            player.setOnErrorListener((media, what, extra) -> {
-                if (player == media) release();
-                return true;
-            });
-            player.prepareAsync();
-        } catch (IOException | RuntimeException ignored) {
-            release();
-        } finally {
-            surface.release();
-        }
+        if (stream.isEmpty() || player != null) return;
+        // Parse the fragmented MP4 in-process: Samsung's platform extractor can crash on this stream.
+        ExoPlayer playback = new ExoPlayer.Builder(view.getContext()).build();
+        player = playback;
+        playback.setVolume(0);
+        playback.setTrackSelectionParameters(playback.getTrackSelectionParameters().buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build());
+        playback.setRepeatMode(Player.REPEAT_MODE_ONE);
+        playback.setVideoTextureView(view);
+        playback.addListener(new Player.Listener() {
+            @Override public void onRenderedFirstFrame() {
+                android.util.Log.d("MusicBoxArtwork", "First frame rendered");
+                if (player == playback) view.setAlpha(1);
+            }
+            @Override public void onPlayerError(PlaybackException error) {
+                android.util.Log.w("MusicBoxArtwork", "Animation unavailable: " + error.getErrorCodeName());
+                if (player == playback) release();
+            }
+        });
+        playback.setMediaItem(MediaItem.fromUri(stream));
+        playback.prepare();
+        playback.play();
     }
 
     private void release() {
         view.setAlpha(0);
         if (player != null) {
+            player.clearVideoTextureView(view);
             player.release();
             player = null;
         }
@@ -202,15 +216,4 @@ final class AnimatedArtwork implements TextureView.SurfaceTextureListener {
         }
     }
 
-    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
-        startIfReady();
-    }
-
-    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
-
-    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
-        release();
-        return true;
-    }
 }

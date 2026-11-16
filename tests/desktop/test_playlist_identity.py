@@ -61,6 +61,17 @@ def make_bridge():
 
 
 class PlaylistIdentityTest(unittest.TestCase):
+    def test_locate_uses_playback_source_after_navigating_to_another_section(self):
+        bridge = make_bridge()
+        bridge._current = dict(bridge._library_all[0])
+        bridge._playback_origin = ("Favoritos", "")
+        bridge._library_playlist = ""
+        bridge._library_filter = "songs"
+        bridge._library_query = "does not match"
+        self.assertGreaterEqual(bridge.locateCurrentTrack(), 0)
+        self.assertEqual(bridge.libraryLocation, {"filter": "playlists", "playlist": "Favoritos", "folder": ""})
+        self.assertEqual(bridge._library_query, "")
+
     def test_move_preserves_metadata_and_other_playlists_without_duplicates(self):
         bridge = make_bridge()
         bridge._apply_library_view = mock.Mock()

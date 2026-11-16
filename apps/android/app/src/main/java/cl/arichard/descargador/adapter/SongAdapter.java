@@ -385,8 +385,10 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             // Files MusicBox downloaded get the download mark; files that come from a music folder get a folder mark.
             boolean fromFolder = isLocalFile && !savedOnline && !isMusicBoxFile(song.getPath());
             holder.imgDownloadedBadge.setImageResource(fromFolder ? R.drawable.ic_folder_badge : R.drawable.ic_downloaded_badge);
-            holder.imgDownloadedBadge.setImageTintList(android.content.res.ColorStateList.valueOf(
-                    AccentColors.getColor(context, fromFolder ? R.color.text_secondary : R.color.accent)));
+            // El acento puro se pierde sobre el fondo oscuro: se aclara para que la marca de descarga se lea con claridad.
+            int markColor = AccentColors.getColor(context, fromFolder ? R.color.text_secondary : R.color.accent);
+            if (!fromFolder) markColor = androidx.core.graphics.ColorUtils.blendARGB(markColor, 0xFFFFFFFF, .5f);
+            holder.imgDownloadedBadge.setImageTintList(android.content.res.ColorStateList.valueOf(markColor));
             holder.imgDownloadedBadge.setContentDescription(Tr.t(fromFolder ? "De una carpeta" : "Descargada en el dispositivo"));
             holder.imgDownloadedBadge.setVisibility((isLocalFile || savedOnline) && !downloading && !selectionMode
                     ? View.VISIBLE : View.GONE);

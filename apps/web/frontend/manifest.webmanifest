@@ -1,7 +1,7 @@
 {
   "name": "MusicBox",
   "short_name": "MusicBox",
-  "description": "Tu música, en todos lados. Busca, reproduce y escucha offline y online con interfaz idéntica a Desktop.",
+  "description": "Tu m?sica, en todos lados. La experiencia de MusicBox en tu navegador.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#000000",

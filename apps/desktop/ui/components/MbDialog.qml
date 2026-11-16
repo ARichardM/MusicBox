@@ -4,6 +4,7 @@ import QtQuick.Controls
 // Ventana modal redondeada, centrada, con entrada y salida suaves.
 Popup {
     id: dialog
+    property Item backdropSource: null
     parent: Overlay.overlay
     anchors.centerIn: parent
     modal: true
@@ -29,5 +30,5 @@ Popup {
         border.width: 1
         border.color: Theme.line
     }
-    Overlay.modal: Rectangle { color: Theme.dark ? "#AA000000" : Theme.adaptiveColor("#66101520") }
+    Overlay.modal: ModalBackdrop { sourceItem: dialog.backdropSource }
 }

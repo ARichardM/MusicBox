@@ -74,8 +74,8 @@
             <!-- Un solo lugar para la marca de descargada y el anillo de descarga: se cruzan sin mover el texto -->
             <FrameLayout
                 android:id="@+id/downloadMarkSlot"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:layout_marginEnd="5dp">
 
                 <ImageView

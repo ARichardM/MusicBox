@@ -257,6 +257,53 @@ class QmlLyricsUiTests(unittest.TestCase):
             caption = root.findChild(QObject, "playerExpandedCaption")
             self.assertIsNotNone(caption)
             self.assertIn("Mi asiento toca la ventana", caption.property("text"))
+            source_name = root.findChild(QObject, "playingFromName")
+            self.assertIsNotNone(source_name)
+            self.assertEqual(source_name.property("text"), "Canciones")
+            large_cover_img = root.findChild(QObject, "largeCoverImage")
+            self.assertIsNotNone(large_cover_img)
+            self.assertTrue(large_cover_img.property("cropFill"))
+
+            # El selector de playlist del reproductor grande cambia entre playlists de forma reactiva.
+            track_row = dict(bridge._current, path="tren.wav")
+            bridge._library_all = [track_row]
+            bridge._playlists["Driving"] = ["tren.wav"]
+            bridge._playlists["Chill"] = ["tren.wav"]
+            bridge.playlistsChanged.emit()
+            with patch.object(bridge, "_start_queue_track"):
+                bridge.switchPlaybackPlaylist("Driving")
+                bridge.playerChanged.emit()
+                APP.processEvents()
+                self.assertEqual(bridge.playbackSourceKind, "Playlist")
+                self.assertEqual(bridge.playbackSourceName, "Driving")
+                self.assertEqual(source_name.property("text"), "Playlist · Driving")
+                bridge.stepPlaybackPlaylist(1)
+                bridge.playerChanged.emit()
+                APP.processEvents()
+                self.assertEqual(bridge.playbackSourceName, "Chill")
+                self.assertEqual(source_name.property("text"), "Playlist · Chill")
+
+            # Si el usuario oculta la letra, no reaparece sola al cambiar de canción.
+            large_lyrics = root.findChild(QObject, "largeLyricsPanel")
+            self.assertIsNotNone(large_lyrics)
+            self.assertTrue(large_lyrics.property("open"))
+            bridge.setLyricsShown(False)
+            bridge.lyrics.setOpen(False)
+            APP.processEvents()
+            self.assertFalse(bridge.lyricsShown)
+            self.assertFalse(large_lyrics.property("open"))
+            bridge._current = {"path": "otra.wav", "title": "Otra Canción", "artist": "Artista", "duration": 90}
+            bridge.playerChanged.emit()
+            self.assertTrue(wait_for(lambda: bridge.lyrics.state == "ready"))
+            self.assertFalse(bridge.lyricsShown)
+            self.assertFalse(large_lyrics.property("open"))
+            # Al volver a mostrarla, se conserva para las siguientes canciones.
+            bridge.setLyricsShown(True)
+            bridge.lyrics.setOpen(True)
+            bridge.lyrics._update_position(13500)
+            APP.processEvents()
+            self.assertTrue(bridge.lyricsShown)
+            self.assertTrue(large_lyrics.property("open"))
 
             # Tocar o activar una línea salta al milisegundo exacto de ese verso.
             bridge.lyrics.seekToLine(2)
@@ -269,6 +316,8 @@ class QmlLyricsUiTests(unittest.TestCase):
             self.assertEqual(bridge.lyrics.activeText, "Estación Central, segundo carro")
 
             # Verifica que se adapte sin errores tanto en tema oscuro como claro y distintos anchos.
+            root.setProperty("expanded", False)
+            bridge.lyrics.setOpen(True)
             for dark in (False, True):
                 if bridge.darkMode != dark:
                     bridge.toggleTheme()

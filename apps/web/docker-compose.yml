@@ -1,5 +1,6 @@
 services:
   musicbox_web:
+    image: musicbox-web:experience-20261116
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -18,4 +19,3 @@ services:
       - ./frontend:/app/frontend:ro
     environment:
       - PYTHONUNBUFFERED=1
-

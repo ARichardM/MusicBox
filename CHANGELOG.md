@@ -1,5 +1,20 @@
 # Historial de versiones
 
+## 2.4.6 — 16 de noviembre de 2026
+
+### Windows y Web
+
+- **Reproductor expandido renovado:** portada centrada a marco completo con bordes redondeados sin franjas negras ni contenedores dobles, portada animada sutil cuando está activa y vista de zoom al tocar la carátula.
+- **Selector animado «Reproduciendo desde…»:** encabezado interactivo en la esquina superior izquierda del reproductor expandido con lista desplegable animada y reactiva para cambiar de playlist al instante sin salir del reproductor.
+- **Chips MP3 / MP4 / Letra de alto contraste y animados:** cápsula superior con transiciones fluidas de ancho, escala y color, mayor contraste de lectura sobre fondos dinámicos y soporte de **modo MP4 en canciones locales descargadas** resolviendo o buscando automáticamente el videoclip en YouTube cuando el archivo local es solo audio.
+- **Preferencia persistente de Letras:** si ocultas el panel de letras en el reproductor expandido, permanece oculto al pasar a las siguientes canciones; si lo dejas visible, se abre automáticamente cuando la nueva pista tiene letra disponible.
+- **Crossfade real con barra en relieve de ondas:** mezcla configurable (Apagado, Automático, 1 s a 12 s) que adelanta el cruce cuando detecta colas de silencio al final de la canción, acompañada de una barra de progreso con relieve de ondas (altos y bajos) y zona de mezcla resaltada.
+- **Búsqueda, biblioteca y menús:** sugerencias de autocompletado en vivo mientras escribes, botón de limpiar búsqueda (`×`), menú de perfil de un clic para cambiar cuenta/tema/idioma/estadísticas/actualizaciones, desenfoque de fondo (*backdrop blur*) en todos los diálogos y confirmación antes de borrar canciones descargadas.
+
+### Android
+
+- Sincronización de versión `2.4.6` (`versionCode 24`) y compatibilidad completa con las preferencias de cuenta, colores de acento (azul y naranjo) y playlists compartidas con Windows y Web.
+
 ## 2.4.5 — 12 de noviembre de 2026
 
 ### Web

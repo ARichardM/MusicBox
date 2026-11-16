@@ -123,7 +123,7 @@ class PlaybackRecoveryTests(unittest.TestCase):
         self.assertEqual(self.bridge.currentTrack["id"], "chosen")
         self.assertEqual(self.resolve.call_count, 1)
 
-    def test_streamed_song_in_a_playlist_continues_the_playlist_without_autoplay(self):
+    def test_streamed_song_keeps_the_playlist_queue_and_checks_for_radio_at_the_tail(self):
         playlist = [dict(track("p1"), web=True), dict(track("p2"), web=True)]
         self.bridge._library = list(playlist)
         self.bridge.playLibraryTrack(playlist[0])
@@ -135,7 +135,7 @@ class PlaybackRecoveryTests(unittest.TestCase):
         self.player.mediaStatus.return_value = QMediaPlayer.EndOfMedia
         self.bridge._media_status()
         self.wait(lambda: self.bridge.currentTrack.get("id") == "p2")
-        self.bridge._maybe_autoplay.assert_not_called()
+        self.assertEqual([call.args[0]["id"] for call in self.bridge._maybe_autoplay.call_args_list], ["p1", "p2"])
         self.assertEqual([row["id"] for row in self.bridge.queue], ["p1", "p2"])
 
     def test_cache_is_published_only_after_success_and_never_reuses_corrupt_file(self):

@@ -207,6 +207,8 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         empty = text(Tr.t("Tu cola está vacía. Agrega tus canciones favoritas."), 15);
         empty.setPadding(0, dp(24), 0, dp(24)); root.addView(empty);
         recycler = new RecyclerView(activity); recycler.setLayoutManager(new LinearLayoutManager(activity));
+        recycler.setClipToPadding(false);
+        recycler.setPadding(0, 0, 0, dp(24));
         recycler.setAdapter(adapter); root.addView(recycler, new LinearLayout.LayoutParams(-1, 0, 1));
         touchHelper = new ItemTouchHelper(new ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
             @Override public RecyclerView.ViewHolder chooseDropTarget(RecyclerView.ViewHolder selected,

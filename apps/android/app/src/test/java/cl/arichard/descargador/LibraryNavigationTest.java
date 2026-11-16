@@ -199,7 +199,15 @@ public class LibraryNavigationTest {
             String last = names.get(names.size() - 1);
             show.setAccessible(true); show.invoke(activity, 3, last);
             assertEquals(last, ((TextView) activity.findViewById(R.id.txtLibraryTitle)).getText().toString());
-            assertNull(adjacent.invoke(activity, 1));
+            assertNull("Nothing lies to the right of the last collection", adjacent.invoke(activity, 1));
+            for (String step; (step = (String) adjacent.invoke(activity, -1)) != null && !step.isEmpty(); ) show.invoke(activity, 3, step);
+            assertEquals("The first collection leads back to the library root on the left", "", adjacent.invoke(activity, -1));
+            show.invoke(activity, 3, last);
+            show.invoke(activity, 3, "");
+            assertNull("Nothing lies to the left of Música but Buscar", adjacent.invoke(activity, -1));
+            assertEquals("Swiping the finger left from the root restores the last visited playlist", last, adjacent.invoke(activity, 1));
+            show.invoke(activity, 3, last);
+            assertEquals(last, ((TextView) activity.findViewById(R.id.txtLibraryTitle)).getText().toString());
             java.lang.reflect.Method folder = MainActivity.class.getDeclaredMethod("showFolderSongs", String.class, java.util.List.class);
             folder.setAccessible(true); folder.invoke(activity, "Viajes", java.util.Collections.emptyList());
             assertEquals("CARPETA", contextLabel.getText().toString());

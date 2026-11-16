@@ -2,15 +2,17 @@
 <html lang="es" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MusicBox Web</title>
-  <meta name="description" content="MusicBox Web - Reproductor de música online y offline con interfaz exacta a Desktop.">
+  <meta name="description" content="MusicBox Web - Reproductor de música online y offline con la experiencia de MusicBox en tu navegador.">
   <meta name="theme-color" content="#161618">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="logo_cube.png">
   <link rel="apple-touch-icon" href="logo_cube.png">
-  <link rel="stylesheet" href="style.css?v=2.4.2">
+  <link rel="stylesheet" href="style.css?build=experience-20261116-immersive2">
+  <link rel="stylesheet" href="experience.css?build=20261116-immersive2">
+  <link rel="stylesheet" href="pages.css?build=20261116-immersive2">
 </head>
 <body>
   <!-- Pantalla de Login (Exacta a Desktop Main.qml:800-810) -->
@@ -83,12 +85,11 @@
         </button>
       </nav>
 
-      <!-- Espaciador flexible para empujar Configuración al fondo -->
+      <!-- Espaciador: empuja Perfil y Configuración al final del panel, justo encima del reproductor -->
       <div style="flex:1;"></div>
 
-      <!-- Pie de Sidebar: ÚNICAMENTE el botón de Configuración (Idéntico a Desktop Main.qml:217) -->
       <div class="sidebar-footer-clean">
-        <button class="account-btn" id="settings-btn" title="Configuración">
+        <button class="account-btn" id="settings-btn" title="Configuración" aria-label="Configuración">
           <div class="account-avatar" id="sidebar-account-avatar">
             <span id="sidebar-account-initial">U</span>
           </div>
@@ -161,8 +162,9 @@
   <!-- Barra de Reproductor Inferior Fija (Exacta al estilo Desktop y amada por el usuario) -->
   <footer class="player-bar" id="bottom-player">
     <div class="player-left">
+      <div class="player-source" id="player-source" hidden><span class="player-source-label">Reproduciendo desde</span><strong class="player-source-value"><span id="player-source-kind"></span><span id="player-source-name"></span></strong></div>
       <div class="now-playing-cover-wrap">
-        <img src="logo_cube.png" id="player-thumb" class="now-playing-thumb" alt="Carátula">
+        <img src="logo_complete.png" id="player-thumb" class="now-playing-thumb" alt="Carátula">
         <div class="player-thumb-shimmer" id="player-thumb-shimmer"></div>
       </div>
       <div class="now-playing-info">
@@ -174,7 +176,6 @@
       <button class="icon-btn" id="player-fav-btn" title="Favorito">
         <img src="icons/heart.svg" class="nav-icon" alt="Favorito">
       </button>
-      <span class="offline-pill" id="playback-source-badge" style="display:none;">⚡ Offline</span>
     </div>
 
     <div class="player-center">
@@ -340,7 +341,7 @@
           <div class="settings-row">
             <div class="settings-info-text">
               <div class="setting-name" style="font-size:18px;">MusicBox</div>
-              <div class="setting-desc">Versión 2.4.0 Web</div>
+              <div class="setting-desc">Versión 2.4.6 Web</div>
             </div>
             <div class="badge-uptodate">
               <span class="badge-dot"></span>
@@ -466,6 +467,17 @@
     };
   </script>
   <script src="https://www.youtube.com/iframe_api"></script>
-  <script src="app.js?v=2.4.2"></script>
+  <script src="runtime-config.js"></script>
+  <script src="core.js?build=experience-20261116-immersive2"></script>
+  <script src="app.js?build=experience-20261116-immersive2"></script>
+  <script src="stats.js?build=experience-20261116-immersive2"></script>
+  <script src="parity.js?build=experience-20261116-immersive2"></script>
+  <script src="i18n.js?build=experience-20261116-immersive2"></script>
+  <script src="experience.js?build=20261116-immersive2"></script>
+  <script src="mixbar.js?build=20261116-immersive2"></script>
+  <script src="session.js?build=20261116-immersive2"></script>
+  <script src="pages.js?build=20261116-immersive2"></script>
+  <script src="selects.js?build=20261116-immersive2"></script>
+  <script src="motion.js?build=20261116-immersive2"></script>
 </body>
 </html>

@@ -320,6 +320,17 @@ public class PlaylistManager {
 
     public synchronized boolean hasLocalCopy(String videoId) { return pathToId.containsValue(videoId); }
 
+    /** ¿La canción ya está en alguna playlist (en línea o como archivo local vinculado)? Las recomendaciones no la repiten. */
+    public synchronized boolean isInAnyPlaylist(String videoId) {
+        if (videoId == null || videoId.isEmpty()) return false;
+        String online = "youtube:" + videoId;
+        for (List<String> entries : playlists.values()) for (String entry : entries) {
+            if (online.equals(entry)) return true;
+            if (pathToId.containsKey(entry) && videoId.equals(pathToId.get(entry))) return true;
+        }
+        return false;
+    }
+
     /** Declara que un archivo local es la copia de un video de YouTube (importar carpeta). */
     public synchronized void linkLocalFile(String path, String videoId) {
         if (path == null || path.isEmpty() || videoId == null || videoId.isEmpty()) return;

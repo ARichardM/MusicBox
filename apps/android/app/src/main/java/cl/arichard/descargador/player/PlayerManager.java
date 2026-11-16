@@ -67,6 +67,128 @@ public class PlayerManager {
     private final List<PlaybackListener> listeners = new ArrayList<>();
     private Context context;
     private MediaPlayer mediaPlayer;
+    private MediaPlayer fadingPlayer;
+    private static final int CROSSFADE_STREAM_LEAD_MS = 4000;
+    private boolean crossfadeAdvance;
+    private long fadeStarted;
+    private boolean fadeLive;
+    private int fadeEndAtMs;
+    private int fadeDuration;
+    public int getCrossfadeSeconds() {
+        return context == null ? 0 : Math.max(0, Math.min(12, context.getSharedPreferences("player", 0).getInt("crossfade_seconds", 0)));
+    }
+    public void setCrossfadeSeconds(int seconds) {
+        stopCrossfade();
+        if (context != null && seconds > 0) context.getSharedPreferences("player", 0).edit()
+                .putInt("crossfade_last_seconds", Math.max(1, Math.min(12, seconds))).apply();
+        if (context != null) context.getSharedPreferences("player", 0).edit().putInt("crossfade_seconds", Math.max(0, Math.min(12, seconds))).apply();
+    }
+    public void setCrossfadeEnabled(boolean enabled) {
+        setCrossfadeSeconds(enabled && context != null
+                ? context.getSharedPreferences("player", 0).getInt("crossfade_last_seconds", 5) : 0);
+    }
+    private void stopCrossfade() {
+        handler.removeCallbacks(fadeTick);
+        fadeLive = false;
+        if (fadingPlayer != null) { fadingPlayer.release(); fadingPlayer = null; }
+        if (mediaPlayer != null && prepared) mediaPlayer.setVolume(1f, 1f);
+    }
+    private final Runnable fadeTick = new Runnable() {
+        @Override public void run() {
+            if (fadingPlayer == null || mediaPlayer == null || !prepared) return;
+            if (!isPlaying()) { stopCrossfade(); return; }
+            float progress = Math.min(1f, (android.os.SystemClock.elapsedRealtime() - fadeStarted) / (float)Math.max(1, fadeDuration));
+            // Potencia constante: la que sale sigue el coseno y la que entra el seno, sin bajón de volumen a mitad.
+            float out = (float) Math.cos(progress * Math.PI / 2), in = (float) Math.sin(progress * Math.PI / 2);
+            fadingPlayer.setVolume(out, out);
+            mediaPlayer.setVolume(in, in);
+            if (progress >= 1f) stopCrossfade(); else handler.postDelayed(this, 25);
+        }
+    };
+    /** Dirección ya resuelta de una canción en streaming, para leer su audio sin pedirla de nuevo; null si aún no se conoce. */
+    public static final class StreamSource {
+        public final String url;
+        public final Map<String, String> headers;
+        StreamSource(String url, Map<String, String> headers) { this.url = url; this.headers = headers; }
+    }
+    public StreamSource streamSourceFor(String videoId) {
+        CachedStream cached;
+        synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(streamKey(videoId, false)); }
+        if (cached == null || !cached.isFresh() || cached.headers.containsKey("X-MusicBox-HLS")) return null;
+        Map<String, String> headers = new HashMap<>(cached.headers);
+        headers.remove(LENGTH_KEY);
+        return new StreamSource(cached.url, headers);
+    }
+    /** Hay una mezcla en curso (la canción que sale aún suena mientras entra la siguiente). */
+    public boolean isCrossfading() { return fadingPlayer != null; }
+    /** Posición y duración de la canción que sale, o -1 si no hay mezcla: la barra la sigue hasta que termina. */
+    public int getOutgoingPosition() {
+        try { return fadingPlayer == null ? -1 : fadingPlayer.getCurrentPosition(); } catch (IllegalStateException e) { return -1; }
+    }
+    public int getOutgoingDuration() {
+        try { return fadingPlayer == null ? -1 : fadingPlayer.getDuration(); } catch (IllegalStateException e) { return -1; }
+    }
+    /** Milisegundos que le quedan a la mezcla en curso, o 0 si no hay una sonando. */
+    public long crossfadeRemainingMs() {
+        if (!fadeLive || fadingPlayer == null) return 0;
+        return Math.max(0, fadeDuration - (android.os.SystemClock.elapsedRealtime() - fadeStarted));
+    }
+    public long crossfadeTotalMs() { return fadeLive ? fadeDuration : 0; }
+    private cl.arichard.descargador.util.WaveformStore.Envelope envelopeOf(Song song) {
+        return context == null || song == null ? null : cl.arichard.descargador.util.WaveformStore.get(context).peek(song);
+    }
+    /** Instante (ms) en que la canción actual deja de sonar de verdad: hay pistas con segundos de silencio al final. */
+    public int crossfadeEndMs() {
+        cl.arichard.descargador.util.WaveformStore.Envelope envelope = envelopeOf(currentSong);
+        int duration = getDuration();
+        // Si el silencio se llevara más de las tres cuartas partes de la pista, la medición no es de fiar: se ignora.
+        return envelope != null && envelope.audibleEndMs > duration / 4 ? Math.min(duration, envelope.audibleEndMs) : duration;
+    }
+    /** Duración de la mezcla que se aplicará al final de la canción actual, o 0 si no habrá (apagado, repetir una, sin siguiente). */
+    public int crossfadeZoneMs() {
+        int seconds = getCrossfadeSeconds();
+        if (seconds == 0 || videoMode || repeatMode == REPEAT_ONE || currentIndex < 0 || queue.size() < 2) return 0;
+        if (currentIndex + 1 >= queue.size() && repeatMode != REPEAT_ALL) return 0;
+        return crossfadeEndMs() >= seconds * 2000 ? seconds * 1000 : 0;
+    }
+    /** Mide (en segundo plano) dónde suena de verdad la canción actual y la siguiente, para mezclar sobre sonido y no sobre silencio. */
+    private void warmWaveforms() {
+        if (context == null || getCrossfadeSeconds() == 0) return;
+        cl.arichard.descargador.util.WaveformStore store = cl.arichard.descargador.util.WaveformStore.get(context);
+        store.request(currentSong, null);
+        int next = currentIndex + 1;
+        if (next >= queue.size()) next = repeatMode == REPEAT_ALL ? 0 : -1;
+        if (next >= 0 && next < queue.size()) store.request(queue.get(next), null);
+    }
+    private boolean maybeCrossfade() {
+        int seconds = getCrossfadeSeconds();
+        int endAt = crossfadeEndMs();
+        int remaining = endAt - getCurrentPosition();
+        if (seconds == 0 || videoMode || fadingPlayer != null || !isPlaying() || repeatMode == REPEAT_ONE
+                || remaining <= 0 || endAt < seconds * 2000
+                || currentIndex < 0 || queue.size() < 2) return false;
+        int nextIndex = currentIndex + 1;
+        if (nextIndex >= queue.size()) {
+            if (repeatMode != REPEAT_ALL) return false;
+            nextIndex = 0;
+        }
+        Song next = queue.get(nextIndex);
+        // A streamed next song needs a moment to open, so it starts early enough for the whole fade to be heard.
+        if (remaining > seconds * 1000 + (next.isOnline() ? CROSSFADE_STREAM_LEAD_MS : 0)) return false;
+        if (next.isOnline()) {
+            CachedStream cached;
+            synchronized (STREAM_CACHE) { cached = STREAM_CACHE.get(streamKey(next.getVideoId(), false)); }
+            if (cached == null || !cached.isFresh()) return false;
+        } else if (!new java.io.File(next.getPath()).isFile()) return false;
+        sampleListening();
+        fadingPlayer = mediaPlayer;
+        mediaPlayer = null;
+        fadeDuration = seconds * 1000;
+        fadeEndAtMs = endAt;
+        crossfadeAdvance = true;
+        try { playNext(); } finally { crossfadeAdvance = false; }
+        return true;
+    }
     private boolean prepared, playWhenReady = true, online, shuffle, loading;
     private int repeatMode = REPEAT_ALL, currentIndex = -1, generation;
     private List<Song> queue = new ArrayList<>(), originalQueue = new ArrayList<>();
@@ -390,6 +512,7 @@ public class PlayerManager {
         @Override public void run() {
             if (!prepared || mediaPlayer == null) return;
             sampleListening();
+            if (maybeCrossfade()) return;
             if (playbackRecoveryAttempts > 0 && mediaPlayer.isPlaying()
                     && getCurrentPosition() - recoveryStartPosition > RECOVERY_RESET_MS) playbackRecoveryAttempts = 0;
             int second = getCurrentPosition() / 1000;
@@ -408,6 +531,7 @@ public class PlayerManager {
     private boolean listeningStarted;
     private long listeningQualifiedMillis;
     private boolean listeningPlayCounted;
+    private String listeningTrackPath = "";
 
     private void startListening() {
         listeningSong = currentSong;
@@ -416,8 +540,11 @@ public class PlayerManager {
         listeningPosition = getCurrentPosition();
         listeningPlaying = isPlaying();
         listeningStarted = false;
-        listeningQualifiedMillis = 0;
-        listeningPlayCounted = false;
+        if (!currentSong.getPath().equals(listeningTrackPath)) {
+            listeningTrackPath = currentSong.getPath();
+            listeningQualifiedMillis = 0;
+            listeningPlayCounted = false;
+        }
     }
 
     private void sampleListening() {
@@ -592,10 +719,11 @@ public class PlayerManager {
 
     public void playSong(Song song, List<Song> newQueue, boolean allowAutoplay) {
         if (song == null) return;
+        listeningTrackPath = "";
         playbackFailures.clear();
         recoveryPath = "";
         if (newQueue != null && !newQueue.isEmpty()) {
-            queueAllowsAutoplay = allowAutoplay;
+            queueAllowsAutoplay = allowAutoplay || "playlist".equals(sourceType) || "folder".equals(sourceType);
             autoplayGeneration++;
             autoplayLoading = advanceWhenReady = false;
             autoplayTriedFor = "";
@@ -619,6 +747,7 @@ public class PlayerManager {
     }
 
     protected void startCurrent() {
+        if (!crossfadeAdvance) stopCrossfade();
         if (currentSong == null) return;
         if (!currentSong.getPath().equals(recoveryPath)) {
             recoveryPath = currentSong.getPath();
@@ -1075,7 +1204,22 @@ public class PlayerManager {
             loading(false);
             if (playWhenReady && !audioRouteChangePending) {
                 if (requestAudioFocus()) {
+                    if (fadingPlayer != null) {
+                        mp.setVolume(0f, 0f);
+                        // La siguiente entra donde empieza a sonar, no en su silencio inicial.
+                        cl.arichard.descargador.util.WaveformStore.Envelope entering = envelopeOf(currentSong);
+                        if (entering != null && entering.audibleStartMs > 300 && resumePosition == 0) mp.seekTo(entering.audibleStartMs);
+                    }
                     mp.start();
+                    if (fadingPlayer != null) {
+                        try {
+                            int left = fadeEndAtMs - fadingPlayer.getCurrentPosition();
+                            fadeDuration = Math.max(300, Math.min(fadeDuration, left));
+                        } catch (IllegalStateException ignored) {}
+                        fadeStarted = android.os.SystemClock.elapsedRealtime();
+                        fadeLive = true;
+                        handler.post(fadeTick);
+                    }
                     registerNoisyReceiver();
                 } else {
                     playWhenReady = false;
@@ -1085,6 +1229,8 @@ public class PlayerManager {
             notifyState();
             handler.post(progressUpdater);
             prefetchNextStream();
+            warmWaveforms();
+            autoplayNeeded(false);
             recoveryStartPosition = mp.getCurrentPosition();
             Log.i("MusicBoxPlayer", "Prepared: duration=" + mp.getDuration() + " video=" + mp.getVideoWidth() + "x" + mp.getVideoHeight());
         });
@@ -1104,6 +1250,7 @@ public class PlayerManager {
             if (mp != mediaPlayer || !prepared) return;
             if (repeatMode == REPEAT_ONE) {
                 mp.seekTo(0); mp.start();
+                listeningTrackPath = "";
                 startListening();
             }
             else playNext();
@@ -1122,6 +1269,7 @@ public class PlayerManager {
     }
 
     void fail(Exception error) {
+        stopCrossfade();
         Log.e("MusicBoxPlayer", "Playback failed", error);
         int position = resumePosition;
         if (prepared && mediaPlayer != null) {
@@ -1194,6 +1342,7 @@ public class PlayerManager {
     }
     // ── AudioFocus ─────────────────────────────────────────────────────────
     private final AudioManager.OnAudioFocusChangeListener audioFocusListener = focusChange -> {
+        if (focusChange != AudioManager.AUDIOFOCUS_GAIN) stopCrossfade();
         switch (focusChange) {
             case AudioManager.AUDIOFOCUS_GAIN:
                 if (mediaPlayer != null) mediaPlayer.setVolume(1f, 1f);
@@ -1394,6 +1543,7 @@ public class PlayerManager {
      * Detiene todo y libera el reproductor (la app se cerró desde recientes). Recuerda la posición para retomar la próxima vez.
      */
     public void stopAndRelease() {
+        stopCrossfade();
         autoplayGeneration++;
         autoplayLoading = advanceWhenReady = false;
         autoplayTriedFor = "";
@@ -1407,6 +1557,7 @@ public class PlayerManager {
 
     /** Llamado por MediaSessionCompat.Callback desde MusicService */
     public void pause() {
+        stopCrossfade();
         playWhenReady = false;
         advanceWhenReady = false;
         resumeOnFocusGain = false;
@@ -1445,11 +1596,12 @@ public class PlayerManager {
             currentIndex = 0;
         }
         currentSong = queue.get(Math.max(0, currentIndex));
+        listeningTrackPath = "";
         startCurrent();
     }
     public boolean isAutoplay() { return context != null && context.getSharedPreferences("player", 0).getBoolean("autoplay", true); }
-    public boolean isAutoplayLoading() { return autoplayLoading && online; }
-    public String getAutoplayError() { return online ? autoplayError : ""; }
+    public boolean isAutoplayLoading() { return autoplayLoading; }
+    public String getAutoplayError() { return autoplayError; }
     public void retryAutoplay() {
         if (autoplayLoading || currentIndex < queue.size() - 1) return;
         autoplayTriedFor = "";
@@ -1470,9 +1622,10 @@ public class PlayerManager {
 
     /** Hay que buscar canciones relacionadas: sonando una de YouTube, al final de la cola y sin haberlo intentado ya. */
     private boolean autoplayNeeded(boolean atEnd) {
-        if (!queueAllowsAutoplay || !isAutoplay() || !online || currentSong == null || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return false;
+        String seed = playbackVideoId();
+        if (!queueAllowsAutoplay || !isAutoplay() || currentSong == null || seed == null || repeatMode == REPEAT_ONE) return false;
         if (autoplayLoading) return true;
-        if (currentOnlineVideoId.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return false;
+        if (seed.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return false;
         if (!atEnd && currentIndex < queue.size() - 1) return false;
         fetchAutoplay();
         return autoplayLoading;
@@ -1480,8 +1633,9 @@ public class PlayerManager {
 
     /** Agrega al final de la cola canciones parecidas a la actual (radio de YouTube Music, solo canciones). */
     private void fetchAutoplay() {
-        if (!queueAllowsAutoplay || autoplayLoading || !isAutoplay() || !online || currentOnlineVideoId == null || repeatMode == REPEAT_ONE) return;
-        final String seed = currentOnlineVideoId;
+        final String seed = playbackVideoId();
+        if (!queueAllowsAutoplay || autoplayLoading || !isAutoplay() || seed == null || repeatMode == REPEAT_ONE) return;
+        final List<Song> snapshot = new ArrayList<>(originalQueue);
         final int requestGeneration = autoplayGeneration;
         if (seed.equals(autoplayTriedFor) && (autoplayError.isEmpty() || autoplayAttempts >= 3)) return;
         if (!seed.equals(autoplayTriedFor)) autoplayAttempts = 0;
@@ -1492,7 +1646,26 @@ public class PlayerManager {
         notifyQueue();
         PLAYBACK_IO.execute(() -> {
             List<cl.arichard.descargador.model.SearchResult> related = null;
-            try { related = cl.arichard.descargador.util.YtMusicApi.related(seed, 25); }
+            try {
+                if (snapshot.size() > 1 && ("playlist".equals(sourceType) || "folder".equals(sourceType))) {
+                    List<String> ids = new ArrayList<>(), titles = new ArrayList<>();
+                    for (Song song : snapshot) {
+                        String id = song.isOnline() ? song.getVideoId() : cl.arichard.descargador.data.PlaylistManager.getInstance(context).videoIdFor(song.getPath());
+                        if (id != null && !id.isEmpty()) ids.add(id);
+                        titles.add(song.getTitle());
+                    }
+                    var seeds = cl.arichard.descargador.data.RecommendationEngine.playlistSeeds(ids,
+                            id -> cl.arichard.descargador.data.ClickStats.getInstance(context).count("yt:" + id), 4);
+                    var lists = new ArrayList<cl.arichard.descargador.data.RecommendationEngine.Weighted>();
+                    for (var entry : seeds) {
+                        try { lists.add(new cl.arichard.descargador.data.RecommendationEngine.Weighted(entry.weight,
+                                cl.arichard.descargador.util.YtMusicApi.related(entry.videoId, 25))); }
+                        catch (Exception ignored) {}
+                    }
+                    related = cl.arichard.descargador.data.RecommendationEngine.combine(lists,
+                            new HashSet<>(ids), titles, 15, "playlist").songs;
+                } else related = cl.arichard.descargador.util.YtMusicApi.related(seed, 25);
+            }
             catch (Exception e) { Log.w("MusicBoxPlayer", "Autoplay sin resultados", e); }
             final List<cl.arichard.descargador.model.SearchResult> found = related;
             Log.i("MusicBoxAutoplay", "Radio result: seed=" + seed + ", attempt=" + autoplayAttempts
@@ -1504,8 +1677,8 @@ public class PlayerManager {
     void completeAutoplay(String seed, int requestGeneration, List<cl.arichard.descargador.model.SearchResult> found) {
         if (requestGeneration != autoplayGeneration || !queueAllowsAutoplay) return;
         autoplayLoading = false;
-        if (!online || currentSong == null) return;
-        if (!seed.equals(currentOnlineVideoId)) {
+        if (currentSong == null) return;
+        if (!seed.equals(playbackVideoId())) {
             if (currentIndex >= queue.size() - 1) fetchAutoplay();
             return;
         }
@@ -1543,6 +1716,7 @@ public class PlayerManager {
         currentSong = queue.get(currentIndex); startCurrent();
     }
     public void seekTo(int ms) {
+        stopCrossfade();
         sampleListening();
         listeningPlaying = false;
         if (prepared && mediaPlayer != null) {
@@ -1589,6 +1763,7 @@ public class PlayerManager {
     }
     public void playQueueIndex(int index) {
         if (index < 0 || index >= queue.size()) return;
+        listeningTrackPath = "";
         recoveryPath = ""; playbackFailures.clear();
         resumePosition = 0; savedDuration = 0;
         currentIndex = index; currentSong = queue.get(index); startCurrent();

@@ -157,6 +157,7 @@
         <!-- MP3 Mode: Full Album Cover Art -->
         <FrameLayout
             android:id="@+id/containerCoverArt"
+            android:clipChildren="false"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:visibility="visible">
@@ -447,16 +448,16 @@
     </LinearLayout>
 
     <!-- Scrubber Seek Bar -->
-    <SeekBar
+    <cl.arichard.descargador.util.WaveSeekBar
         android:id="@+id/seekBar"
         android:layout_width="match_parent"
-        android:layout_height="32dp"
+        android:layout_height="44dp"
         android:minHeight="3dp"
         android:maxHeight="3dp"
         android:paddingStart="0dp"
         android:paddingEnd="0dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp"
+        android:paddingTop="20dp"
+        android:paddingBottom="20dp"
         android:progressDrawable="@drawable/player_seek_track"
         android:thumb="@drawable/player_seek_thumb"
         android:thumbOffset="0dp"

@@ -20,6 +20,7 @@ class LyricsController(QObject):
         self._bridge = bridge
         self._finder = finder
         self._open = False
+        self._wants_open = False
         self._state = "idle"          # idle, loading, ready, instrumental, empty, error
         self._track = {}
         self._identity = ""
@@ -106,6 +107,7 @@ class LyricsController(QObject):
     @Slot(bool)
     def setOpen(self, value: bool) -> None:
         value = bool(value)
+        self._wants_open = value
         if value == self._open:
             return
         self._open = value
@@ -220,6 +222,8 @@ class LyricsController(QObject):
         self._error = ""
         if self._lines:
             self._state = "ready"
+            if self._wants_open:
+                self._open = True
         elif self._instrumental:
             self._state = "instrumental"
         else:
@@ -250,6 +254,7 @@ class LyricsController(QObject):
         self._generation += 1
         self._clock.stop()
         self._open = False
+        self._wants_open = False
         self._state = "idle"
         self._track = {}
         self._identity = ""

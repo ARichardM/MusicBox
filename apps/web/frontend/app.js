@@ -1,12 +1,12 @@
 /**
- * MusicBox Web - Frontend Principal con Paridad 100% Desktop
+ * MusicBox Web - interfaz compartida con MusicBox Desktop
  * Motor de Reproducción Híbrido (Online YouTube IFrame + Offline IndexedDB)
  */
 
 // --- Base de Datos IndexedDB (MusicBoxDB) ---
 class MusicBoxStorage {
   constructor() {
-    this.dbName = "MusicBoxDB";
+    this.dbName = new URLSearchParams(location.search).has("verification") ? "MusicBoxVerification" : "MusicBoxDB";
     this.version = 2;
     this.db = null;
   }
@@ -53,13 +53,14 @@ class MusicBoxStorage {
         album: track.album || "",
         duration: track.duration || 0,
         thumbnail: track.thumbnail || "",
+        folder: track.folder || '',
         audioBlob: audioBlob,
         sizeBytes: audioBlob ? audioBlob.size : 0,
         lyrics: lyricsData || null,
         savedAt: Date.now()
       };
       const req = store.put(data);
-      req.onsuccess = () => resolve(data);
+      tx.oncomplete = () => resolve(data);
       req.onerror = (e) => reject(e);
     });
   }
@@ -123,13 +124,11 @@ class MusicBoxStorage {
       const store = tx.objectStore("favorites");
       if (isFav) {
         store.delete(track.id);
-        if (typeof pushStateToFirestore === "function") setTimeout(pushStateToFirestore, 600);
-        resolve(false);
       } else {
         store.put({ ...track, addedAt: Date.now() });
-        if (typeof pushStateToFirestore === "function") setTimeout(pushStateToFirestore, 600);
-        resolve(true);
       }
+      tx.oncomplete = () => { scheduleCloudSave(); resolve(!isFav); };
+      tx.onerror = () => reject(tx.error);
     });
   }
 
@@ -214,15 +213,19 @@ class MusicBoxStorage {
       const tx = this.db.transaction("playlists", "readwrite");
       const store = tx.objectStore("playlists");
       const req = store.put(playlist);
-      req.onsuccess = () => resolve(playlist);
+      tx.oncomplete = () => { resolve(playlist); scheduleCloudSave(); };
       req.onerror = (e) => reject(e);
     });
   }
 }
 
+function readSavedUser() {
+  if (new URLSearchParams(location.search).has('verification')) return { name: 'Pruebas', authenticated: false };
+  try { return JSON.parse(localStorage.getItem('musicbox_user') || 'null'); } catch { return null; }
+}
 // --- Estado Global ---
 const state = {
-  user: JSON.parse(localStorage.getItem("musicbox_user") || "null"),
+  user: readSavedUser(),
   currentTrack: null,
   queue: [],
   queueIndex: -1,
@@ -248,16 +251,52 @@ const state = {
 };
 
 const storage = new MusicBoxStorage();
-const audio = new Audio(); // Motor para reproducción offline (Blobs IndexedDB)
+const escapeHTML = MusicBoxCore.escape;
+let cloudBase = null;
+let cloudSaveTimer = null;
+let cloudSaving = false;
+let cloudSaveAgain = false;
+const dirtyPreferences = {};
+state.downloadFormat = localStorage.getItem('musicbox_download_format') || 'mp3';
+state.downloadQuality = Number(localStorage.getItem('musicbox_download_quality') || 192);
+let revocationUnsubscribe = null;
+const webDeviceId = localStorage.getItem('musicbox_web_device') || ('web_' + crypto.randomUUID().replaceAll('-', ''));
+localStorage.setItem('musicbox_web_device', webDeviceId);
+function sessionStartedAt(user) { return state.user?.uid === user.uid ? state.user.signedInAt || Date.now() : Date.now(); }
+let applyingCloud = false;
+let playbackGeneration = 0;
+let searchGeneration = 0;
+let currentBlobUrl = null;
+let activePlaylist = null;
+let recordedGeneration = -1;
+const listeningClock = new MusicBoxCore.ListeningClock();
+let fallbackGeneration = -1;
+function recordPlayback() {
+  if (!state.currentTrack || listeningClock.elapsed < 30000 || recordedGeneration === playbackGeneration) return;
+  recordedGeneration = playbackGeneration;
+  storage.recordHistory(state.currentTrack);
+  recordWebStats(state.currentTrack,0,true);
+}
+function scheduleCloudSave() {
+  if (state.user?.authenticated && state.user.uid) localStorage.setItem('musicbox_pending_prefs:' + state.user.uid, JSON.stringify(dirtyPreferences));
+  if (applyingCloud || !cloudBase || !state.user?.authenticated) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(pushStateToFirestore, 600);
+}
+let audio = document.createElement('video'); // Current native engine; crossfade temporarily retains its predecessor.
+audio.id = 'local-media-player';
+audio.playsInline = true;
+audio.controls = true;
+audio.preload = 'metadata';
+audio.style.display = 'none';
 let ytPlayer = null; // Motor para streaming online
 let ytReady = false;
 let syncInterval = null;
 
 // Helper para URLs de la API relativas
 function apiUrl(endpoint) {
-  let base = window.location.pathname;
-  if (!base.endsWith("/")) base += "/";
-  return base + endpoint.replace(/^\//, "");
+  const url = new URL(endpoint.replace(/^\//, ""), new URL('./', window.location.href));
+  return url.pathname + url.search;
 }
 
 // ==========================================================================
@@ -313,8 +352,10 @@ function initYTPlayer(initialVideoId) {
           }
         },
         onStateChange: (event) => {
+          if (state.isOfflinePlayback) return;
           // YT.PlayerState: 1 (playing), 2 (paused), 0 (ended), 3 (buffering)
           if (event.data === 1) {
+            recordPlayback();
             state.isPlaying = true;
             updatePlayPauseButton();
             setBrandMarkAnimated(true);
@@ -328,12 +369,23 @@ function initYTPlayer(initialVideoId) {
             handleTrackEnded();
           }
         },
-        onError: (e) => {
+        onError: async (e) => {
+          if (state.isOfflinePlayback) return;
+          state.isPlaying = false;
+          updatePlayPauseButton();
           console.warn("[MusicBox] YouTube player warning/error:", e.data);
-          if (e.data === 150 || e.data === 101) {
-            showToast("Video con restricción de incrustación externa. Pasando al siguiente...");
-            setTimeout(() => playNext(), 1200);
+          const generation = playbackGeneration;
+          if ((e.data === 150 || e.data === 101) && state.currentTrack && fallbackGeneration !== generation) {
+            fallbackGeneration = generation;
+            const originalId = state.currentTrack.id;
+            try {
+              const response = await fetch(apiUrl(`api/video-source/${originalId}`));
+              const source = await response.json();
+              if (generation !== playbackGeneration || state.isOfflinePlayback) return;
+              if (source.id) { ytPlayer.loadVideoById(source.id); ytPlayer.playVideo(); return; }
+            } catch {}
           }
+          if (generation === playbackGeneration) showToast('YouTube no permite reproducir esta grabación aquí. Elige otra desde Más opciones → Ver alternativas.');
         }
       }
     });
@@ -378,7 +430,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   checkAuthSession();
 
   // Service Worker
-  if ("serviceWorker" in navigator) {
+  if (!verificationMode && "serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 
@@ -405,20 +457,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 // ==========================================================================
 // Autenticación Real con Firebase y Google (Desktop Parity Main.qml:800-810)
 // ==========================================================================
-const firebaseConfig = {
-  apiKey: "AIzaSyDl2piIE8XKag0rcycwC_NOYcbVhgVeMWU",
-  authDomain: "musicbox-813e3.firebaseapp.com",
-  projectId: "musicbox-813e3",
-  storageBucket: "musicbox-813e3.firebasestorage.app",
-  messagingSenderId: "1008640530987"
-};
+const verificationMode = new URLSearchParams(location.search).has('verification');
+const firebaseConfig = window.MUSICBOX_FIREBASE_CONFIG;
+
 
 let fbApp = null;
 let fbAuth = null;
 let fbDb = null;
 
 function initFirebase() {
-  if (window.firebase && !fbApp) {
+  if (!verificationMode && firebaseConfig && window.firebase && !fbApp) {
     try {
       fbApp = firebase.initializeApp(firebaseConfig);
       fbAuth = firebase.auth();
@@ -444,7 +492,7 @@ function setupFirebaseAuthListeners() {
         email: fbUser.email,
         photo: fbUser.photoURL || "",
         authenticated: true,
-        signedInAt: Date.now()
+        signedInAt: sessionStartedAt(fbUser)
       };
       state.user = user;
       localStorage.setItem("musicbox_user", JSON.stringify(user));
@@ -465,7 +513,7 @@ function setupFirebaseAuthListeners() {
         email: fbUser.email,
         photo: fbUser.photoURL || "",
         authenticated: true,
-        signedInAt: Date.now()
+        signedInAt: sessionStartedAt(fbUser)
       };
       state.user = user;
       localStorage.setItem("musicbox_user", JSON.stringify(user));
@@ -493,11 +541,11 @@ function checkAuthSession() {
     const initial = (state.user.name || state.user.email || "U").charAt(0).toUpperCase();
 
     if (state.user.photo) {
-      if (avatarWrap) avatarWrap.innerHTML = `<img src="${state.user.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="" />`;
-      if (modalAvatarWrap) modalAvatarWrap.innerHTML = `<img src="${state.user.photo}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="" />`;
+      if (avatarWrap) avatarWrap.innerHTML = `<img src="${escapeHTML(state.user.photo)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="" />`;
+      if (modalAvatarWrap) modalAvatarWrap.innerHTML = `<img src="${escapeHTML(state.user.photo)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="" />`;
     } else {
-      if (avatarWrap) avatarWrap.innerHTML = `<span>${initial}</span>`;
-      if (modalAvatarWrap) modalAvatarWrap.innerHTML = `<span>${initial}</span>`;
+      if (avatarWrap) avatarWrap.innerHTML = `<span>${escapeHTML(initial)}</span>`;
+      if (modalAvatarWrap) modalAvatarWrap.innerHTML = `<span>${escapeHTML(initial)}</span>`;
     }
 
     if (nameModal) nameModal.textContent = state.user.name || "Usuario MusicBox";
@@ -530,7 +578,6 @@ function checkAuthSession() {
     try {
       const result = await fbAuth.signInWithPopup(provider);
       const fbUser = result.user;
-      console.log("[MusicBox] Login exitoso con Google:", fbUser);
 
       const user = {
         uid: fbUser.uid,
@@ -538,7 +585,7 @@ function checkAuthSession() {
         email: fbUser.email,
         photo: fbUser.photoURL || "",
         authenticated: true,
-        signedInAt: Date.now()
+        signedInAt: sessionStartedAt(fbUser)
       };
       state.user = user;
       localStorage.setItem("musicbox_user", JSON.stringify(user));
@@ -568,7 +615,7 @@ function checkAuthSession() {
         if (error.code === "auth/popup-closed-by-user") {
           errorText.textContent = "Ventana de autenticación cerrada.";
         } else if (error.code === "auth/unauthorized-domain") {
-          errorText.textContent = "El dominio openmusicbox.duckdns.org fue autorizado en Firebase. Aguarda 1 minuto para la propagación de Google.";
+          errorText.textContent = "Este dominio no está autorizado para iniciar sesión. Revisa los dominios autorizados en Firebase Authentication.";
         } else {
           errorText.textContent = error.message || error.code || "Error al conectar con Google.";
         }
@@ -594,6 +641,10 @@ function checkAuthSession() {
 
   // Cerrar Sesión en Configuración
   document.getElementById("logout-button").onclick = async () => {
+    if (state.user?.uid && cloudBase) {
+      const section = MusicBoxCore.section(await storage.getAllPlaylists(), await storage.getAllFavorites(), cloudBase);
+      localStorage.setItem('musicbox_cloud_local:' + state.user.uid, JSON.stringify(section));
+    }
     if (fbAuth && state.user && state.user.authenticated) {
       try {
         await fbAuth.signOut();
@@ -602,7 +653,15 @@ function checkAuthSession() {
       }
     }
     state.user = null;
+    cloudBase = null;
+    for (const key of Object.keys(dirtyPreferences)) delete dirtyPreferences[key];
+    revocationUnsubscribe?.(); revocationUnsubscribe = null;
+    clearTimeout(cloudSaveTimer);
+    audio.pause();
+    ytPlayer?.pauseVideo?.();
     localStorage.removeItem("musicbox_user");
+    await applyCloudSection({playlists:{Favoritos:[]}});
+    localStorage.removeItem('musicbox_library_owner');
     document.getElementById("settings-modal").style.display = "none";
     loginOverlay.style.display = "flex";
     showToast("Sesión cerrada");
@@ -610,101 +669,135 @@ function checkAuthSession() {
 }
 
 // Sincronización con Firestore (Paridad total con Desktop y Android)
-async function syncWithFirestore(uid) {
+async function applyCloudSection(section) {
+  applyingCloud = true;
+  try {
+    const online = section.onlineTracks || {};
+    const all = section.playlists || {};
+    const tx = storage.db.transaction(["favorites", "playlists"], "readwrite");
+    tx.objectStore("favorites").clear();
+    tx.objectStore("playlists").clear();
+    for (const entry of all.Favoritos || []) {
+      const item = MusicBoxCore.track(entry, online);
+      if (item?.id) tx.objectStore("favorites").put(item);
+    }
+    const order = section.playlistOrder || Object.keys(all);
+    for (const [name, entries] of Object.entries(all)) {
+      if (name === "Favoritos" || !Array.isArray(entries)) continue;
+      const tracks = entries.map(e => MusicBoxCore.track(e, online)).filter(Boolean);
+      tx.objectStore("playlists").put({ id: name, name, tracks,
+        unavailableEntries: entries.filter(e => !MusicBoxCore.track(e, online)),
+        description: section.descriptions?.[name] || '', pinned: (section.pinnedPlaylists || []).includes(name),
+        autoDownload: (section.autoDownload || []).includes(name),
+        order: order.indexOf(name) });
+    }
+    await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = reject; tx.onabort = reject; });
+  } finally { applyingCloud = false; }
+}
+
+async function syncWithFirestore(uid, reportErrors=false) {
   initFirebase();
   if (!fbDb || !uid) return;
   try {
-    const docRef = fbDb.collection("users").doc(uid).collection("state").doc("musicbox");
-    const docSnap = await docRef.get();
-    if (docSnap.exists) {
-      const data = docSnap.data();
-      if (data && data.payload) {
-        let cloudState = null;
-        try {
-          cloudState = JSON.parse(data.payload);
-        } catch (e) {
-          console.warn("[MusicBox] Error parseando payload de Firestore:", e);
-        }
-
-        if (cloudState) {
-          console.log("[MusicBox] Biblioteca sincronizada de la nube:", cloudState);
-
-          if (cloudState.playlists && cloudState.playlists.playlists) {
-            const playlistsMap = cloudState.playlists.playlists;
-            for (const [name, tracks] of Object.entries(playlistsMap)) {
-              if (name === "Favoritos") {
-                if (Array.isArray(tracks)) {
-                  for (const tr of tracks) {
-                    await storage.addFavorite(tr);
-                  }
-                }
-              } else {
-                await storage.savePlaylist({ id: name, name, tracks: tracks || [] });
-              }
-            }
-          } else if (Array.isArray(cloudState.favorites)) {
-            for (const tr of cloudState.favorites) {
-              await storage.addFavorite(tr);
-            }
-          }
-
-          if (cloudState.preferences) {
-            if (typeof cloudState.preferences.darkMode === "boolean") {
-              const theme = cloudState.preferences.darkMode ? "dark" : "light";
-              state.theme = theme;
-              document.documentElement.setAttribute("data-theme", theme);
-              localStorage.setItem("musicbox_theme", theme);
-              const sw = document.getElementById("settings-dark-switch");
-              if (sw) sw.checked = theme === "dark";
-            }
-            if (cloudState.preferences.primaryColor) {
-              applyPrimaryColor(cloudState.preferences.primaryColor);
-            }
-          }
-
-          showToast("Biblioteca sincronizada con tu cuenta");
-          if (state.activeView === "library") loadLibraryView();
-        }
-      }
+    const snap = await fbDb.collection("users").doc(uid).collection("state").doc("musicbox").get();
+    if (state.user?.uid !== uid) return;
+    const remote = snap.exists ? JSON.parse(snap.data().payload || '{}') : {};
+    const section = remote.playlists || { playlists: { Favoritos: [] } };
+    // Merge only a previously known copy of this account. A guest or another account is never uploaded.
+    let incoming = section;
+    const savedBase = localStorage.getItem('musicbox_cloud_base:' + uid);
+    if (savedBase) {
+      const base = JSON.parse(savedBase);
+      const savedLocal = localStorage.getItem('musicbox_cloud_local:' + uid);
+      const local = localStorage.getItem('musicbox_library_owner') === uid
+        ? MusicBoxCore.section(await storage.getAllPlaylists(), await storage.getAllFavorites(), base)
+        : savedLocal ? JSON.parse(savedLocal) : base;
+      incoming = MusicBoxCore.merge(base, local, section);
     }
+    await applyCloudSection(incoming);
+    localStorage.setItem('musicbox_library_owner', uid);
+    localStorage.setItem('musicbox_cloud_base:' + uid, JSON.stringify(section));
+    localStorage.setItem('musicbox_cloud_local:' + uid, JSON.stringify(incoming));
+    cloudBase = JSON.parse(JSON.stringify(section));
+    await registerWebDevice(uid);
+    const prefs = remote.preferences || {};
+    mergeWebStats(remote.clicks);
+    for (const key of Object.keys(dirtyPreferences)) delete dirtyPreferences[key];
+    Object.assign(dirtyPreferences, JSON.parse(localStorage.getItem('musicbox_pending_prefs:' + uid) || '{}'));
+    setDarkMode(dirtyPreferences.darkMode ?? prefs.darkMode ?? remote.darkMode ?? (state.theme === 'dark'), false);
+    applyPrimaryColor(dirtyPreferences.accentColor || prefs.accentColor || prefs.primaryColor || state.accent, false);
+    if (dirtyPreferences.language || prefs.language) { state.language = dirtyPreferences.language || prefs.language; localStorage.setItem('musicbox_lang', state.language); applyLanguage(); }
+    const remoteFormat = String(dirtyPreferences.autoFormat || prefs.autoFormat || state.downloadFormat).toLowerCase();
+    if (['mp3','mp4'].includes(remoteFormat)) state.downloadFormat=remoteFormat;
+    const qualityKey=state.downloadFormat==='mp3'?'quality_mp3':'quality_mp4';
+    const quality=Number.parseInt(dirtyPreferences[qualityKey] || prefs[qualityKey] || state.downloadQuality,10);
+    const allowed=state.downloadFormat==='mp3'?[128,192,256,320]:[360,480,720,1080];
+    state.downloadQuality=allowed.includes(quality)?quality:(state.downloadFormat==='mp3'?192:720);
+    localStorage.setItem('musicbox_download_format',state.downloadFormat);localStorage.setItem('musicbox_download_quality',state.downloadQuality);
+    if (state.activeView === 'library') await loadLibraryView();
+    showToast("Biblioteca sincronizada con tu cuenta");
+    if (!verificationMode) runAutoDownloads();
+    if (JSON.stringify(incoming) !== JSON.stringify(section) || Object.keys(dirtyPreferences).length) scheduleCloudSave();
   } catch (err) {
-    console.warn("[MusicBox] Error al leer Firestore:", err);
+    cloudBase = null;
+    showToast("No se pudo sincronizar. Tus cambios se conservan en este navegador; vuelve a iniciar sesión para reintentar.");
+    console.warn("[MusicBox] No se pudo leer la biblioteca", err.code || err.message);
+    if(reportErrors)throw err;
   }
 }
 
+async function registerWebDevice(uid) {
+  const ref = fbDb.collection('users').doc(uid).collection('state').doc('musicbox');
+  await fbDb.runTransaction(async transaction => {
+    const snap = await transaction.get(ref);
+    if (state.user?.uid !== uid) return;
+    const remote = snap.exists ? JSON.parse(snap.data().payload || '{}') : {};
+    const payload = { ...remote, devices: { ...remote.devices, [webDeviceId]: {name:'MusicBox Web',platform:'Web',lastSeen:Date.now()} } };
+    transaction.set(ref,{payload:JSON.stringify(payload)},{merge:true});
+  });
+  revocationUnsubscribe?.();
+  revocationUnsubscribe = fbDb.collection('users').doc(uid).collection('state').doc('revocations').onSnapshot(snapshot => {
+    if (state.user?.uid === uid && Number(snapshot.data()?.['d_' + webDeviceId] || 0) > state.user.signedInAt) document.getElementById('logout-button').click();
+  }, () => showToast('No se pudo comprobar el estado de la sesión. Revisa tu conexión.'));
+}
+
 async function pushStateToFirestore() {
-  initFirebase();
-  if (!fbDb || !state.user || !state.user.authenticated || !state.user.uid) return;
+  if (!fbDb || !cloudBase || !state.user?.authenticated || !state.user.uid) return;
+  if (cloudSaving) { cloudSaveAgain = true; return; }
+  cloudSaving = true;
+  const uid = state.user.uid;
+  const base = JSON.parse(JSON.stringify(cloudBase));
+  const local = MusicBoxCore.section(await storage.getAllPlaylists(), await storage.getAllFavorites(), base);
+  localStorage.setItem('musicbox_cloud_local:' + uid, JSON.stringify(local));
+  const preferences = { ...dirtyPreferences };
   try {
-    const favorites = await storage.getAllFavorites();
-    const playlists = await storage.getAllPlaylists();
-    const playlistsMap = { "Favoritos": favorites };
-    for (const pl of playlists) {
-      playlistsMap[pl.name] = pl.tracks || [];
+    const ref = fbDb.collection('users').doc(uid).collection('state').doc('musicbox');
+    const synced = await fbDb.runTransaction(async transaction => {
+      const snap = await transaction.get(ref);
+      if (state.user?.uid !== uid) throw new Error('Session changed');
+      const remote = snap.exists ? JSON.parse(snap.data().payload || '{}') : {};
+      const merged = MusicBoxCore.merge(base, local, remote.playlists || {});
+      const payload = { ...remote, schema: 1, playlists: merged, favorites: merged.playlists?.Favoritos || [],
+        clicks: MusicBoxCore.mergeStats(remote.clicks || {},getWebStats()),
+        devices: { ...remote.devices, [webDeviceId]: {name:'MusicBox Web',platform:'Web',lastSeen:Date.now()} },
+        preferences: { ...remote.preferences, ...preferences } };
+      if ('darkMode' in preferences) payload.darkMode = preferences.darkMode;
+      transaction.set(ref, { payload: JSON.stringify(payload) }, { merge: true });
+      return merged;
+    });
+    if (state.user?.uid === uid) {
+      const current = MusicBoxCore.section(await storage.getAllPlaylists(), await storage.getAllFavorites(), base);
+      const reconciled = MusicBoxCore.merge(local, current, synced);
+      await applyCloudSection(reconciled);
+      cloudBase = synced;
+      localStorage.setItem('musicbox_cloud_base:' + uid, JSON.stringify(synced));
+      localStorage.setItem('musicbox_cloud_local:' + uid, JSON.stringify(reconciled));
+      for (const [key, value] of Object.entries(preferences)) if (dirtyPreferences[key] === value) delete dirtyPreferences[key];
+      localStorage.setItem('musicbox_pending_prefs:' + uid, JSON.stringify(dirtyPreferences));
+      if (JSON.stringify(reconciled) !== JSON.stringify(synced)) cloudSaveAgain = true;
     }
-
-    const payloadObj = {
-      preferences: {
-        darkMode: state.theme === "dark",
-        primaryColor: state.primaryColor || "blue"
-      },
-      playlists: { playlists: playlistsMap },
-      favorites: favorites,
-      devices: {
-        "web-client": {
-          name: "MusicBox Web",
-          os: "Web",
-          lastActive: Date.now()
-        }
-      }
-    };
-
-    const docRef = fbDb.collection("users").doc(state.user.uid).collection("state").doc("musicbox");
-    await docRef.set({ payload: JSON.stringify(payloadObj) }, { merge: true });
-    console.log("[MusicBox] Cambios guardados en la nube");
-  } catch (err) {
-    console.warn("[MusicBox] Error al guardar en Firestore:", err);
-  }
+  } catch (err) { showToast('No se pudieron guardar los cambios en la nube. Tu copia local se conserva.'); }
+  finally { cloudSaving = false; if (cloudSaveAgain) { cloudSaveAgain = false; scheduleCloudSave(); } }
 }
 
 // ==========================================================================
@@ -806,11 +899,12 @@ function drawBrandWave(ctx, phase, live) {
   }
   ctx.lineTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
 
-  ctx.strokeStyle = state.accent === "orange" ? "#FFBD7A" : "#50E9FF";
+  const palette = getComputedStyle(document.documentElement);
+  ctx.strokeStyle = palette.getPropertyValue("--cyan").trim();
   ctx.lineWidth = Math.max(2, 9 * s);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.shadowColor = state.accent === "orange" ? "#FF9F43" : "#0A84FF";
+  ctx.shadowColor = palette.getPropertyValue("--accent").trim();
   ctx.shadowBlur = 8 * s * 2;
   ctx.stroke();
 }
@@ -823,6 +917,7 @@ function setupVideoDock() {
   const minimizeBtn = document.getElementById("minimize-video-btn");
   const hideBtn = document.getElementById("hide-video-dock-btn");
   const videoToggleBtn = document.getElementById("video-toggle-btn");
+  document.getElementById('yt-player-container').append(audio);
 
   minimizeBtn.onclick = () => {
     dock.classList.toggle("minimized");
@@ -835,9 +930,11 @@ function setupVideoDock() {
   };
 
   videoToggleBtn.onclick = () => {
+    if (state.isOfflinePlayback && !audio.videoWidth) { showToast('Esta canción descargada solo tiene audio.'); return; }
     state.videoDockOpen = !state.videoDockOpen;
     dock.classList.toggle("dock-hidden", !state.videoDockOpen);
     videoToggleBtn.classList.toggle("active", state.videoDockOpen);
+    if (state.isOfflinePlayback) audio.style.display = state.videoDockOpen ? 'block' : 'none';
     showToast(state.videoDockOpen ? "Video visible" : "Video minimizado");
   };
 }
@@ -845,8 +942,10 @@ function setupVideoDock() {
 function setupAudioListeners() {
   audio.volume = state.volume;
 
-  audio.addEventListener("play", () => {
+  audio.addEventListener("play", event => {
+    if (event.currentTarget !== audio) return;
     if (state.isOfflinePlayback) {
+      recordPlayback();
       state.isPlaying = true;
       updatePlayPauseButton();
       setBrandMarkAnimated(true);
@@ -854,7 +953,10 @@ function setupAudioListeners() {
     }
   });
 
-  audio.addEventListener("pause", () => {
+  audio.addEventListener("pause", event => {
+    if (event.currentTarget !== audio) return;
+    // Audio may be paused by a headset while animation frames are suspended in a background tab.
+    if (typeof cancelWebFade === 'function') cancelWebFade();
     if (state.isOfflinePlayback) {
       state.isPlaying = false;
       updatePlayPauseButton();
@@ -863,10 +965,18 @@ function setupAudioListeners() {
     }
   });
 
-  audio.addEventListener("ended", () => {
+  audio.addEventListener("ended", event => {
+    if (event.currentTarget !== audio) return;
     if (state.isOfflinePlayback) {
       handleTrackEnded();
     }
+  });
+  audio.addEventListener('error', event => {
+    if (event.currentTarget !== audio) return;
+    if (!state.isOfflinePlayback) return;
+    state.isPlaying = false;
+    updatePlayPauseButton();
+    showToast('No se pudo abrir el audio descargado. Elimínalo y vuelve a descargarlo.');
   });
 }
 
@@ -885,6 +995,11 @@ function startSyncLoop() {
       if (d && isFinite(d) && d > 0) duration = d;
     }
 
+    if (state.currentTrack) {
+      const sample=listeningClock.sample(playbackGeneration,current*1000,state.isPlaying,performance.now());
+      if (sample.millis) recordWebStats(state.currentTrack,sample.millis);
+      if (sample.qualified) recordPlayback();
+    }
     updateProgress(current, duration);
     updateActiveLyric(current * 1000);
   }, 250);
@@ -893,8 +1008,8 @@ function startSyncLoop() {
 function setupMediaSession() {
   if (!("mediaSession" in navigator)) return;
 
-  navigator.mediaSession.setActionHandler("play", () => togglePlayPause());
-  navigator.mediaSession.setActionHandler("pause", () => togglePlayPause());
+  navigator.mediaSession.setActionHandler("play", () => { if (!state.isPlaying) togglePlayPause(); });
+  navigator.mediaSession.setActionHandler("pause", () => { if (state.isPlaying) togglePlayPause(); });
   navigator.mediaSession.setActionHandler("previoustrack", () => playPrevious());
   navigator.mediaSession.setActionHandler("nexttrack", () => playNext());
   navigator.mediaSession.setActionHandler("seekto", (details) => {
@@ -921,7 +1036,15 @@ function updateMediaSessionMetadata(track) {
 // Reproducción Híbrida: Online (YouTube IFrame) + Offline (IndexedDB)
 // ==========================================================================
 async function playTrack(track, fromQueue = false) {
-  if (!track) return;
+  if (!track?.id) return;
+  const generation = ++playbackGeneration;
+  listeningClock.reset();
+  pendingVideoId = null;
+  audio.pause();
+  ytPlayer?.stopVideo?.();
+  state.isPlaying = false;
+  updatePlayPauseButton();
+  if (currentBlobUrl) { URL.revokeObjectURL(currentBlobUrl); currentBlobUrl = null; }
 
   state.currentTrack = track;
   if (!fromQueue) {
@@ -936,22 +1059,27 @@ async function playTrack(track, fromQueue = false) {
 
   updatePlayerBarUI(track);
   updateMediaSessionMetadata(track);
-  storage.recordHistory(track);
 
   // 1. Verificar si está en descargas locales (Modo Offline)
   const offlineTrack = await storage.getOfflineTrack(track.id);
+  if (generation !== playbackGeneration) return;
 
-  if (offlineTrack && offlineTrack.audioBlob) {
+  if (offlineTrack?.audioBlob || state.crossfadeSeconds > 0 && !state.videoDockOpen && navigator.onLine) {
     state.isOfflinePlayback = true;
-    showOfflineIndicator(true);
+    showOfflineIndicator(!!offlineTrack?.audioBlob);
+    document.querySelector('#yt-player-container iframe')?.style.setProperty('display', 'none');
+    document.getElementById('video-dock').classList.add('dock-hidden');
+    state.videoDockOpen = false;
+    audio.style.display = 'none';
 
     if (ytReady && ytPlayer && ytPlayer.stopVideo) ytPlayer.stopVideo();
 
-    const blobUrl = URL.createObjectURL(offlineTrack.audioBlob);
-    audio.src = blobUrl;
-    audio.play().catch(() => {});
+    currentBlobUrl = offlineTrack?.audioBlob ? URL.createObjectURL(offlineTrack.audioBlob) : null;
+    audio.src = currentBlobUrl || apiUrl(`api/stream/${track.id}`);
+    audio.volume = state.isMuted ? 0 : state.volume;
+    audio.play().catch(() => showToast('Pulsa Reproducir para iniciar el audio.'));
 
-    if (offlineTrack.lyrics) {
+    if (offlineTrack?.lyrics) {
       state.lyrics = offlineTrack.lyrics.lines || [];
       renderLyrics(offlineTrack.lyrics);
     } else {
@@ -965,6 +1093,8 @@ async function playTrack(track, fromQueue = false) {
     }
 
     state.isOfflinePlayback = false;
+    audio.style.display = 'none';
+    document.querySelector('#yt-player-container iframe')?.style.setProperty('display', 'block');
     showOfflineIndicator(false);
     audio.pause();
 
@@ -995,7 +1125,8 @@ async function playTrack(track, fromQueue = false) {
     loadLyrics(track);
   }
 
-  checkAutoplayQueue(track.id);
+  renderQueue();
+  checkAutoplayQueue(track.id, generation);
   highlightPlayingTracks();
 }
 
@@ -1039,7 +1170,8 @@ function seekTo(seconds) {
 function playNext() {
   if (state.queue.length === 0) return;
   if (state.isShuffle) {
-    const nextIdx = Math.floor(Math.random() * state.queue.length);
+    const candidates = state.queue.map((_, i) => i).filter(i => i !== state.queueIndex);
+    const nextIdx = candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : 0;
     state.queueIndex = nextIdx;
     playTrack(state.queue[nextIdx], true);
     return;
@@ -1050,6 +1182,10 @@ function playNext() {
   } else if (state.repeatMode === "all") {
     state.queueIndex = 0;
     playTrack(state.queue[0], true);
+  } else {
+    state.isPlaying = false;
+    updatePlayPauseButton();
+    setBrandMarkAnimated(false);
   }
 }
 
@@ -1069,22 +1205,21 @@ function playPrevious() {
 
 function handleTrackEnded() {
   if (state.repeatMode === "one") {
-    seekTo(0);
-    if (state.isOfflinePlayback) audio.play();
-    else ytPlayer?.playVideo?.();
+    playTrack(state.currentTrack,true);
   } else {
     playNext();
   }
 }
 
-async function checkAutoplayQueue(videoId) {
+async function checkAutoplayQueue(videoId, generation = playbackGeneration) {
   if (state.queueIndex >= state.queue.length - 3 && navigator.onLine) {
     try {
       const resp = await fetch(apiUrl(`api/related/${videoId}`));
       const relatedTracks = await resp.json();
+      if (generation !== playbackGeneration || state.currentTrack?.id !== videoId) return;
       if (Array.isArray(relatedTracks)) {
         const currentIds = new Set(state.queue.map((t) => t.id));
-        const newTracks = relatedTracks.filter((t) => !currentIds.has(t.id));
+        const newTracks = relatedTracks.filter((t) => !currentIds.has(t.id) && t.kind !== 'video' && (t.duration || 0) <= 600);
         state.queue.push(...newTracks);
         renderQueue();
       }
@@ -1098,21 +1233,41 @@ async function checkAutoplayQueue(videoId) {
 // Descarga Offline en IndexedDB
 // ==========================================================================
 async function downloadTrackForOffline(track, btnElement) {
+  if (!track?.id || track.id.startsWith('local:')) return;
+  if (downloadJobs.has(track.id)) { showToast('Esta canción ya se está descargando.'); return; }
   if (!navigator.onLine) {
     showToast("Necesitas conexión para descargar");
     return;
   }
 
   showToast(`Descargando "${track.title}"...`);
+  const job = { track, format:state.downloadFormat, quality:state.downloadQuality, progress: 0, controller: new AbortController() };
+  downloadJobs.set(track.id, job);
+  renderDownloadJobs();
   if (btnElement) {
     btnElement.style.opacity = "0.5";
     btnElement.style.pointerEvents = "none";
   }
 
   try {
-    const streamResp = await fetch(apiUrl(`api/stream/${track.id}`));
-    if (!streamResp.ok) throw new Error("Fallo al descargar stream de audio");
-    const audioBlob = await streamResp.blob();
+    const streamResp = await fetch(apiUrl(`api/download/${track.id}?format=${state.downloadFormat}&quality=${state.downloadQuality}`), { signal: job.controller.signal });
+    if (!streamResp.ok) {
+      const error = await streamResp.json().catch(() => ({}));
+      throw new Error(error.detail || 'No se pudo descargar. Revisa tu conexión e inténtalo de nuevo.');
+    }
+    if (!(streamResp.headers.get('content-type') || '').match(/^(audio|video)\//)) throw new Error('El servidor no devolvió un archivo de audio válido.');
+    const reader = streamResp.body.getReader();
+    const total = Number(streamResp.headers.get('content-length'));
+    const chunks = []; let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value); received += value.length;
+      job.progress = total ? Math.min(99, Math.round(received / total * 100)) : null;
+      renderDownloadJobs();
+    }
+    const audioBlob = new Blob(chunks, { type: streamResp.headers.get('content-type') });
+    if (!audioBlob.size) throw new Error('El audio está vacío. Reintenta la descarga.');
 
     let lyricsData = null;
     try {
@@ -1121,6 +1276,7 @@ async function downloadTrackForOffline(track, btnElement) {
     } catch (err) {}
 
     await storage.saveOfflineTrack(track, audioBlob, lyricsData);
+    recordDownload(job,'done');
     showToast(`Guardada offline: ${track.title}`);
 
     if (btnElement) {
@@ -1132,20 +1288,24 @@ async function downloadTrackForOffline(track, btnElement) {
     if (state.activeView === "downloads") {
       loadDownloadsView();
     }
+    return true;
   } catch (err) {
     console.error("Error al descargar:", err);
-    showToast("Para descargar se requiere configurar cookies de YouTube en Configuración");
+    recordDownload(job,err.name === 'AbortError' ? 'cancelled' : 'failed',err.message);
+    showToast(err.name === 'AbortError' ? 'Descarga cancelada' : err.message);
     if (btnElement) {
       btnElement.style.opacity = "1";
       btnElement.style.pointerEvents = "auto";
     }
-  }
+    return false;
+  } finally { downloadJobs.delete(track.id); renderDownloadJobs(); }
 }
 
 // ==========================================================================
 // Letras Sincronizadas
 // ==========================================================================
 async function loadLyrics(track) {
+  state.lyrics = [];
   const container = document.getElementById("lyrics-body");
   container.innerHTML = `<div class="lyrics-empty">Buscando letra...</div>`;
 
@@ -1153,8 +1313,10 @@ async function loadLyrics(track) {
     const url = apiUrl(`api/lyrics/${track.id}?title=${encodeURIComponent(track.title)}&artist=${encodeURIComponent(track.artist)}&duration=${track.duration || 0}`);
     const resp = await fetch(url);
     const data = await resp.json();
+    if (state.currentTrack?.id !== track.id) return;
     renderLyrics(data);
   } catch (err) {
+    if (state.currentTrack?.id !== track.id) return;
     container.innerHTML = `<div class="lyrics-empty">No se encontró letra para esta canción</div>`;
   }
 }
@@ -1198,11 +1360,16 @@ function updateActiveLyric(currentMs) {
   }
 
   if (activeIndex !== -1) {
-    document.querySelectorAll(".lyric-line.active").forEach((el) => el.classList.remove("active"));
     const activeEl = document.getElementById(`lyric-${activeIndex}`);
     if (activeEl) {
+      if (activeEl.dataset.highlighted === 'true') return;
+      document.querySelectorAll('.lyric-line.active').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.lyric-line').forEach(el => delete el.dataset.highlighted);
+      activeEl.dataset.highlighted = 'true';
       activeEl.classList.add("active");
-      activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      const body = document.getElementById('lyrics-body');
+      const offset = activeEl.getBoundingClientRect().top - body.getBoundingClientRect().top;
+      body.scrollTo({ top: Math.max(0, body.scrollTop + offset - body.clientHeight / 2), behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'instant' : 'smooth' });
     }
   }
 }
@@ -1212,7 +1379,9 @@ function updateActiveLyric(currentMs) {
 // ==========================================================================
 
 // --- Vista: Inicio (Desktop Calque) ---
+let homeRecommendationRetries = 0;
 async function loadHomeView() {
+  homeRecommendationRetries = 0;
   state.activeView = "home";
   updateActiveNavButton("home");
 
@@ -1223,7 +1392,7 @@ async function loadHomeView() {
     <!-- Gran Tarjeta de Búsqueda Desktop -->
     <div class="home-search-card" id="home-search-card">
       <img src="icons/search.svg" class="home-search-icon" alt="">
-      <input type="text" id="home-search-input" class="home-search-input" placeholder="Canción, artista o enlace" autocomplete="off" spellcheck="false" value="${state.searchQuery || ''}">
+      <input type="text" id="home-search-input" class="home-search-input" placeholder="Canción, artista o enlace" autocomplete="off" spellcheck="false" value="${escapeHTML(state.searchQuery || '')}">
       <button class="search-clear-btn" id="search-clear-btn" style="${state.searchQuery ? 'display:flex;' : 'display:none;'}" title="Limpiar">
         <img src="icons/close.svg" alt="">
       </button>
@@ -1287,6 +1456,18 @@ async function loadHomeView() {
 }
 
 async function loadHomeData() {
+  const homeContent = document.getElementById('home-dynamic-content');
+  const playlists = await storage.getAllPlaylists();
+  if (homeContent?.isConnected && !state.searchQuery) {
+    homeContent.querySelector('.pinned-playlists')?.remove();
+    const pinned = document.createElement('div'); pinned.className = 'pinned-playlists';
+    playlists.filter(p => p.pinned).forEach(pl => {
+      const button = actionButton(pl.name, '', () => loadPlaylistView(pl), 'pill-btn');
+      button.innerHTML = `<img src="${escapeHTML(pl.tracks?.[0]?.thumbnail || 'icons/playlist.svg')}" alt=""><span>${escapeHTML(pl.name)}</span>`;
+      pinned.append(button);
+    });
+    if (pinned.children.length) homeContent.prepend(pinned);
+  }
   const recentTracks = await storage.getRecentHistory(10);
   const recentSection = document.getElementById("section-recent");
   const recentRow = document.getElementById("recent-row");
@@ -1301,13 +1482,47 @@ async function loadHomeData() {
 
   try {
     const resp = await fetch(apiUrl("api/recommendations"));
+    if (!resp.ok) throw new Error('Recommendations unavailable');
     const data = await resp.json();
+    if (!homeContent?.isConnected || state.searchQuery) return;
+    const seeds = recentTracks.filter(t => /^[A-Za-z0-9_-]{11}$/.test(t.id || '')).slice(0, 2);
+    if (seeds.length && navigator.onLine) {
+      const batches = await Promise.all(seeds.map(t => fetch(apiUrl(`api/related/${t.id}?count=15`)).then(r => r.ok ? r.json() : []).catch(() => [])));
+      const seen = new Set(seeds.map(t => t.id));
+      const personal = batches.flat().filter(t => {
+        if (!t?.id || seen.has(t.id) || t.kind === 'video' || (t.duration || 0) > 600) return false;
+        seen.add(t.id); return true;
+      }).slice(0, 20);
+      if (personal.length) {
+        data.songs = personal;
+        const subtitle = document.querySelector('#section-for-you .home-section-subtitle');
+        if (subtitle) subtitle.textContent = 'Según lo que escuchas';
+      }
+    }
+    if (!homeContent?.isConnected || state.searchQuery) return;
+    // Las recomendaciones no repiten canciones que ya están en alguna playlist de la cuenta.
+    const owned = new Set();
+    try { for (const playlist of await storage.getAllPlaylists()) for (const item of playlist.tracks || []) if (item?.id) owned.add(item.id); } catch {}
+    if (Array.isArray(data.songs)) data.songs = data.songs.filter((song) => !owned.has(song?.id));
+    if (!homeContent?.isConnected || state.searchQuery) return;
     state.cachedRecommendations = data;
+    // Un resultado casi vacío suele ser una respuesta incompleta (p. ej. justo tras iniciar sesión): se reintenta solo.
+    if ((data.songs || []).length < 6 && homeRecommendationRetries < 2 && navigator.onLine) {
+      homeRecommendationRetries++;
+      setTimeout(() => { if (homeContent?.isConnected && !state.searchQuery) loadHomeData(); }, 3500);
+    }
 
     renderHomeArtists(data.artists || []);
     renderHomeForYou(data.songs || data || []);
+    return true;
   } catch (err) {
     console.error("Error al cargar recomendaciones:", err);
+    const grid = document.getElementById('for-you-grid');
+    if (grid) {
+      grid.replaceChildren(document.createTextNode('No se pudieron cargar las recomendaciones. '), actionButton('Reintentar', '', loadHomeData, 'pill-btn'));
+      document.getElementById('artists-row')?.replaceChildren();
+    }
+    return false;
   }
 }
 
@@ -1327,11 +1542,11 @@ function renderHomeArtists(artists) {
     bubble.innerHTML = `
       <div class="artist-bubble-photo-wrap">
         ${art.photo
-          ? `<img src="${art.photo}" class="artist-bubble-img" alt="${art.name}" loading="lazy" />`
-          : `<div class="artist-bubble-fallback">${art.name.charAt(0).toUpperCase()}</div>`
+          ? `<img src="${escapeHTML(art.photo)}" class="artist-bubble-img" alt="${escapeHTML(art.name)}" loading="lazy" />`
+          : `<div class="artist-bubble-fallback">${escapeHTML((art.name || "?").charAt(0).toUpperCase())}</div>`
         }
       </div>
-      <div class="artist-bubble-name">${art.name}</div>
+      <div class="artist-bubble-name">${escapeHTML(art.name)}</div>
     `;
     bubble.addEventListener("click", () => {
       loadArtistView(art.browse_id, art.name, art.photo);
@@ -1365,13 +1580,13 @@ function createForYouCard(track) {
 
   card.innerHTML = `
     <div class="for-you-cover-wrap">
-      <img src="${track.thumbnail}" class="for-you-cover" loading="lazy" alt="${track.title}" />
+      <img src="${escapeHTML(track.thumbnail)}" class="for-you-cover" loading="lazy" alt="${escapeHTML(track.title)}" />
       <div class="for-you-play-overlay">
         <img src="icons/play.svg" class="for-you-play-icon" alt="Play" />
       </div>
     </div>
-    <div class="for-you-title">${track.title}</div>
-    <div class="for-you-artist">${track.artist || track.subtitle || ''}</div>
+    <div class="for-you-title">${escapeHTML(track.title)}</div>
+    <div class="for-you-artist">${escapeHTML(track.artist || track.subtitle || '')}</div>
     <div class="for-you-actions">
       <button class="icon-btn fav-btn" title="Favorito">
         <img src="icons/heart.svg" alt="Favorito" />
@@ -1415,9 +1630,9 @@ function createRecentMiniCard(track) {
   el.style.minWidth = "140px";
   el.style.height = "180px";
   el.innerHTML = `
-    <img src="${track.thumbnail}" class="album-cover" style="width:124px;height:124px;" loading="lazy" />
-    <div class="album-title">${track.title}</div>
-    <div class="album-subtitle">${track.artist}</div>
+    <img src="${escapeHTML(track.thumbnail)}" class="album-cover" style="width:124px;height:124px;" loading="lazy" />
+    <div class="album-title">${escapeHTML(track.title)}</div>
+    <div class="album-subtitle">${escapeHTML(track.artist)}</div>
   `;
   el.addEventListener("click", () => playTrack(track));
   return el;
@@ -1484,14 +1699,12 @@ function setupHomeSearchListeners() {
 
   const refreshBtn = document.getElementById("refresh-recommendations-btn");
   if (refreshBtn) {
-    refreshBtn.addEventListener("click", () => {
-      showToast("Actualizando recomendaciones...");
-      loadHomeData();
-    });
+    refreshBtn.addEventListener("click", () => runRefresh(refreshBtn, loadHomeData));
   }
 }
 
 async function performSearch(query, filter = "all") {
+  const generation = ++searchGeneration;
   state.searchQuery = query;
   state.searchFilter = filter;
 
@@ -1506,12 +1719,14 @@ async function performSearch(query, filter = "all") {
 
   try {
     const resp = await fetch(apiUrl(`api/search?q=${encodeURIComponent(query)}&type=${filter}`));
+    if (!resp.ok) throw new Error('Search unavailable');
     const results = await resp.json();
+    if (generation !== searchGeneration || !contentArea.isConnected) return;
 
     contentArea.innerHTML = "";
 
     if (!Array.isArray(results) || results.length === 0) {
-      contentArea.innerHTML = `<div style="padding:40px;color:var(--text-muted);text-align:center;">No se encontraron resultados para "${query}"</div>`;
+      contentArea.innerHTML = `<div style="padding:40px;color:var(--text-muted);text-align:center;">No se encontraron resultados para "${escapeHTML(query)}"</div>`;
       return;
     }
 
@@ -1525,11 +1740,11 @@ async function performSearch(query, filter = "all") {
         bubble.innerHTML = `
           <div class="artist-bubble-photo-wrap" style="width:110px;height:110px;border-radius:55px;">
             ${art.photo
-              ? `<img src="${art.photo}" class="artist-bubble-img" alt="${art.name}" loading="lazy" />`
-              : `<div class="artist-bubble-fallback">${art.name.charAt(0).toUpperCase()}</div>`
+              ? `<img src="${escapeHTML(art.photo)}" class="artist-bubble-img" alt="${escapeHTML(art.name)}" loading="lazy" />`
+              : `<div class="artist-bubble-fallback">${escapeHTML((art.name || "?").charAt(0).toUpperCase())}</div>`
             }
           </div>
-          <div class="artist-bubble-name" style="font-size:14px;">${art.name}</div>
+          <div class="artist-bubble-name" style="font-size:14px;">${escapeHTML(art.name)}</div>
         `;
         bubble.addEventListener("click", () => loadArtistView(art.browse_id, art.name, art.photo));
         grid.appendChild(bubble);
@@ -1544,6 +1759,7 @@ async function performSearch(query, filter = "all") {
       contentArea.appendChild(list);
     }
   } catch (err) {
+    if (generation !== searchGeneration || !contentArea.isConnected) return;
     console.error("Error en búsqueda:", err);
     contentArea.innerHTML = `<div style="padding:40px;color:var(--text-muted);text-align:center;">Error al buscar canciones. Inténtalo nuevamente.</div>`;
   }
@@ -1562,11 +1778,11 @@ function createTrackRow(track, isOfflineView = false) {
 
   row.innerHTML = `
     <div class="row-cover-wrap">
-      <img src="${track.thumbnail}" class="row-cover" loading="lazy" alt="${track.title}" />
+      <img src="${escapeHTML(track.thumbnail)}" class="row-cover" loading="lazy" alt="${escapeHTML(track.title)}" />
     </div>
     <div class="row-details">
-      <div class="row-title">${track.title}</div>
-      <div class="row-subtitle">${track.artist || track.subtitle || ''}</div>
+      <div class="row-title">${escapeHTML(track.title)}</div>
+      <div class="row-subtitle">${escapeHTML([track.artist || track.subtitle || '', track.album || '', isOfflineView ? (track.format || 'MP3').toString().toUpperCase() : ''].filter(Boolean).join(' · '))}</div>
     </div>
     <div class="row-duration">${durationStr}</div>
     <div class="row-actions">
@@ -1623,6 +1839,7 @@ function createTrackRow(track, isOfflineView = false) {
 
 // --- Vista: Mi Música (Library Desktop) ---
 async function loadLibraryView(filter = "songs") {
+  activePlaylist = null;
   state.activeView = "library";
   updateActiveNavButton("library");
 
@@ -1676,6 +1893,14 @@ async function loadLibraryView(filter = "songs") {
   let allLoadedItems = [];
 
   const renderItems = (items) => {
+    const sort = document.getElementById('library-sort')?.value || 'default';
+    items = [...items];
+    const order = (a, b) => String(a).localeCompare(String(b), document.documentElement.lang, { numeric: true, sensitivity: 'base' });
+    if (sort === 'title') items.sort((a,b) => order(a.title || a.name, b.title || b.name));
+    if (sort === 'artist') items.sort((a,b) => order(a.artist || '', b.artist || ''));
+    if (sort === 'duration') items.sort((a,b) => (a.duration || 0) - (b.duration || 0));
+    if (sort === 'recent') items.sort((a,b) => (b.addedAt || b.savedAt || b.createdAt || 0) - (a.addedAt || a.savedAt || a.createdAt || 0));
+    if (sort === 'plays') items.sort((a,b) => (b.plays || 0) - (a.plays || 0));
     listContainer.innerHTML = "";
     if (items.length === 0) {
       listContainer.innerHTML = `<div style="padding:40px;color:var(--text-muted);text-align:center;">No se encontraron elementos con este filtro.</div>`;
@@ -1688,10 +1913,10 @@ async function loadLibraryView(filter = "songs") {
         const card = document.createElement("div");
         card.className = "for-you-card";
         card.innerHTML = `
-          <div class="for-you-cover-wrap" style="display:flex;align-items:center;justify-content:center;background:#242a35;">
+          <div class="for-you-cover-wrap" style="display:flex;align-items:center;justify-content:center;background:var(--cover-bg);">
             <img src="icons/playlist.svg" style="width:40px;height:40px;opacity:0.7;" alt="">
           </div>
-          <div class="for-you-title">${pl.name}</div>
+          <div class="for-you-title">${escapeHTML(pl.name)}</div>
           <div class="for-you-artist">${(pl.tracks || []).length} canciones</div>
         `;
         card.addEventListener("click", () => loadPlaylistView(pl));
@@ -1710,14 +1935,14 @@ async function loadLibraryView(filter = "songs") {
   } else if (filter === "playlists") {
     allLoadedItems = await storage.getAllPlaylists();
   } else {
-    const [favs, hist, dls] = await Promise.all([
+    const [favs, hist, dls, playlists] = await Promise.all([
       storage.getAllFavorites(),
       storage.getRecentHistory(50),
-      storage.getAllOfflineTracks()
+      storage.getAllOfflineTracks(), storage.getAllPlaylists()
     ]);
     const seen = new Set();
     const songs = [];
-    [...dls, ...favs, ...hist].forEach((t) => {
+    [...dls, ...favs, ...playlists.flatMap(pl => pl.tracks || []), ...hist].forEach((t) => {
       if (t && t.id && !seen.has(t.id)) {
         seen.add(t.id);
         songs.push(t);
@@ -1727,18 +1952,34 @@ async function loadLibraryView(filter = "songs") {
   }
 
   renderItems(allLoadedItems);
+  const toolbar = document.createElement('div'); toolbar.className = 'library-toolbar';
+  toolbar.innerHTML = `<label for="library-sort">Ordenar</label><select id="library-sort"><option value="default">Orden original</option><option value="title">Título A–Z</option><option value="artist">Artista A–Z</option><option value="recent">Más recientes</option><option value="plays">Más escuchadas</option><option value="duration">Más cortas</option></select>`;
+  listContainer.before(toolbar);
+  toolbar.querySelector('select').onchange = () => searchInput.dispatchEvent(new Event('input'));
+  toolbar.append(actionButton('Importar canciones', 'plus', importLocalFiles, 'pill-btn'));
+  toolbar.append(actionButton('Importar carpeta', 'folder', () => importLocalFiles(true), 'pill-btn'));
+  toolbar.append(actionButton('Importar playlist', 'link', importPlaylistDialog, 'pill-btn'));
+  const folders = [...new Set(allLoadedItems.map(t => t.folder).filter(Boolean))];
+  if (folders.length) {
+    const select = document.createElement('select'); select.setAttribute('aria-label', 'Carpeta'); select.id = 'library-folder';
+    select.add(new Option('Todas las carpetas', ''));
+    folders.forEach(name => select.add(new Option(name, name)));
+    select.onchange = () => searchInput.dispatchEvent(new Event('input')); toolbar.append(select);
+  }
 
   // Filtrado en vivo de Mi Música
   searchInput.addEventListener("input", () => {
     const q = searchInput.value.trim().toLowerCase();
     searchClear.style.display = q ? "flex" : "none";
     if (!q) {
-      renderItems(allLoadedItems);
+      const folder = document.getElementById('library-folder')?.value;
+      renderItems(allLoadedItems.filter(t => !folder || t.folder === folder));
     } else {
       const filtered = allLoadedItems.filter((item) => {
         const title = (item.title || item.name || "").toLowerCase();
         const artist = (item.artist || item.subtitle || "").toLowerCase();
-        return title.includes(q) || artist.includes(q);
+        const folder = document.getElementById('library-folder')?.value;
+        return (!folder || item.folder === folder) && (title.includes(q) || artist.includes(q));
       });
       renderItems(filtered);
     }
@@ -1770,6 +2011,24 @@ async function loadDownloadsView() {
       ${Array(4).fill('<div class="row-item skeleton"></div>').join("")}
     </div>
   `;
+  renderDownloadJobs();
+  const options = document.createElement('div'); options.className = 'library-toolbar';
+  options.innerHTML = `<label for="download-format">Formato</label><select id="download-format"><option value="mp3">MP3</option><option value="mp4">MP4</option></select><label for="download-quality">Calidad</label><select id="download-quality"></select>`;
+  document.getElementById('downloads-content-list').before(options);
+  const formatSelect = options.querySelector('#download-format'), qualitySelect = options.querySelector('#download-quality');
+  const updateQuality = () => {
+    const values = formatSelect.value === 'mp3' ? [128,192,256,320] : [360,480,720,1080];
+    if (!values.includes(state.downloadQuality)) state.downloadQuality = formatSelect.value === 'mp3' ? 192 : 720;
+    qualitySelect.replaceChildren(...values.map(n => new Option(n + (formatSelect.value === 'mp3' ? ' kbps' : 'p'), n)));
+    qualitySelect.value = state.downloadQuality;
+  };
+  formatSelect.value = state.downloadFormat; updateQuality();
+  const saveDownloadPreference = () => {
+    localStorage.setItem('musicbox_download_format',state.downloadFormat);localStorage.setItem('musicbox_download_quality',state.downloadQuality);
+    dirtyPreferences.autoFormat=state.downloadFormat.toUpperCase();dirtyPreferences[state.downloadFormat==='mp3'?'quality_mp3':'quality_mp4']=state.downloadQuality+(state.downloadFormat==='mp3'?' kbps':'p');scheduleCloudSave();
+  };
+  formatSelect.onchange = () => { state.downloadFormat = formatSelect.value; updateQuality(); saveDownloadPreference(); };
+  qualitySelect.onchange = () => { state.downloadQuality = Number(qualitySelect.value); saveDownloadPreference(); };
 
   const tracks = await storage.getAllOfflineTracks();
   const listContainer = document.getElementById("downloads-content-list");
@@ -1821,9 +2080,9 @@ async function loadHistoryView() {
   `;
 
   document.getElementById("clear-hist-btn").addEventListener("click", async () => {
-    if (confirm("¿Seguro que deseas borrar el historial de reproducción?")) {
+    if (await confirmAction('Limpiar historial', '¿Seguro que deseas borrar el historial de reproducción?')) {
       await storage.clearHistory();
-      loadHistoryView();
+      loadHistoryView('plays');
     }
   });
 
@@ -1848,9 +2107,9 @@ async function loadArtistView(browseId, name, photo = "") {
     </button>
 
     <div class="artist-page-header">
-      <img src="${photo || 'logo_cube.png'}" class="artist-header-avatar" id="artist-avatar" alt="${name}" />
+      <img src="${escapeHTML(photo || 'logo_complete.png')}" class="artist-header-avatar" id="artist-avatar" alt="${escapeHTML(name)}" />
       <div class="artist-header-info">
-        <h1 class="artist-header-name" id="artist-name">${name}</h1>
+        <h1 class="artist-header-name" id="artist-name">${escapeHTML(name)}</h1>
         <div class="artist-header-subs" id="artist-subs">Cargando información del artista...</div>
         <div style="margin-top:10px;">
           <button class="pill-btn-accent" id="artist-play-all-btn" style="display:none;">
@@ -1898,6 +2157,21 @@ async function loadArtistView(browseId, name, photo = "") {
     document.getElementById("artist-subs").textContent = data.subscribers ? `${data.subscribers} suscriptores` : "";
 
     const playAllBtn = document.getElementById("artist-play-all-btn");
+    if (data.songs_playlist) {
+      const all = actionButton('Todas las canciones', '', async () => {
+        all.disabled = true;
+        try {
+          const response = await fetch(apiUrl(`api/playlist/${encodeURIComponent(data.songs_playlist)}`));
+          if (!response.ok) throw new Error();
+          const tracks = await response.json();
+          const list = document.getElementById('artist-top-songs');
+          if (!list) return;
+          list.replaceChildren(...tracks.map(t => createTrackRow(t)));
+        } catch { showToast('No se pudieron cargar las canciones. Reintenta.'); }
+        finally { all.disabled = false; }
+      }, 'pill-btn');
+      playAllBtn.after(all);
+    }
     if (data.top_songs && data.top_songs.length > 0) {
       playAllBtn.style.display = "inline-flex";
       playAllBtn.onclick = () => {
@@ -1923,8 +2197,8 @@ async function loadArtistView(browseId, name, photo = "") {
         const card = document.createElement("div");
         card.className = "album-card";
         card.innerHTML = `
-          <img src="${alb.thumbnail}" class="album-cover" loading="lazy" alt="${alb.title}" />
-          <div class="album-title">${alb.title}</div>
+          <img src="${escapeHTML(alb.thumbnail)}" class="album-cover" loading="lazy" alt="${escapeHTML(alb.title)}" />
+          <div class="album-title">${escapeHTML(alb.title)}</div>
           <div class="album-subtitle">${alb.year || ''}</div>
         `;
         card.addEventListener("click", () => loadAlbumView(alb.browse_id));
@@ -1941,8 +2215,8 @@ async function loadArtistView(browseId, name, photo = "") {
         const card = document.createElement("div");
         card.className = "album-card";
         card.innerHTML = `
-          <img src="${sng.thumbnail}" class="album-cover" loading="lazy" alt="${sng.title}" />
-          <div class="album-title">${sng.title}</div>
+          <img src="${escapeHTML(sng.thumbnail)}" class="album-cover" loading="lazy" alt="${escapeHTML(sng.title)}" />
+          <div class="album-title">${escapeHTML(sng.title)}</div>
           <div class="album-subtitle">${sng.year || 'Sencillo'}</div>
         `;
         card.addEventListener("click", () => loadAlbumView(sng.browse_id));
@@ -1963,7 +2237,7 @@ async function loadAlbumView(browseId) {
     </button>
 
     <div class="artist-page-header">
-      <img src="logo_cube.png" class="album-cover" id="album-cover-img" style="width:140px;height:140px;border-radius:16px;" />
+      <img src="logo_complete.png" class="album-cover" id="album-cover-img" style="width:140px;height:140px;border-radius:16px;" />
       <div class="artist-header-info">
         <h1 class="artist-header-name" id="album-title">Cargando álbum...</h1>
         <div class="artist-header-subs" id="album-meta"></div>
@@ -2022,7 +2296,7 @@ function loadPlaylistView(playlist) {
     </button>
     <div class="home-section-header">
       <div class="home-section-title-wrap">
-        <h1 class="page-heading" style="margin-bottom:2px;">${playlist.name}</h1>
+        <h1 class="page-heading" style="margin-bottom:2px;">${escapeHTML(playlist.name)}</h1>
         <span class="home-section-subtitle">${(playlist.tracks || []).length} canciones</span>
       </div>
       <button class="pill-btn-accent" id="playlist-play-btn" ${(!playlist.tracks || playlist.tracks.length === 0) ? 'disabled' : ''}>
@@ -2061,7 +2335,7 @@ function loadPlaylistView(playlist) {
 // UI del Reproductor Inferior
 // ==========================================================================
 function updatePlayerBarUI(track) {
-  document.getElementById("player-thumb").src = track.thumbnail || "logo_cube.png";
+  document.getElementById("player-thumb").src = track.thumbnail || "logo_complete.png";
   document.getElementById("player-title").textContent = track.title;
   document.getElementById("player-artist").textContent = `${track.artist || ''}${track.album ? ' · ' + track.album : ''}`;
   document.getElementById("total-time").textContent = formatDuration(track.duration);
@@ -2086,26 +2360,26 @@ function highlightPlayingTracks() {
 function updatePlayPauseButton() {
   const icon = document.getElementById("play-pause-icon");
   icon.src = state.isPlaying ? "icons/pause.svg" : "icons/play.svg";
+  document.getElementById('play-pause-btn').setAttribute('aria-label', state.isPlaying ? 'Pausar' : 'Reproducir');
 }
 
 function updateProgress(current, duration) {
+  // En plena mezcla los tiempos y la barra siguen a la canción que sale hasta que termina.
+  if (typeof outgoingAudio !== 'undefined' && outgoingAudio && Number.isFinite(outgoingAudio.duration)) {
+    current = outgoingAudio.currentTime; duration = outgoingAudio.duration;
+  }
   document.getElementById("current-time").textContent = formatDuration(current);
+  document.getElementById('progress-wrap').setAttribute('aria-valuemax', duration || 0);
+  document.getElementById('progress-wrap').setAttribute('aria-valuenow', Math.round(current));
   if (duration > 0) {
     document.getElementById("total-time").textContent = formatDuration(duration);
     const percent = Math.min(100, (current / duration) * 100);
     document.getElementById("progress-fill").style.width = `${percent}%`;
-  }
+  } else document.getElementById('progress-fill').style.width = '0%';
 }
 
-function showOfflineIndicator(isOffline) {
-  const badge = document.getElementById("playback-source-badge");
-  if (isOffline) {
-    badge.textContent = "⚡ Offline";
-    badge.style.display = "inline-flex";
-  } else {
-    badge.style.display = "none";
-  }
-}
+/** La insignia "Offline" se retiró del reproductor: la fuente de reproducción no es información que el usuario necesite. */
+function showOfflineIndicator() {}
 
 function renderQueue() {
   const list = document.getElementById("queue-body");
@@ -2123,11 +2397,11 @@ function renderQueue() {
     row.style.padding = "6px 12px";
     row.innerHTML = `
       <div class="row-cover-wrap" style="width:40px;height:40px;min-width:40px;">
-        <img src="${track.thumbnail}" class="row-cover" loading="lazy" />
+        <img src="${escapeHTML(track.thumbnail)}" class="row-cover" loading="lazy" />
       </div>
       <div class="row-details">
-        <div class="row-title" style="font-size:13px;">${track.title}</div>
-        <div class="row-subtitle" style="font-size:11px;">${track.artist || ''}</div>
+        <div class="row-title" style="font-size:13px;">${escapeHTML(track.title)}</div>
+        <div class="row-subtitle" style="font-size:11px;">${escapeHTML(track.artist || '')}</div>
       </div>
     `;
     row.addEventListener("click", () => {
@@ -2151,8 +2425,9 @@ function openTrackContextMenu(e, track) {
   });
 
   menu.style.display = "block";
-  const x = Math.min(window.innerWidth - 260, e.clientX);
-  const y = Math.min(window.innerHeight - 240, e.clientY);
+  const rect = menu.getBoundingClientRect();
+  const x = Math.max(12, Math.min(window.innerWidth - rect.width - 12, e.clientX));
+  const y = Math.max(12, Math.min(window.innerHeight - rect.height - 12, e.clientY));
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
 }
@@ -2280,10 +2555,17 @@ function setupUIListeners() {
   // Cajones de Letras y Cola
   const lyricsBtn = document.getElementById("lyrics-toggle-btn");
   const lyricsDrawer = document.getElementById("lyrics-drawer");
+  if (localStorage.getItem("musicbox_lyrics_open") === "1") {
+    state.lyricsOpen = true;
+    lyricsDrawer.classList.add("open");
+    lyricsBtn.classList.add("active");
+  }
   lyricsBtn.addEventListener("click", () => {
     state.lyricsOpen = !state.lyricsOpen;
+    localStorage.setItem("musicbox_lyrics_open", state.lyricsOpen ? "1" : "0");
     lyricsDrawer.classList.toggle("open", state.lyricsOpen);
     lyricsBtn.classList.toggle("active", state.lyricsOpen);
+    document.body.classList.toggle("lyrics-open", state.lyricsOpen && !!state.lyrics?.length);
     if (state.lyricsOpen) {
       document.getElementById("queue-drawer").classList.remove("open");
       state.queueOpen = false;
@@ -2292,8 +2574,10 @@ function setupUIListeners() {
 
   document.getElementById("close-lyrics-btn").addEventListener("click", () => {
     state.lyricsOpen = false;
+    localStorage.setItem("musicbox_lyrics_open", "0");
     lyricsDrawer.classList.remove("open");
     lyricsBtn.classList.remove("active");
+    document.body.classList.remove("lyrics-open");
   });
 
   const queueBtn = document.getElementById("queue-toggle-btn");
@@ -2304,6 +2588,7 @@ function setupUIListeners() {
     if (state.queueOpen) {
       lyricsDrawer.classList.remove("open");
       state.lyricsOpen = false;
+      document.body.classList.remove("lyrics-open");
       renderQueue();
     }
   });
@@ -2388,6 +2673,44 @@ function setupContextMenuActions() {
 // ==========================================================================
 // Modal: Configuración (Desktop Main.qml:568-710 EXACTO)
 // ==========================================================================
+function setDarkMode(enabled, save = true) {
+  state.theme = enabled ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", state.theme);
+  localStorage.setItem("musicbox_theme", state.theme);
+  if (save) { dirtyPreferences.darkMode = enabled; scheduleCloudSave(); }
+  const icon = document.getElementById("settings-theme-icon");
+  if (icon) icon.src = state.theme === "dark" ? "icons/moon.svg" : "icons/sun.svg";
+  const sw = document.getElementById("settings-dark-switch");
+  if (sw) sw.checked = enabled;
+  stopBrandAnimation();
+  if (brandIsAnimated || brandIsHovered) startBrandAnimation();
+}
+
+function applyPrimaryColor(color, save = true) {
+  state.accent = color === "orange" ? "orange" : "blue";
+  if (state.accent === "orange") {
+    document.documentElement.setAttribute("data-accent", "orange");
+  } else {
+    document.documentElement.removeAttribute("data-accent");
+  }
+  localStorage.setItem("musicbox_accent", state.accent);
+  const blueBtn = document.getElementById("color-blue-btn");
+  const orangeBtn = document.getElementById("color-orange-btn");
+  if (blueBtn && orangeBtn) {
+    if (state.accent === "orange") {
+      orangeBtn.classList.add("active");
+      blueBtn.classList.remove("active");
+    } else {
+      blueBtn.classList.add("active");
+      orangeBtn.classList.remove("active");
+    }
+  }
+  if (save) { dirtyPreferences.accentColor = state.accent; scheduleCloudSave(); }
+  stopBrandAnimation();
+  if (brandIsAnimated || brandIsHovered) startBrandAnimation();
+}
+
+
 function setupSettingsModal() {
   const modal = document.getElementById("settings-modal");
   document.getElementById("settings-btn").addEventListener("click", () => {
@@ -2411,39 +2734,6 @@ function setupSettingsModal() {
   themeSwitch.onchange = () => {
     setDarkMode(themeSwitch.checked);
   };
-
-function setDarkMode(enabled) {
-  state.theme = enabled ? "dark" : "light";
-  document.documentElement.setAttribute("data-theme", state.theme);
-  localStorage.setItem("musicbox_theme", state.theme);
-  const icon = document.getElementById("settings-theme-icon");
-  if (icon) icon.src = state.theme === "dark" ? "icons/moon.svg" : "icons/sun.svg";
-  const sw = document.getElementById("settings-dark-switch");
-  if (sw) sw.checked = enabled;
-}
-
-function applyPrimaryColor(color) {
-  state.accent = color === "orange" ? "orange" : "blue";
-  if (state.accent === "orange") {
-    document.documentElement.setAttribute("data-accent", "orange");
-  } else {
-    document.documentElement.removeAttribute("data-accent");
-  }
-  localStorage.setItem("musicbox_accent", state.accent);
-  const blueBtn = document.getElementById("color-blue-btn");
-  const orangeBtn = document.getElementById("color-orange-btn");
-  if (blueBtn && orangeBtn) {
-    if (state.accent === "orange") {
-      orangeBtn.classList.add("active");
-      blueBtn.classList.remove("active");
-    } else {
-      blueBtn.classList.add("active");
-      orangeBtn.classList.remove("active");
-    }
-  }
-  stopBrandAnimation();
-  startBrandAnimation();
-}
 
   // Color Primario: Azul / Naranjo (Desktop Main.qml:604)
   const blueBtn = document.getElementById("color-blue-btn");
@@ -2469,7 +2759,10 @@ function applyPrimaryColor(color) {
       document.querySelectorAll(".segment-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       state.language = btn.getAttribute("data-lang");
+      dirtyPreferences.language = state.language;
       localStorage.setItem("musicbox_lang", state.language);
+      scheduleCloudSave();
+      applyLanguage();
       showToast(`Idioma cambiado a: ${btn.textContent}`);
     };
   });
@@ -2501,7 +2794,7 @@ function applyPrimaryColor(color) {
 
   // Borrar descargas offline
   document.getElementById("clear-offline-btn").addEventListener("click", async () => {
-    if (confirm("¿Estás seguro de que deseas eliminar todas las descargas sin conexión?")) {
+    if (await confirmAction('Borrar descargas', '¿Eliminar todas las canciones guardadas en este navegador?')) {
       await storage.clearAllOfflineTracks();
       updateOfflineStorageInfo();
       showToast("Descargas eliminadas");
@@ -2532,13 +2825,13 @@ async function openStatsModal() {
   const playsVal = document.getElementById("stats-plays-val");
   const listEl = document.getElementById("stats-ranked-list");
 
-  const hist = await storage.getRecentHistory(200);
+  const hist = webStatsRows();
   let totalMs = 0;
   let totalPlays = 0;
   hist.forEach((t) => {
     const plays = t.plays || 1;
     totalPlays += plays;
-    totalMs += (t.duration || 180) * 1000 * plays;
+    totalMs += t.listenedMs || 0;
   });
 
   const durationStr = (ms) => {
@@ -2571,7 +2864,7 @@ async function openStatsModal() {
 
     sorted.slice(0, 50).forEach((t, idx) => {
       const plays = t.plays || 1;
-      const songMs = (t.duration || 180) * 1000 * plays;
+      const songMs = t.listenedMs || 0;
       const percent = Math.max(2, Math.min(100, Math.round((plays / maxPlays) * 100)));
 
       const row = document.createElement("div");
@@ -2584,7 +2877,7 @@ async function openStatsModal() {
           <img src="${t.thumbnail || 'icons/music.svg'}" class="row-cover" onerror="this.src='icons/music.svg'" />
         </div>
         <div class="row-details" style="flex:1;min-width:0;">
-          <div class="row-title" style="font-weight:600;font-size:14px;">${t.title}</div>
+          <div class="row-title" style="font-weight:600;font-size:14px;">${escapeHTML(t.title)}</div>
           <div class="row-subtitle" style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">
             ${t.artist ? t.artist + ' &middot; ' : ''}${plays} reproducciones &middot; ${durationStr(songMs)}
           </div>
@@ -2605,7 +2898,7 @@ async function openStatsModal() {
 async function updateStatsSummary() {
   const summaryEl = document.getElementById("stats-clicks-summary");
   if (!summaryEl) return;
-  const hist = await storage.getRecentHistory(100);
+  const hist = webStatsRows();
   let totalPlays = 0;
   hist.forEach((t) => (totalPlays += t.plays || 1));
   summaryEl.textContent = `${totalPlays} reproducciones en ${hist.length} canciones`;
@@ -2616,11 +2909,13 @@ async function checkCookiesStatus() {
   try {
     const resp = await fetch(apiUrl("api/cookies/status"));
     const data = await resp.json();
+    const upload = document.querySelector('label[for="cookies-file-input"]');
+    if (upload) upload.style.display = 'none';
     if (data.active) {
-      desc.textContent = "Configuradas y activas en el servidor (descargas habilitadas)";
+      desc.textContent = "Cookies configuradas por el administrador del servidor";
       desc.style.color = "var(--green)";
     } else {
-      desc.textContent = "No configuradas. Sube cookies.txt si YouTube bloquea descargas directas.";
+      desc.textContent = "El acceso de YouTube del servidor lo configura el administrador. La reproducción en línea sigue disponible.";
       desc.style.color = "var(--text-muted)";
     }
   } catch (err) {
@@ -2651,6 +2946,9 @@ function openNewPlaylistModal() {
   document.getElementById("confirm-new-playlist-btn").onclick = async () => {
     const name = input.value.trim();
     if (!name) return;
+    if (name === 'Favoritos' || (await storage.getAllPlaylists()).some(pl => pl.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      showToast('Ya existe una playlist con ese nombre.'); input.focus(); return;
+    }
     const pl = {
       id: "pl_" + Date.now(),
       name,
@@ -2685,14 +2983,16 @@ async function openAddToPlaylistModal(track) {
     const item = document.createElement("div");
     item.className = "context-item";
     item.innerHTML = `
-      <img src="icons/playlist.svg" class="ctx-icon" />
-      <span>${pl.name} (${(pl.tracks || []).length})</span>
+      <img src="${escapeHTML(pl.thumbnail || (pl.tracks || []).find(row => row.thumbnail)?.thumbnail || 'icons/playlist.svg')}" class="playlist-picker-cover" alt="" />
+      <span>${escapeHTML(pl.name)} (${(pl.tracks || []).length})</span>
     `;
+    item.querySelector('img').onerror = event => { event.currentTarget.onerror=null; event.currentTarget.src='icons/playlist.svg'; };
     item.addEventListener("click", async () => {
       pl.tracks = pl.tracks || [];
       if (!pl.tracks.some((t) => t.id === track.id)) {
         pl.tracks.push(track);
         await storage.savePlaylist(pl);
+        if (pl.autoDownload) downloadTrackForOffline(track);
         showToast(`Agregada a "${pl.name}"`);
       } else {
         showToast(`Ya está en "${pl.name}"`);
@@ -2720,7 +3020,9 @@ function showToast(message) {
   }
 
   const toast = document.createElement("div");
+  container.replaceChildren();
   toast.className = "toast";
+  toast.setAttribute('role', 'status');
   toast.textContent = message;
   container.appendChild(toast);
 

@@ -96,6 +96,26 @@ class BridgeVideoTests(unittest.TestCase):
             self.assertFalse(bridge.videoMode)
             self.assertEqual(len(calls), 2)
 
+    def test_downloaded_song_with_youtube_id_can_switch_to_mp4_and_back(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bridge = make_bridge(directory)
+            local_song = {"path": "C:/musica/hitohira.mp3", "title": "Hitohira", "artist": "Motohiro Hata"}
+            bridge._path_ids[local_song["path"]] = ONLINE["id"]
+            bridge._current = dict(local_song)
+            bridge._apply_video_check(ONLINE["url"], {"url": "https://stream.example/video.mp4"})
+            self.assertTrue(bridge.videoAvailable)
+            online_calls, local_calls = [], []
+            bridge._play_online = lambda item, **kwargs: online_calls.append((dict(item), kwargs))
+            bridge._start_local_track = lambda item: local_calls.append(dict(item))
+            bridge.setVideoMode(True)
+            self.assertTrue(bridge.videoMode)
+            self.assertEqual(len(online_calls), 1)
+            self.assertEqual(online_calls[0][0]["id"], ONLINE["id"])
+            bridge.setVideoMode(False)
+            self.assertFalse(bridge.videoMode)
+            self.assertEqual(len(local_calls), 1)
+            self.assertEqual(local_calls[0]["path"], local_song["path"])
+
     def test_stream_cache_is_kept_apart_per_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             bridge = make_bridge(directory)

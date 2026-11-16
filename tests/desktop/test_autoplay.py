@@ -55,6 +55,8 @@ class BridgeTests(unittest.TestCase):
         bridge._shuffle = False
         bridge._autoplay_tried, bridge._autoplay_loading = "", False
         bridge._current = {}
+        bridge._path_ids = {}
+        bridge._sample_listening = lambda: None
         bridge.requested = []
         bridge._related_songs = lambda video_id: bridge.requested.append(video_id) or [track("x"), track("y")]
         bridge._autoplayReady.connect(bridge._apply_autoplay)

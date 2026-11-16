@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Dialog {
+ThemedDialog {
     id: root
     property var rows: []
     function openFor(track) { rows = musicbox.trackInfo(track); open() }

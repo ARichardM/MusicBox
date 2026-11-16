@@ -26,15 +26,16 @@ public class TabSwipeLayout extends RelativeLayout {
         super(context, attrs); slop = ViewConfiguration.get(context).getScaledTouchSlop();
     }
     public void setTabActions(Runnable left, Runnable right) { this.left = left; this.right = right; }
+    private CollectionSwipeLayout collection;
     private boolean ownsGesture(View view, int x, int y) {
         Rect bounds = new Rect();
         if (view.getVisibility() != VISIBLE || !view.getGlobalVisibleRect(bounds) || !bounds.contains(x, y)) return false;
         if (Boolean.TRUE.equals(view.getTag(cl.arichard.descargador.R.id.protectedAction))
                 || view instanceof HorizontalScrollView || view instanceof EditText || view instanceof SeekBar
                 || view instanceof SwipeActionsLayout || view instanceof DragTabBarLayout
-                || (view instanceof CollectionSwipeLayout && ((CollectionSwipeLayout) view).isSwipeEnabled())
                 || (view != this && view instanceof ViewGroup &&
                 (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1)))) return true;
+        if (view instanceof CollectionSwipeLayout && ((CollectionSwipeLayout) view).isSwipeEnabled()) collection = (CollectionSwipeLayout) view;
         if (view instanceof ViewGroup) {
             ViewGroup group = (ViewGroup) view;
             for (int i = group.getChildCount() - 1; i >= 0; i--)
@@ -44,6 +45,7 @@ public class TabSwipeLayout extends RelativeLayout {
     }
     private void begin(MotionEvent event) {
         downX = event.getRawX(); downY = event.getRawY(); horizontal = false; vertical = false;
+        collection = null;
         protectedGesture = ownsGesture(this, (int) downX, (int) downY);
     }
     private boolean claim(MotionEvent event) {
@@ -51,10 +53,14 @@ public class TabSwipeLayout extends RelativeLayout {
         if (protectedGesture || vertical) return false;
         float dx = Math.abs(event.getRawX() - downX), dy = Math.abs(event.getRawY() - downY);
         if (!horizontal && Math.max(dx, dy) > slop * 1.1f) {
-            if (dx > dy * 1.25f) horizontal = true;
+            if (dx > dy * 1.25f) {
+                horizontal = true;
+                // La lista de colecciones se queda el gesto solo si hay algo a ese lado; si no, cambia de pestaña.
+                if (collection != null && collection.canNavigate(event.getRawX() < downX ? 1 : -1)) protectedGesture = true;
+            }
             else vertical = true;
         }
-        return horizontal;
+        return horizontal && !protectedGesture;
     }
     @Override public boolean onInterceptTouchEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) begin(event);

@@ -82,6 +82,7 @@ public final class SettingsActivity extends AppearanceActivity {
         setupLanguage();
         setupTheme();
         setupAccentColor();
+        setupCrossfade();
         findViewById(R.id.btnAddFolder).setOnClickListener(v -> pickFolder.launch(null));
         findViewById(R.id.rowDownloader).setOnClickListener(v -> startActivity(new Intent(this, DownloaderActivity.class)));
         cl.arichard.descargador.util.SafeTap.installRowTap(findViewById(R.id.rowDownloader));
@@ -128,6 +129,52 @@ public final class SettingsActivity extends AppearanceActivity {
         if (state == null) animateIn(findViewById(R.id.cardAccount), 0);
         if (state == null) animateIn(findViewById(R.id.rowDownloader), 40);
         if (state == null) animateIn(findViewById(R.id.cardAppearance), 80);
+    }
+
+    private void setupCrossfade() {
+        SharedPreferences prefs = getSharedPreferences("player", MODE_PRIVATE);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(12), dp(18), dp(12));
+        card.setBackgroundResource(R.drawable.bg_settings_card);
+        SwitchMaterial toggle = new SwitchMaterial(this);
+        toggle.setText("Crossfade");
+        int seconds = Math.max(0, Math.min(12, prefs.getInt("crossfade_seconds", 0)));
+        toggle.setChecked(seconds > 0);
+        android.widget.SeekBar duration = new android.widget.SeekBar(this);
+        duration.setMax(11);
+        duration.setProgressTintList(android.content.res.ColorStateList.valueOf(AccentColors.getColor(this, R.color.accent)));
+        duration.setThumbTintList(android.content.res.ColorStateList.valueOf(AccentColors.getColor(this, R.color.accent)));
+        duration.setProgress(Math.max(0, seconds - 1));
+        duration.setEnabled(seconds > 0);
+        TextView detail = new TextView(this);
+        detail.setText(seconds + " s");
+        detail.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
+        java.util.function.IntConsumer save = value -> {
+            prefs.edit().putInt("crossfade_seconds", value).apply();
+            cl.arichard.descargador.player.PlayerManager.getInstance().setCrossfadeSeconds(value);
+            detail.setText(value + " s");
+        };
+        toggle.setOnCheckedChangeListener((button, checked) -> {
+            duration.setEnabled(checked);
+            save.accept(checked ? duration.getProgress() + 1 : 0);
+        });
+        duration.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(android.widget.SeekBar bar, int progress, boolean fromUser) {
+                if (fromUser && toggle.isChecked()) save.accept(progress + 1);
+            }
+            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+        });
+        SwitchMaterial zone = new SwitchMaterial(this);
+        zone.setText(cl.arichard.descargador.util.Tr.t("Mostrar el crossfade en la barra de progreso"));
+        zone.setChecked(prefs.getBoolean("crossfade_show_zone", true));
+        zone.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean("crossfade_show_zone", checked).apply());
+        card.addView(toggle); card.addView(duration); card.addView(detail); card.addView(zone);
+        LinearLayout parent = (LinearLayout)findViewById(R.id.rowDownloader).getParent();
+        LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
+        layout.topMargin = dp(12);
+        parent.addView(card, parent.indexOfChild(findViewById(R.id.rowDownloader)), layout);
     }
 
     private void setupDownloadQuality() {

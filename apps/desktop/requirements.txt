@@ -1,4 +1,4 @@
-yt-dlp[default]>=2026.8.19
+yt-dlp[default]>=2026.10.21
 Pillow>=13.0,<14
 rapidocr>=3.10,<4
 # Versión de geometría validada con el OCR y el control de aplicaciones de Windows.

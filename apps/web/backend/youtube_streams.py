@@ -114,3 +114,15 @@ def download_to_cache(url: str, folder: Path, extractor_download) -> str:
         except Exception as exc:
             last_error = exc
     raise last_error or RuntimeError("No se pudo descargar el audio")
+
+
+def resolve_or_cache(url: str, extractor, extractor_download, folder: Path, opener=urllib.request.urlopen):
+    """Primero el enlace directo (rápido); solo si ninguna herramienta lo logra, descarga el audio.
+
+    Devuelve ``("url", info)`` o ``("file", ruta)``. Así el oyente nunca se queda sin música aunque yt-dlp no consiga un
+    enlace reproducible, y mientras todo funciona nada de esto se usa.
+    """
+    try:
+        return "url", resolve_stream(url, extractor, opener)
+    except Exception:
+        return "file", download_to_cache(url, folder, extractor_download)

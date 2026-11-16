@@ -15,6 +15,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import cl.arichard.descargador.model.Song;
@@ -48,28 +49,49 @@ public class AnimatedArtworkDeviceTest {
         NowPlayingActivity now = (NowPlayingActivity) instrumentation.startActivitySync(
                 new Intent(context, NowPlayingActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         try {
-            FrameLayout disc = now.findViewById(R.id.discContainer);
-            TextureView animation = (TextureView) disc.getChildAt(disc.getChildCount() - 1);
-            ImageView staticCover = now.findViewById(R.id.imgNowPlayingCover);
+            AtomicReference<TextureView> animation = new AtomicReference<>();
             await("Local audio plays", player::isPlaying);
-            await("Local song renders its animated cover", () -> animation.getAlpha() == 1);
+            await("Local song renders its animated cover", () -> {
+                FrameLayout disc = currentPlayer(now).findViewById(R.id.discContainer);
+                animation.set(findAnimation(disc));
+                return animation.get().getAlpha() == 1;
+            });
             instrumentation.runOnMainSync(() -> player.playOnline("b1kbLwvqugk", "Anti-Hero",
                     "Taylor Swift", "", "https://www.youtube.com/watch?v=b1kbLwvqugk"));
             await("Online track is selected", () -> player.getCurrentSong().isOnline());
-            await("Online song renders its animated cover", () -> animation.getAlpha() == 1);
+            await("Online song renders its animated cover", () -> {
+                FrameLayout disc = currentPlayer(now).findViewById(R.id.discContainer);
+                animation.set(findAnimation(disc));
+                return animation.get().getAlpha() == 1;
+            });
             Song fallback = new Song(0, "Nights", "Frank Ocean", "Blonde", 0, audio.getPath(), "", 0);
             instrumentation.runOnMainSync(() -> player.playSong(fallback, Collections.singletonList(fallback), false));
             await("Static cover is visible after track switch",
-                    () -> animation.getAlpha() == 0 && staticCover.isShown());
-            instrumentation.runOnMainSync(now::finish);
-            await("Animation is released when the screen closes", () -> animation.getAlpha() == 0);
+                    () -> animation.get().getAlpha() == 0 && currentPlayer(now).findViewById(R.id.imgNowPlayingCover).isShown());
+            instrumentation.runOnMainSync(() -> currentPlayer(now).finish());
+            await("Animation is released when the screen closes", () -> animation.get().getAlpha() == 0);
         } finally {
             instrumentation.runOnMainSync(() -> {
-                now.finish();
+                currentPlayer(now).finish();
                 player.stopAndRelease();
             });
             audio.delete();
         }
+    }
+
+    private static TextureView findAnimation(FrameLayout disc) {
+        for (int i = 0; i < disc.getChildCount(); i++)
+            if (disc.getChildAt(i) instanceof TextureView) return (TextureView) disc.getChildAt(i);
+        throw new AssertionError("Animated artwork view is missing");
+    }
+
+    private static NowPlayingActivity currentPlayer(NowPlayingActivity fallback) {
+        // Applying the selected language can recreate the activity on a freshly installed verification build.
+        for (android.app.Activity activity : androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+                .getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)) {
+            if (activity instanceof NowPlayingActivity) return (NowPlayingActivity) activity;
+        }
+        return fallback;
     }
 
     private static void await(String message, BooleanSupplier condition) throws InterruptedException {

@@ -52,3 +52,4 @@ Este documento detalla la arquitectura, configuración en producción y auditor�
 9. **Módulo 9: Video Dock Flotante:** Mini reproductor dockeado en esquina inferior derecha para visualización y streaming directo.
 10. **Módulo 10: Configuración:** Modal con tarjeta de perfil, conmutador de tema claro/oscuro, botones para acento `Azul` (#0084FF) / `Naranjo` (#FF7A00), gestor de `cookies.txt` para yt-dlp y cierre de sesión.
 11. **Módulo 11: Diálogo de Estadísticas:** *"Tu música en cifras"*, tarjetas de tiempo acumulado y reproducciones, y ranking de canciones con barras de porcentaje proporcionales.
+

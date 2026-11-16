@@ -236,10 +236,13 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         libraryPrefs().edit().putInt("mode", currentLibraryMode).remove("filter")
                 .putString("sublist", currentSubListName).putString("query", inputSearchLibrary.getText().toString())
                 .putString("artist", songAdapter == null ? "" : songAdapter.getArtistFilter())
+                .putString("last_collection", rememberedCollectionName).putInt("last_collection_mode", rememberedCollectionMode)
                 .putBoolean("search_tab", currentTabIsSearch).apply();
     }
     private void restoreLibraryNavigation() {
         SharedPreferences prefs = libraryPrefs();
+        rememberedCollectionName = prefs.getString("last_collection", "");
+        rememberedCollectionMode = prefs.getInt("last_collection_mode", 3);
         int mode = prefs.getInt("mode", 0);
         String name = prefs.getString("sublist", ""), query = prefs.getString("query", "");
         String artist = prefs.getString("artist", "");
@@ -270,6 +273,8 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     private ImageView btnMiniPlayPause, btnMiniNext;
     private cl.arichard.descargador.util.LoadingRingView miniLoadingRing;
     private ProgressBar miniProgress;
+    private cl.arichard.descargador.util.WaveBinder miniBinder;
+    private Song miniBoundSong;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -504,6 +509,8 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         miniLoadingRing = findViewById(R.id.miniLoadingRing);
         btnMiniNext = findViewById(R.id.btnMiniNext);
         miniProgress = findViewById(R.id.miniProgress);
+        ((cl.arichard.descargador.util.WaveSeekBar) miniProgress).setInteractive(false);
+        miniBinder = new cl.arichard.descargador.util.WaveBinder(this, (cl.arichard.descargador.util.WaveSeekBar) miniProgress);
         imgMiniCover = findViewById(R.id.imgMiniCover);
     }
 
@@ -1027,7 +1034,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         PlaylistManager playlists = PlaylistManager.getInstance(this);
         DescargadorApp.IO.execute(() -> {
             RecommendationEngine.Result result = recommender.compute(
-                    cl.arichard.descargador.data.ClickStats.getInstance(this), playlists::hasLocalCopy, titles, queries,
+                    cl.arichard.descargador.data.ClickStats.getInstance(this), id -> playlists.hasLocalCopy(id) || playlists.isInAnyPlaylist(id), titles, queries,
                     System.currentTimeMillis(), fresh);
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed() || generation != uiState.forYouGeneration) return;
@@ -1036,8 +1043,22 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
                 if (!keepPrevious) uiState.forYou = result;
                 lastForYou = null;
                 populateForYou();
+                // Un resultado casi vacío suele ser una respuesta incompleta de la red: se reintenta solo, sin pedir refrescar.
+                if (!"offline".equals(result.mode) && result.songs.size() < 6 && uiState.forYouRetries < 2) {
+                    uiState.forYouRetries++;
+                    sectionForYou.postDelayed(() -> { if (!isFinishing() && !isDestroyed() && !uiState.forYouLoading) refreshForYou(true); }, 3500);
+                }
             });
         });
+    }
+
+    /** Lo guardado de una sesión anterior puede traer canciones que desde entonces se agregaron a una playlist. */
+    private RecommendationEngine.Result withoutPlaylistSongs(RecommendationEngine.Result result) {
+        if (result == null) return null;
+        PlaylistManager playlists = PlaylistManager.getInstance(this);
+        List<SearchResult> kept = new ArrayList<>();
+        for (SearchResult song : result.songs) if (!playlists.isInAnyPlaylist(song.getId())) kept.add(song);
+        return kept.size() == result.songs.size() ? result : new RecommendationEngine.Result(kept, result.artists, result.mode);
     }
 
     private void populateForYou() {
@@ -1045,7 +1066,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         if (!initialUiSettled) return;
         // Lista solo cuando la carga ya empezó y terminó (con o sin resultados); antes de empezar aún no hay nada que mostrar.
         if ((uiState.forYouStarted || !loadsRecommendationsOnStart()) && !uiState.forYouLoading) markHomeReady(HOME_FOR_YOU);
-        RecommendationEngine.Result result = uiState.forYou;
+        RecommendationEngine.Result result = withoutPlaylistSongs(uiState.forYou);
         boolean hasSongs = result != null && !result.songs.isEmpty();
         boolean loading = uiState.forYouLoading;
         boolean failed = !hasSongs && !loading && result != null && "offline".equals(result.mode);
@@ -2296,9 +2317,12 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     }
 
     private void showCollection(int mode, String name) {
+        if (name.isEmpty()) { setLibraryMode(mode); return; }
         saveLibraryPosition(); changingLibrary = true;
         currentLibraryMode = mode;
         currentSubListName = name; isViewingSubList = true; heldFavorites.clear();
+        rememberedCollectionName = name;
+        rememberedCollectionMode = mode;
         songAdapter.setArtistFilter("");
         inputSearchLibrary.setText("");
         updateLibraryHeader(); rebuildLibraryContent(); changingLibrary = false; restoreLibraryPosition();
@@ -2339,12 +2363,17 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     }
 
     /** Una animación en curso no bloquea el siguiente deslizamiento: se interrumpe (ver interruptCollectionSwipe). */
+    private String rememberedCollectionName = "";
+    private int rememberedCollectionMode = 3;
+
     private boolean canSwipeCollections() {
-        return isViewingSubList && (currentLibraryMode == 2 || currentLibraryMode == 3)
-                && collectionNames().size() > 1 && (songAdapter == null || !songAdapter.isSelectionMode());
+        return (currentLibraryMode == 2 || currentLibraryMode == 3)
+                && (isViewingSubList || (rememberedCollectionMode == currentLibraryMode
+                    && collectionNames().contains(rememberedCollectionName)))
+                && (songAdapter == null || !songAdapter.isSelectionMode());
     }
 
-    /** ¿Hay una playlist/carpeta anterior a la que ir deslizando a la derecha? Lo usa el gesto de volver para cederle el paso. */
+    /** ¿Hay algo a la izquierda (otra playlist/carpeta o Música) al deslizar el dedo a la derecha? Lo usa el gesto de volver para cederle el paso. */
     public boolean hasPreviousCollection() {
         return canSwipeCollections() && adjacentCollection(-1) != null;
     }
@@ -2355,12 +2384,19 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         return Collections.emptyList();
     }
 
-    /** direction: -1 previous, +1 next. No wrapping keeps the first and last collection predictable. */
+    /**
+     * Orden horizontal: Buscar | Música | playlist 1 | playlist 2 ... direction: -1 hacia la izquierda (dedo a la derecha),
+     * +1 hacia la derecha (dedo a la izquierda). Desde Música se entra a la última playlist visitada; desde la
+     * primera playlist se vuelve a Música ("" = raíz).
+     */
     private String adjacentCollection(int direction) {
-        if (!isViewingSubList || direction == 0) return null;
+        if (direction == 0) return null;
+        if (!isViewingSubList) return direction > 0 && rememberedCollectionMode == currentLibraryMode
+                && collectionNames().contains(rememberedCollectionName) ? rememberedCollectionName : null;
         List<String> names = collectionNames();
         int index = names.indexOf(currentSubListName), target = index + direction;
-        return index < 0 || target < 0 || target >= names.size() ? null : names.get(target);
+        if (index >= 0 && target < 0) return "";
+        return index < 0 || target >= names.size() ? null : names.get(target);
     }
 
     /** Destino de un cambio que ya salió de pantalla pero todavía no se mostró; se muestra si algo lo interrumpe. */
@@ -2697,6 +2733,17 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         // Este botón es una navegación global: siempre lleva primero a Biblioteca y elimina
         // cualquier filtro que pueda ocultar la pista que está sonando.
         switchTab(false);
+        PlayerManager playback = PlayerManager.getInstance();
+        String source = playback.getSourceName();
+        if ("playlist".equals(playback.getSourceType())
+                && PlaylistManager.getInstance(this).getPlaylistNames().contains(source)) {
+            showPlaylistSongs(source);
+        } else if ("folder".equals(playback.getSourceType())
+                && MusicScanner.groupByFolder(allSongs).containsKey(source)) {
+            showCollection(2, source);
+        } else {
+            setLibraryMode(0);
+        }
         inputSearchLibrary.clearFocus();
         inputSearchLibrary.setText("");
         if (songAdapter != null) songAdapter.setArtistFilter("");
@@ -2879,6 +2926,8 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         restoreLibraryPosition();
         refreshDiscoveryContent();
         reconcileAutoDownloads();
+        // Tras iniciar sesión, la primera sincronización trae playlists e historial: las recomendaciones se calculan con eso.
+        if (uiState != null && uiState.forYouStarted && !uiState.forYouAfterSync) { uiState.forYouAfterSync = true; refreshForYou(true); }
     }
 
     /** YouTube entries that are already saved on this device play from the file: instant, and no streaming needed. */
@@ -3056,6 +3105,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
             if (miniProgress != null) {
                 miniProgress.setMax(dur > 0 ? dur : 100);
                 miniProgress.setProgress(pos);
+                syncMiniWave(current);
             }
         } else {
             setMiniPlayerVisible(false);
@@ -3075,10 +3125,24 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         PlayerManager.getInstance().removeListener(this);
     }
 
+    /** Aplica el relieve de la canción actual, salvo en plena mezcla: ahí la barra sigue a la que sale. */
+    private void syncMiniWave(Song current) {
+        if (miniBinder == null || PlayerManager.getInstance().isCrossfading()) return;
+        ((cl.arichard.descargador.util.WaveSeekBar) miniProgress).setPlaying(PlayerManager.getInstance().isPlaying());
+        if (miniBoundSong == null || current == null || !java.util.Objects.equals(miniBoundSong.getPath(), current.getPath())) {
+            miniBoundSong = current;
+            miniBinder.bind(current);
+        }
+    }
+
     @Override
     public void onTrackChanged(Song song) {
         runOnUiThread(() -> {
-            updateMiniPlayer();
+            PlayerManager player = PlayerManager.getInstance();
+            // En una mezcla el título cambia a mitad, igual que en el reproductor grande.
+            if (player.isCrossfading() && miniPlayerLayout != null)
+                miniPlayerLayout.postDelayed(this::updateMiniPlayer, player.getCrossfadeSeconds() * 500L);
+            else updateMiniPlayer();
             if (songAdapter != null) songAdapter.notifyDataSetChanged();
         });
     }
@@ -3118,8 +3182,14 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     @Override
     public void onProgressUpdate(int currentPos, int duration) {
         runOnUiThread(() -> {
-            miniProgress.setMax(duration > 0 ? duration : 100);
-            miniProgress.setProgress(currentPos);
+            PlayerManager player = PlayerManager.getInstance();
+            int outgoing = player.getOutgoingPosition(), outgoingDuration = player.getOutgoingDuration();
+            boolean mixing = player.isCrossfading() && outgoing >= 0 && outgoingDuration > 0;
+            int shownDuration = mixing ? outgoingDuration : duration;
+            miniProgress.setMax(shownDuration > 0 ? shownDuration : 100);
+            miniProgress.setProgress(mixing ? outgoing : currentPos);
+            ((cl.arichard.descargador.util.WaveSeekBar) miniProgress).setPlaying(player.isPlaying());
+            if (miniBinder != null) { miniBinder.update(shownDuration); syncMiniWave(player.getCurrentSong()); }
         });
     }
 }

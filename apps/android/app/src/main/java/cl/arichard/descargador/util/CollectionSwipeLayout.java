@@ -28,6 +28,7 @@ public final class CollectionSwipeLayout extends FrameLayout {
     }
 
     public void setListener(Listener listener) { this.listener = listener; }
+    public boolean canNavigate(int direction) { return listener != null && listener.canSwipe() && listener.canNavigate(direction); }
     public boolean isSwipeEnabled() { return listener != null && listener.canSwipe(); }
 
     private void begin(MotionEvent event) {

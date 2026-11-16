@@ -19,6 +19,8 @@ Choice 1.0 Choice.qml
 FormatCard 1.0 FormatCard.qml
 Check 1.0 Check.qml
 MbDialog 1.0 MbDialog.qml
+ThemedDialog 1.0 ThemedDialog.qml
+ModalBackdrop 1.0 ModalBackdrop.qml
 PreviewBar 1.0 PreviewBar.qml
 QueuePanel 1.0 QueuePanel.qml
 PlaylistSuggestions 1.0 PlaylistSuggestions.qml
@@ -27,3 +29,4 @@ ImportLinkDialog 1.0 ImportLinkDialog.qml
 AlternativesDialog 1.0 AlternativesDialog.qml
 VideoPanel 1.0 VideoPanel.qml
 LyricsPanel 1.0 LyricsPanel.qml
+WaveBar 1.0 WaveBar.qml

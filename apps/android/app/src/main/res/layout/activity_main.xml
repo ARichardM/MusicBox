@@ -677,11 +677,14 @@
                     android:background="?attr/selectableItemBackgroundBorderless"/>
             </LinearLayout>
             <!-- Dentro de la tarjeta, lejos de sus esquinas redondeadas, para que no parezca colgar por fuera. -->
-            <ProgressBar android:id="@+id/miniProgress"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent" android:layout_height="3dp"
-                android:layout_marginStart="18dp" android:layout_marginEnd="18dp"
-                android:layout_marginBottom="7dp"
+            <cl.arichard.descargador.util.WaveSeekBar android:id="@+id/miniProgress"
+                android:layout_width="match_parent" android:layout_height="30dp"
+                android:layout_marginStart="14dp" android:layout_marginEnd="14dp"
+                android:layout_marginBottom="4dp"
+                android:minHeight="3dp" android:maxHeight="3dp"
+                android:paddingStart="0dp" android:paddingEnd="0dp"
+                android:paddingTop="13.5dp" android:paddingBottom="13.5dp"
+                android:thumb="@null" android:splitTrack="false"
                 android:progressDrawable="@drawable/mini_progress"
                 android:progress="0" android:max="100"/>
         </cl.arichard.descargador.util.SwipeActionsLayout>

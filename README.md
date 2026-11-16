@@ -7,15 +7,17 @@
   <a href="https://github.com/ARichardM/MusicBox/actions/workflows/android-ci.yml"><img alt="Android CI" src="https://img.shields.io/github/actions/workflow/status/ARichardM/MusicBox/android-ci.yml?style=for-the-badge&label=Android"></a>
   <img alt="Android 7+" src="https://img.shields.io/badge/Android-7%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white">
   <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2F11-0078D4?style=for-the-badge&logo=windows11&logoColor=white">
+  <a href="https://openmusicbox.duckdns.org/"><img alt="Web PWA" src="https://img.shields.io/badge/Web_PWA-Online-FF6B1A?style=for-the-badge&logo=googlechrome&logoColor=white"></a>
 </p>
 
 <p align="center">
-  <strong>Busca, reproduce, organiza y descarga tu música desde Android o Windows.</strong><br>
-  Biblioteca sincronizada, playlists, favoritos, cola y una experiencia diseñada para tema claro y oscuro.
+  <strong>Busca, reproduce, organiza y descarga tu música desde Android, Windows o la Web.</strong><br>
+  Biblioteca sincronizada, playlists, favoritos, crossfade inteligente y una experiencia diseñada para tema claro y oscuro con color de acento personalizable.
 </p>
 
 <p align="center">
-  <a href="https://github.com/ARichardM/MusicBox/releases/latest/download/MusicBox-Android.apk"><strong>Descargar APK</strong></a>
+  <a href="https://openmusicbox.duckdns.org/"><strong>Abrir MusicBox Web</strong></a>
+  · <a href="https://github.com/ARichardM/MusicBox/releases/latest/download/MusicBox-Android.apk"><strong>Descargar APK</strong></a>
   · <a href="https://github.com/ARichardM/MusicBox/releases/latest/download/MusicBox-Windows-Setup.exe"><strong>Descargar para Windows</strong></a>
   · <a href="https://github.com/ARichardM/MusicBox/releases">Ver versiones</a>
   · <a href="docs/GUIA_USO.md">Guía de uso</a>
@@ -60,20 +62,26 @@ Las portadas geométricas se crearon para estas capturas; no son carátulas ofic
 
 | Experiencia | Funciones |
 | --- | --- |
-| **Reproductor** | Audio, video y letras según disponibilidad. Las letras con tiempos de la grabación siguen la reproducción y los saltos. Incluye cola editable, indicador de origen, repetición, reproducción aleatoria y controles en la notificación. |
-| **Biblioteca** | Canciones locales, carpetas y playlists con portadas, búsqueda y estado de reproducción. |
-| **Playlists** | Mantén pulsada una playlist y arrástrala para ordenar la biblioteca. Usa «Fijar en Inicio» en su menú para mostrarla en una fila compacta encima de las recomendaciones. Incluye descripción y descarga automática. |
+| **Reproductor** | Audio (MP3), video (MP4, incluso para canciones descargadas en local) y letras sincronizadas que recuerdan si decidiste ocultarlas o mostrarlas al cambiar de pista. Incluye **crossfade real** configurable (Off, Auto, 1–12 s) con barra de progreso en relieve de ondas (altos y bajos) que anticipa la mezcla en los silencios finales, portadas animadas, zoom de carátula y selector animado «Reproduciendo desde…» para cambiar de playlist al vuelo. |
+| **Biblioteca** | Canciones locales, carpetas y playlists con portadas cuadradas sin bordes negros, búsqueda reactiva y estado de reproducción. |
+| **Playlists** | Mantén pulsada una playlist y arrástrala para ordenar la biblioteca. Usa «Fijar en Inicio» en su menú para mostrarla en una fila compacta encima de las recomendaciones. Incluye descripción, exportación CSV, importación desde Spotify/YouTube/Deezer/Apple Music/SoundCloud y descarga automática. |
 | **Favoritos** | Aparece en la biblioteca cuando guardas una canción. Se sincroniza entre dispositivos y usa el ID de YouTube para evitar duplicados. |
 | **Clics** | Contador de reproducciones por canción, carpeta y playlist, y estadísticas de tu cuenta. |
 | **Inicio y descubrimiento** | Búsqueda y recomendaciones «Para ti» que se adaptan a lo que escuchas, con canciones de audio de YouTube Music (no videoclips) y artistas con su foto. |
 | **Artistas** | Página de cada artista con sus canciones más escuchadas, todas sus canciones, álbumes y sencillos. |
-| **Descargas** | MP3 o MP4 con calidad a elegir, playlists con rango, cookies, progreso real, historial y registro; importar listas y carpetas. Disponible en Windows y en Android (desde el perfil). |
+| **Descargas** | MP3 o MP4 con calidad a elegir, playlists con rango, cookies, progreso real, historial y registro; importar listas y carpetas. Disponible en Windows, Android y Web (almacenamiento offline con IndexedDB). |
 | **Cuenta** | Inicio con Google, preferencias sincronizadas, listado de dispositivos y desconexión remota. |
 | **Idiomas** | Español e inglés, según el idioma del sistema o el que elijas en Configuración. |
 | **Actualizaciones** | Aviso de versión nueva con sus novedades; en Windows se instala sola y verificada. |
-| **Diseño** | Tema claro/oscuro, dialogs adaptados, skeleton shimmer y diseño responsive. |
+| **Diseño** | Tema claro/oscuro, color primario personalizable (azul o naranjo), diálogos con desenfoque de fondo (*backdrop blur*), skeleton shimmer y diseño responsive. |
 
 ## Aplicaciones
+
+### Web (PWA)
+
+- Disponible directamente en [openmusicbox.duckdns.org](https://openmusicbox.duckdns.org/) sin necesidad de instalación, o instalable como **PWA** en escritorio y móvil.
+- Paridad 1:1 con la interfaz de escritorio: Inicio, Mi música, Descargas offline con IndexedDB, Historial, Reproductor expandido con crossfade y ondas, Letras sincronizadas, Cola de reproducción, Video MP4 y Estadísticas.
+- Sincronización en tiempo real de biblioteca, favoritos y preferencias con Google y Firebase.
 
 ### Android
 
@@ -154,7 +162,9 @@ correctamente y están presentes todos los paquetes y sus sumas.
 ```text
 apps/android/            Aplicación Android nativa (Java)
 apps/desktop/            Aplicación Windows, interfaz QML y recursos
+apps/web/                Aplicación Web / PWA (FastAPI + Frontend modular)
 tests/desktop/           Pruebas automatizadas de escritorio
+tests/web/               Pruebas automatizadas de la aplicación web
 scripts/windows/         Herramientas de instalación y mantenimiento
 legacy/                  Prototipos históricos conservados como referencia
 docs/                    Guías y documentación técnica
