@@ -3,7 +3,7 @@ Pillow>=13.0,<14
 rapidocr>=3.10,<4
 # Versión de geometría validada con el OCR y el control de aplicaciones de Windows.
 Shapely>=2.1,<2.2; sys_platform == "win32"
-onnxruntime>=1.20,<2
+onnxruntime>=1.31.0,<2
 pywebview>=6.2.1,<7
 sounddevice>=0.5,<1
 PySide6>=6.8,<7
