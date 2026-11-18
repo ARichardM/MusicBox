@@ -28,6 +28,10 @@ a = Analysis(
     hiddenimports=hiddenimports,
     noarchive=False,
 )
+# Qt on Windows uses the system ICU. A different icuuc.dll found on PATH
+# can shadow it in the bundle and break the QtCore import at startup.
+a.binaries = [entry for entry in a.binaries if entry[0].lower() != "icuuc.dll"]
+
 pyz = PYZ(a.pure)
 exe = EXE(
     pyz,

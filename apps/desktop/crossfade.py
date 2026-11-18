@@ -13,6 +13,9 @@ class Crossfade(QObject):
         self.bridge = bridge
         self.outgoing = self.output = None
         self.held = None
+        self.outgoing_track = None
+        self.end_ms = 0
+        self.zone_ms = 0
         self.switching = False
         self.started = None
         self.timer = QTimer(self)
@@ -33,8 +36,8 @@ class Crossfade(QObject):
             self.bridge._audio.setVolume(self.volume)
         self.outgoing = self.output = None
         self.started = None
-        if self.held:
-            self.held = None
+        if self.outgoing_track is not None:
+            self.held = self.outgoing_track = None
             self.bridge.playerChanged.emit()
 
     def consider(self, position):
@@ -61,7 +64,9 @@ class Crossfade(QObject):
         self.outgoing, self.output = b._player, b._audio
         self.volume = b._audio.volume()
         self.seconds = min(seconds, (end - position) / 1000)
-        self.held = b._current  # la barra y el título siguen a la que sale hasta la mitad de la mezcla
+        self.held = self.outgoing_track = b._current
+        self.end_ms = end
+        self.zone_ms = seconds * 1000
         entering = b._wave_of(item)
         self.entering_ms = int(entering.get('audibleStartMs', 0)) if entering else 0
         self.deadline = time.monotonic() + self.seconds + 2
@@ -92,6 +97,7 @@ class Crossfade(QObject):
         if self.entering_ms > 300:
             self._enter_after_load(b._player, self.entering_ms)
         self.timer.start()
+        b.playerChanged.emit()
 
     def _enter_after_load(self, player, start_ms):
         """La siguiente canción entra donde empieza a sonar, no en su silencio inicial."""

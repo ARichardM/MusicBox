@@ -1,5 +1,33 @@
 # Historial de versiones
 
+## 2.4.7 — 17 de noviembre de 2026
+
+### Windows y Web
+
+- **Scroll infinito en la búsqueda:** al llegar al final de los resultados se cargan los siguientes, como en Android, en Todos, Canciones y Vídeos (Todos continúa con la lista de canciones cuando se acaban sus resultados). Sin repetidos y con indicador «Cargando más…».
+- **Vídeo MP4 más grande:** en el reproductor ampliado el vídeo ocupa un marco 16:9 que aprovecha el ancho de la ventana, en vez de un clip pequeño dentro de un cuadrado con bandas negras.
+- **Menos espera al reproducir:** el servidor y la app recuerdan el cliente de YouTube que funcionó y prueban primero el más rápido; la primera respuesta baja unos 1,4 segundos.
+- **Crossfade sin salto:** al terminar la mezcla, la barra de ondas ya no da un salto brusco: el zoom conserva su encuadre mientras se deshace.
+- **Abrir en una playlist guardada:** al reiniciar Windows en una playlist abierta ya no aparece «0 canciones» (error de la 2.4.6); la lista se carga con su título.
+- **Importar playlists** pasa al menú de tres puntos de la biblioteca de Windows.
+
+### Web
+
+- **Reproducción por el servidor de MusicBox:** el audio en línea ya no usa el reproductor incrustado de YouTube; se sirve con rangos acotados, también para canciones que antes fallaban, y se encadena el archivo completo cuando el navegador no pide un rango.
+- **Spinner de carga visible:** el botón de reproducir cambia su icono por un spinner y la canción que carga muestra el suyo sobre la portada. Con «reducir animaciones» activado ya no queda congelado: gira más despacio.
+- **Vídeo MP4 solo cuando existe:** el botón de vídeo y el chip MP4 se ocultan en canciones sin videoclip, como en Windows.
+- **Menú de canción:** «Mover a otra playlist» y «Eliminar del dispositivo»; «Reproducir» y Crossfade quedan solo en el menú del reproductor.
+- **Mi música más ordenada:** a la vista quedan «Nueva playlist», «Ir a canción actual» y aleatorio; importar carpeta, canciones, playlists y actualizar pasan al menú de tres puntos. Con las playlists vacías aparece «Importar playlist» centrado.
+- **Descarga automática robusta:** si una canción falla, las demás siguen guardándose y la pasada pendiente se espera.
+- **Reproductor ampliado:** la cola se ve por encima del reproductor, la portada aprovecha el alto libre sin hueco muerto, y los controles de reproducción tienen más separación.
+- **Letras:** el panel se cierra al tocar fuera, como en Windows; el seguimiento automático ya no arrastra la lista mientras la desplazas.
+- **Portadas y álbumes:** las portadas de `googleusercontent.com` ya no salen rotas y los álbumes de un artista tienen tamaño de tarjeta.
+
+### Android
+
+- **Zoom de la portada en MP3:** los degradados superior e inferior se apoyan en los bordes de la imagen, no en los del marco, de modo que el arte se funde con el fondo en vez de quedar cortado.
+- Sincronización de versión `2.4.7` (`versionCode 25`).
+
 ## 2.4.6 — 16 de noviembre de 2026
 
 ### Windows y Web

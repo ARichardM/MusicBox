@@ -103,6 +103,78 @@ class RelatedTest(unittest.TestCase):
 
 
 class SearchTest(unittest.TestCase):
+    def test_search_pages_follow_the_continuation_token_until_it_runs_out(self):
+        def without_tokens(node):
+            if isinstance(node, dict):
+                return {k: without_tokens(v) for k, v in node.items() if k not in ("nextContinuationData", "continuations", "continuationCommand")}
+            return [without_tokens(v) for v in node] if isinstance(node, list) else node
+
+        first = load("search_songs")  # la respuesta real trae su token de continuación
+        token = ytmusic._search_token(first)
+        self.assertTrue(token, "El fixture real trae un token")
+        last = without_tokens(load("search_songs"))  # la segunda página ya no trae más: es la última
+        calls = []
+
+        def api(endpoint, body):
+            calls.append((endpoint, body))
+            return last if body.get("continuation") == token else first
+
+        page = ytmusic.search_page("queen", "songs", api=api)
+        self.assertTrue(page["items"], "La primera página trae canciones")
+        self.assertEqual(page["continuation"], token)
+        self.assertEqual(calls[0][1]["params"], ytmusic.FILTER_SONGS)
+        more = ytmusic.search_page("queen", "songs", page["continuation"], api=api)
+        self.assertEqual(calls[1], ("search", {"continuation": token}), "La página siguiente pide solo el token")
+        self.assertTrue(more["items"])
+        self.assertEqual(more["continuation"], "", "Sin token no hay más páginas")
+
+    def test_unfiltered_search_continues_with_the_songs_pages(self):
+        """«Todos» no trae token en YouTube Music: al acabarse sus resultados continúa con la lista de canciones."""
+        def without_tokens(node):
+            if isinstance(node, dict):
+                return {k: without_tokens(v) for k, v in node.items() if k not in ("nextContinuationData", "continuations", "continuationCommand")}
+            return [without_tokens(v) for v in node] if isinstance(node, list) else node
+
+        songs_page = load("search_songs")
+        token = ytmusic._search_token(songs_page)
+        everything = without_tokens(load("search_songs"))
+        calls = []
+
+        def api(endpoint, body):
+            calls.append((endpoint, body))
+            if body.get("continuation") == token:
+                return without_tokens(songs_page)
+            return songs_page if body.get("params") == ytmusic.FILTER_SONGS else everything
+
+        first = ytmusic.search_page("queen", "all", api=api)
+        self.assertTrue(first["items"])
+        self.assertNotIn("params", calls[0][1], "La primera página es la búsqueda sin filtro")
+        self.assertEqual(first["continuation"], ytmusic.ALL_THEN_SONGS, "Aunque YouTube no dé token, hay más: la lista de canciones")
+        second = ytmusic.search_page("queen", "all", first["continuation"], api=api)
+        self.assertEqual(calls[1][1]["params"], ytmusic.FILTER_SONGS, "Después se pide la primera página de canciones")
+        self.assertEqual(second["continuation"], token)
+        third = ytmusic.search_page("queen", "all", second["continuation"], api=api)
+        self.assertEqual(calls[2], ("search", {"continuation": token}))
+        self.assertEqual(third["continuation"], "", "Al acabarse las canciones no hay más páginas")
+
+    def test_search_page_filters_songs_from_videos_and_reads_the_command_token(self):
+        def row(video_id, video_type):
+            return {"musicResponsiveListItemRenderer": {
+                "playlistItemData": {"videoId": video_id},
+                "overlay": {"musicItemThumbnailOverlayRenderer": {"content": {"musicPlayButtonRenderer": {
+                    "playNavigationEndpoint": {"watchEndpoint": {"videoId": video_id, "watchEndpointMusicSupportedConfigs": {
+                        "watchEndpointMusicConfig": {"musicVideoType": "MUSIC_VIDEO_TYPE_" + video_type}}}}}}}},
+                "flexColumns": [
+                    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Título " + video_id}]}}},
+                    {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Artista"}, {"text": " • "}, {"text": "3:00"}]}}}]}}
+        data = {"contents": [row("song0000001", "ATV"), row("clip0000001", "OMV")],
+                "continuationItem": {"continuationEndpoint": {"continuationCommand": {"token": "CMD-TOKEN"}}}}
+        songs = ytmusic.search_page("q", "songs", api=lambda endpoint, body: data)
+        videos = ytmusic.search_page("q", "videos", api=lambda endpoint, body: data)
+        self.assertEqual([t["id"] for t in songs["items"]], ["song0000001"])
+        self.assertEqual([t["id"] for t in videos["items"]], ["clip0000001"])
+        self.assertEqual(songs["continuation"], "CMD-TOKEN")
+
     def test_song_search_returns_audio_tracks_with_album_and_duration(self):
         tracks = ytmusic.search_songs("tren al sur", api=fake_api(search=load("search_songs")))
         self.assertTrue(tracks)

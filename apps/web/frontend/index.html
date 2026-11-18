@@ -10,8 +10,8 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="icon" type="image/png" sizes="192x192" href="logo_cube.png">
   <link rel="apple-touch-icon" href="logo_cube.png">
-  <link rel="stylesheet" href="style.css?build=experience-20261116-immersive2">
-  <link rel="stylesheet" href="experience.css?build=20261116-immersive2">
+  <link rel="stylesheet" href="style.css?build=2.4.7">
+  <link rel="stylesheet" href="experience.css?build=2.4.7">
   <link rel="stylesheet" href="pages.css?build=20261116-immersive2">
 </head>
 <body>
@@ -139,23 +139,6 @@
         <div class="queue-body" id="queue-body"></div>
       </aside>
 
-      <!-- Mini Dock de Video / IFrame de YouTube (Garantiza sonido sin bloqueos de navegador y permite ver video) -->
-      <div class="video-dock" id="video-dock">
-        <div class="video-dock-header">
-          <span class="video-dock-title" id="video-dock-title">Reproduciendo</span>
-          <div style="display:flex;gap:4px;">
-            <button class="icon-btn-sm" id="minimize-video-btn" title="Minimizar">
-              <img src="icons/collapse.svg" alt="">
-            </button>
-            <button class="icon-btn-sm" id="hide-video-dock-btn" title="Ocultar vista de video">
-              <img src="icons/close.svg" alt="">
-            </button>
-          </div>
-        </div>
-        <div class="video-dock-body" id="yt-player-container">
-          <div id="yt-player-host"></div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -166,6 +149,9 @@
       <div class="now-playing-cover-wrap">
         <img src="logo_complete.png" id="player-thumb" class="now-playing-thumb" alt="Carátula">
         <div class="player-thumb-shimmer" id="player-thumb-shimmer"></div>
+        <div class="video-dock dock-hidden" id="video-dock">
+          <div class="video-dock-body" id="player-video-surface"></div>
+        </div>
       </div>
       <div class="now-playing-info">
         <div class="marquee-wrap">
@@ -201,8 +187,7 @@
         <span class="time-label" id="current-time">0:00</span>
         <div class="progress-bar-wrap" id="progress-wrap">
           <div class="progress-track">
-            <div class="progress-fill" id="progress-fill"></div>
-            <div class="progress-thumb" id="progress-thumb"></div>
+            <div class="progress-fill" id="progress-fill"><div class="progress-thumb" id="progress-thumb"></div></div>
           </div>
         </div>
         <span class="time-label" id="total-time">0:00</span>
@@ -341,7 +326,7 @@
           <div class="settings-row">
             <div class="settings-info-text">
               <div class="setting-name" style="font-size:18px;">MusicBox</div>
-              <div class="setting-desc">Versión 2.4.6 Web</div>
+              <div class="setting-desc">Versión 2.4.7 Web</div>
             </div>
             <div class="badge-uptodate">
               <span class="badge-dot"></span>
@@ -429,6 +414,9 @@
 
   <!-- Menú Contextual Flotante de Opciones de Pista -->
   <div class="context-menu" id="track-context-menu" style="display:none;">
+    <button type="button" class="context-item" id="ctx-play">
+      <img src="icons/play.svg" class="ctx-icon" alt=""><span>Reproducir</span>
+    </button>
     <div class="context-item" id="ctx-play-next">
       <img src="icons/next.svg" class="ctx-icon" alt="">
       <span>Reproducir a continuación</span>
@@ -457,25 +445,16 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-  <script>
-    window.__ytReady = false;
-    window.onYouTubeIframeAPIReady = function() {
-      window.__ytReady = true;
-      if (typeof window.initYTPlayer === "function") {
-        window.initYTPlayer();
-      }
-    };
-  </script>
-  <script src="https://www.youtube.com/iframe_api"></script>
   <script src="runtime-config.js"></script>
+  <script src="images.js?build=2.4.7"></script>
   <script src="core.js?build=experience-20261116-immersive2"></script>
-  <script src="app.js?build=experience-20261116-immersive2"></script>
+  <script src="app.js?build=2.4.7"></script>
   <script src="stats.js?build=experience-20261116-immersive2"></script>
-  <script src="parity.js?build=experience-20261116-immersive2"></script>
+  <script src="parity.js?build=2.4.7"></script>
   <script src="i18n.js?build=experience-20261116-immersive2"></script>
-  <script src="experience.js?build=20261116-immersive2"></script>
-  <script src="mixbar.js?build=20261116-immersive2"></script>
-  <script src="session.js?build=20261116-immersive2"></script>
+  <script src="experience.js?build=2.4.7"></script>
+  <script src="mixbar.js?build=2.4.7"></script>
+  <script src="session.js?build=2.4.7"></script>
   <script src="pages.js?build=20261116-immersive2"></script>
   <script src="selects.js?build=20261116-immersive2"></script>
   <script src="motion.js?build=20261116-immersive2"></script>

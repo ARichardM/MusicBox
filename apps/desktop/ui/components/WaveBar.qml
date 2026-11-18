@@ -27,10 +27,29 @@ Item {
     property real realTo: 1
     property real waveAlpha: 0
     property real zoneShown: 0
-    property real zoom: 0
+    property real zoom: mixing && zoneMs > 0 ? 1 : 0
     property real anchorPosition: 0
     property real anchorTime: Date.now()
     property bool hasReal: !!(wave && wave.coarse)
+    // Tramo visible de la pista (0..1): toda la barra, o el tramo de la mezcla cuando el zoom está activo.
+    property real viewStart: 0
+    property real viewEnd: 1
+    property var mixFraming: null
+
+    function updateView() {
+        var dur = Math.max(1, duration)
+        var endFraction = endMs > 0 ? Math.min(1, endMs / dur) : 1
+        var zoneTarget = zoneMs > 0 ? Math.min(1, zoneMs / dur) : 0
+        var zoomStart = Math.max(0, endFraction - zoneTarget * 2.2), zoomEnd = Math.min(1, endFraction + Math.max(.01, zoneTarget * .15))
+        // Al terminar la mezcla el zoom tarda en salir: se conserva el encuadre de la mezcla en vez de recalcularlo con la
+        // canción nueva, para que la ventana se abra suave y no dé un salto.
+        if (mixing) mixFraming = { start: zoomStart, end: zoomEnd }
+        else if (zoom <= .001) mixFraming = null
+        else if (mixFraming) { zoomStart = mixFraming.start; zoomEnd = mixFraming.end }
+        var e = zoom < .5 ? 2 * zoom * zoom : 1 - Math.pow(-2 * zoom + 2, 2) / 2
+        viewStart = e * zoomStart
+        viewEnd = 1 + (zoomEnd - 1) * e
+    }
 
     function approximate(key) {
         var s = 17, i
@@ -59,7 +78,6 @@ Item {
         display = approximate(seed); retarget(); display = toValues.slice(); morph = 1; realness = hasReal ? 1 : 0
         waveAlpha = active ? 1 : 0
         zoneShown = duration > 0 ? Math.min(1, zoneMs / duration) : 0
-        zoom = (mixing && zoneMs > 0) ? 1 : 0
     }
 
     onPositionChanged: { anchorPosition = position; anchorTime = Date.now() }
@@ -70,7 +88,6 @@ Item {
     onActiveChanged: waveAlpha = active ? 1 : 0
     onZoneMsChanged: zoneShown = duration > 0 ? Math.min(1, zoneMs / duration) : 0
     onDurationChanged: zoneShown = duration > 0 ? Math.min(1, zoneMs / duration) : 0
-    onMixingChanged: zoom = (mixing && zoneMs > 0) ? 1 : 0
 
     FrameAnimation {
         running: root.waveAlpha > .005 || root.active
@@ -102,9 +119,8 @@ Item {
             var progress = Math.max(0, Math.min(1, progressMs / dur))
             var endFraction = root.endMs > 0 ? Math.min(1, root.endMs / dur) : 1
             var zone = root.zoneShown, zoneTarget = root.zoneMs > 0 ? Math.min(1, root.zoneMs / dur) : 0
-            var zoomStart = Math.max(0, endFraction - zoneTarget * 2.2), zoomEnd = Math.min(1, endFraction + Math.max(.01, zoneTarget * .15))
-            var e = root.zoom < .5 ? 2 * root.zoom * root.zoom : 1 - Math.pow(-2 * root.zoom + 2, 2) / 2
-            var v0 = e * zoomStart, v1 = 1 + (zoomEnd - 1) * e
+            root.updateView()
+            var v0 = root.viewStart, v1 = root.viewEnd
             var centre = height / 2, maxHalf = Math.max(2, Math.min(centre - 1, 14))
             var pitch = width / root.cols, barW = Math.max(1.3, pitch * .6)
             var certainty = (.74 + .26 * root.realness) * root.waveAlpha

@@ -904,13 +904,13 @@ html, body {
 }
 
 .row-item {
-  height: 74px;
-  border-radius: 16px;
+  height: 64px;
+  border-radius: 12px;
   background-color: var(--bg-card);
   display: flex;
   align-items: center;
-  padding: 10px 14px;
-  gap: 14px;
+  padding: 6px 10px;
+  gap: 9px;
   border: 1px solid transparent;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
@@ -927,7 +927,6 @@ html, body {
 
 .row-item.playing {
   background-color: var(--accent-soft);
-  border-color: var(--accent);
 }
 
 .row-cover-wrap {
@@ -1076,31 +1075,10 @@ html, body {
   transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s ease, width 0.2s ease, height 0.2s ease;
 }
 
-.video-dock.minimized {
-  width: 180px;
-  height: 130px;
-}
-
 .video-dock.dock-hidden {
   opacity: 0.001;
   pointer-events: none;
   transform: translateY(20px);
-}
-
-.video-dock-header {
-  height: 34px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border-subtle);
-  background-color: var(--bg-sidebar);
-}
-
-.video-dock-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
 }
 
 .video-dock-body {
@@ -1440,7 +1418,7 @@ html, body {
   cursor: pointer;
   padding: 8px 12px;
   border-radius: 8px;
-  transition: color 0.15s ease, background-color 0.15s ease, font-size 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease; /* sin animar font-size: animarlo recalculaba el diseño de toda la lista en cada cambio de línea */
 }
 
 .lyric-line:hover {
@@ -1898,7 +1876,18 @@ input,textarea { user-select:text; -webkit-user-select:text; caret-color:var(--a
 .musicbox-dialog .modal-body { overflow:auto; max-height:calc(85dvh - 64px); }
 .playlist-form { display:flex; flex-direction:column; gap:18px; }
 .playlist-form label { display:flex; flex-direction:column; gap:8px; }
-.playlist-form .check-row { flex-direction:row; align-items:center; }
+.playlist-form .check-row { flex-direction:row; align-items:center; justify-content:space-between; cursor:pointer; }
+.playlist-form [role="switch"] {
+  appearance:none; flex:none; width:38px; height:22px; margin:0;
+  border:1px solid var(--border-line); border-radius:999px; background:var(--bg-card);
+  display:grid; align-items:center; padding:2px; cursor:pointer;
+}
+.playlist-form [role="switch"]::before {
+  content:""; width:16px; height:16px; border-radius:50%; background:var(--text-muted);
+  transition:transform .15s ease;
+}
+.playlist-form [role="switch"]:checked { background:var(--accent); border-color:var(--accent); }
+.playlist-form [role="switch"]:checked::before { transform:translateX(16px); background:#fff; }
 .playlist-form textarea { min-height:90px; resize:vertical; }
 .collection-header { display:flex; align-items:center; gap:22px; margin:20px 0; }
 .collection-cover { width:140px; height:140px; border-radius:16px; flex-shrink:0; background:var(--bg-card); overflow:hidden; }
@@ -2093,7 +2082,7 @@ button.context-item img { width:16px; height:16px; }
 .import-range label { flex:1; }
 .import-preview-list { max-height:220px; overflow:auto; padding:12px 0; color:var(--text-muted); font-size:13px; line-height:1.8; }
 .login-footer-hint { color:var(--text-muted); }
-.drawer-header,.video-dock-header,.modal-header { padding-top:10px; padding-bottom:10px; }
+.drawer-header,.modal-header { padding-top:10px; padding-bottom:10px; }
 
 .pinned-playlists .pill-btn { border-radius:14px; padding:8px 10px; }
 .pinned-playlists .pill-btn img { width:40px; height:40px; }

@@ -33,7 +33,11 @@ fs.mkdirSync(artifacts,{recursive:true});
       await page.route('**/www.gstatic.com/firebasejs/**',route=>route.abort());
       if(server) await page.route('**/api/**',route=>{
         const url=new URL(route.request().url());
-        const songs=[1,2,3].map(i=>({id:'testTrack0'+i,title:'Canción de prueba '+i,artist:'MusicBox',duration:30,thumbnail:'logo_cube.png',kind:'song'}));
+        const media=path.join(artifacts,'verification-video.mp4');
+        if(url.pathname.startsWith('/api/stream/')&&url.searchParams.get('video')==='1'&&fs.existsSync(media)){
+          return route.fulfill({status:200,contentType:'video/mp4',path:media});
+        }
+        const songs=[1,2,3,6].map(i=>({id:'testTrack0'+i,title:'Canción de prueba '+i,artist:'MusicBox',duration:30,thumbnail:'logo_cube.png',kind:'song'}));
         return route.fulfill({json:url.pathname.startsWith('/api/recommendations')?{songs,artists:[]}:url.pathname.startsWith('/api/lyrics/')?{lines:[]}:url.pathname.startsWith('/api/artwork')?{url:''}:[]});
       });
       await page.goto(base + '/?verification=1');
@@ -79,13 +83,23 @@ fs.mkdirSync(artifacts,{recursive:true});
       if (viewport.width === 1280 && fs.existsSync(path.join(artifacts,'verification-video.mp4'))) {
         await page.locator('#nav-library').click();
         const chooserPromise=page.waitForEvent('filechooser');
-        await page.getByRole('button',{name:'Importar canciones',exact:true}).click();
+        await page.locator('.library-actions').getByRole('button',{name:'Más opciones',exact:true}).click();
+        await page.getByRole('menuitem',{name:'Importar canciones',exact:true}).click();
         const chooser=await chooserPromise; await chooser.setFiles(path.join(artifacts,'verification-video.mp4'));
         await page.waitForFunction(async()=> (await storage.getAllOfflineTracks()).some(t=>t.id.startsWith('local:')));
         await page.evaluate(async()=>{state.isMuted=true;const track=(await storage.getAllOfflineTracks()).find(t=>t.id.startsWith('local:'));await playTrack(track);});
         await page.waitForFunction(()=>audio.videoWidth>0);
         await page.locator('#video-toggle-btn').click();
-        assert(await page.locator('#local-media-player').isVisible(),'Imported MP4 visible in video dock');
+        await page.locator('.now-playing-cover-wrap #local-media-player').waitFor({state:'visible'});
+        assert(await page.locator('.now-playing-cover-wrap #local-media-player').isVisible(),'Imported MP4 plays in the artwork frame');
+        await page.locator('.now-playing-cover-wrap').click();
+        await page.waitForFunction(()=>document.body.classList.contains('cover-zoom'));
+        await page.setViewportSize({width:900,height:620});
+        await page.waitForFunction(()=>document.getElementById('local-media-player').getBoundingClientRect().width<=900);
+        const zoomedVideo=await page.locator('.now-playing-cover-wrap #local-media-player').boundingBox();
+        assert(zoomedVideo?.width>0 && zoomedVideo.width<=900,'Inline video zoom fits a smaller window');
+        await page.keyboard.press('Escape');
+        await page.setViewportSize(viewport);
         await page.evaluate(()=>audio.pause());
         const downloadPromise=page.waitForEvent('download');
         await page.evaluate(()=>openTrackContextMenu({clientX:40,clientY:40},state.currentTrack));
@@ -94,6 +108,18 @@ fs.mkdirSync(artifacts,{recursive:true});
         assert.equal(fs.statSync(exportPath).size,fs.statSync(path.join(artifacts,'verification-video.mp4')).size,'Exported file keeps all original bytes');
         reports.push({test:'Importación y reproducción de MP4 local',passed:true});
         reports.push({test:'Guardar archivo MP4 desde el navegador',passed:true});
+        if(server){
+          await page.evaluate(async()=>{
+            const track=(await storage.getAllOfflineTracks()).find(t=>t.id==='testTrack01');
+            await playTrack(track);
+          });
+          await page.waitForFunction(()=>audio.readyState>=2&&audio.videoWidth===0);
+          await page.evaluate(()=>setInlineVideo(true));
+          await page.waitForFunction(()=>audio.videoWidth>0&&document.querySelector('.now-playing-cover-wrap').contains(audio));
+          await page.evaluate(()=>setInlineVideo(false));
+          await page.waitForFunction(()=>audio.readyState>=2&&audio.videoWidth===0&&audio.src.startsWith('blob:'));
+          reports.push({test:'Cambiar de audio guardado a vídeo por streaming y volver',passed:true});
+        }
       }
       await context.close();
     }

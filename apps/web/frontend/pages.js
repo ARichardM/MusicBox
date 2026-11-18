@@ -99,7 +99,6 @@
         <div class="history-rows" role="listbox" aria-label="Historial"></div>
         <div class="history-foot">
           <button class="history-action" data-action="open" type="button"><img src="icons/play.svg" alt=""><span>Abrir</span></button>
-          <button class="history-action" data-action="folder" type="button"><img src="icons/folder.svg" alt=""><span>Carpeta</span></button>
           <button class="history-action" data-action="queue" type="button"><img src="icons/plus.svg" alt=""><span>Cola</span></button>
           <button class="history-action danger" data-action="clear" type="button"><img src="icons/trash.svg" alt=""><span>Limpiar historial</span></button>
           <span class="history-count">${rows.length ? `${historyState.page * PAGE_SIZE + 1}–${historyState.page * PAGE_SIZE + slice.length} ${T('de')} ${rows.length}` : '0'} registros</span>
@@ -138,7 +137,6 @@
           const row = historyState.selected;
           if (button.dataset.action === 'open' && row) playTrack(row.track);
           else if (button.dataset.action === 'queue' && row) { state.queue.push(row.track); renderQueue(); showToast('Agregada a la cola'); }
-          else if (button.dataset.action === 'folder' && row) loadDownloadsView();
           else if (button.dataset.action === 'clear' && await confirmAction('Limpiar historial', '¿Borrar el historial de descargas y de reproducciones? Los archivos guardados se conservan.')) {
             localStorage.removeItem('musicbox_download_history');
             await storage.clearHistory();
@@ -245,6 +243,7 @@
     updateActiveNavButton('downloads');
     const main = document.getElementById('main-content');
     const tracks = await storage.getAllOfflineTracks();
+    if (state.activeView !== "downloads") return;
     const totalBytes = tracks.reduce((sum, track) => sum + (track.sizeBytes || 0), 0);
     main.innerHTML = `
       <div class="dl-header">
@@ -274,6 +273,7 @@
             <button class="dl-format${state.downloadFormat === 'mp4' ? ' active' : ''}" data-format="mp4" type="button"><img src="icons/video.svg" alt=""><strong>MP4</strong><small>Video + audio</small></button>
           </div>
           <label class="dl-label" for="dl-quality">Calidad</label><select id="dl-quality"></select><small class="dl-hint">Incluye portada y metadatos disponibles.</small>
+          <div id="dl-artwork-preferences"></div>
           <div class="dl-label">Cantidad</div>
           <label class="dl-radio${downloadsState.mode === 'single' ? ' active' : ''}"><input type="radio" name="dl-mode" value="single" ${downloadsState.mode === 'single' ? 'checked' : ''}><span>Un video por enlace</span></label>
           <label class="dl-radio${downloadsState.mode === 'playlist' ? ' active' : ''}"><input type="radio" name="dl-mode" value="playlist" ${downloadsState.mode === 'playlist' ? 'checked' : ''}><span>Lista completa o un rango</span></label>
@@ -284,6 +284,7 @@
         </aside>
       </div>`;
     const q = (selector) => main.querySelector(selector);
+    mountArtworkPreferences(q('#dl-artwork-preferences'));
     const quality = q('#dl-quality');
     const fillQuality = () => {
       const values = state.downloadFormat === 'mp3' ? [128, 192, 256, 320] : [360, 480, 720, 1080];

@@ -69,6 +69,8 @@ const server = http.createServer(async (req, res) => {
     await reopened.waitForFunction(() => typeof storage !== 'undefined' && storage.db && window.musicboxSession);
     await reopened.waitForFunction(() => document.getElementById('player-title').textContent === 'Canción 1', null, { timeout: 8000 });
     await reopened.waitForFunction(() => activePlaylist?.id === 'sesion', null, { timeout: 8000 });
+    // La posición se restaura de forma asíncrona (espera a que el audio tenga metadatos): se espera la etiqueta, no se lee de golpe.
+    await reopened.waitForFunction(() => /^0:2[2-5]$/.test(document.getElementById('current-time').textContent), null, { timeout: 6000 }).catch(() => {});
     const restored = await reopened.evaluate(() => ({ time: document.getElementById('current-time').textContent, playing: state.isPlaying }));
     assert.match(restored.time, /^0:2[2-5]$/, 'La barra muestra el minuto guardado: ' + restored.time);
     assert.equal(restored.playing, false, 'No arranca sola');

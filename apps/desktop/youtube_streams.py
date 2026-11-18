@@ -7,8 +7,9 @@ import tempfile
 import uuid
 from pathlib import Path
 
-# Mismo orden que usa la app móvil.
-CLIENT_SETS = ("android_vr,android", "web,android", "ios,web")
+# «android» solo va primero: medido, tarda ~2 s y su enlace funciona, mientras que «android_vr,android» elige el formato
+# de android_vr, que falla la validación y añade ~2,3 s en cada canción. Los demás quedan como respaldo.
+CLIENT_SETS = ("android", "web,android", "android_vr,android", "ios,web")
 AUDIO_FORMAT = ("bestaudio[ext=m4a][protocol^=http]/bestaudio[protocol^=http]/"
                 "best[ext=mp4][protocol^=http]/best[protocol^=http]")
 # Video: un solo archivo con imagen y sonido, porque el reproductor no puede unir pistas separadas.
@@ -34,6 +35,18 @@ def stream_is_reachable(url: str, headers: dict | None, opener=urllib.request.ur
         return False
 
 
+# El cliente que funcionó la última vez se prueba primero: así no se repite en cada canción el que suele fallar
+# (p. ej. android_vr), que añadía unos 2 segundos antes de empezar a sonar.
+_preferred_client: str | None = None
+
+
+def _client_order() -> tuple:
+    if _preferred_client in CLIENT_SETS:
+        return (_preferred_client, *(client for client in CLIENT_SETS if client != _preferred_client))
+    return CLIENT_SETS
+
+
+
 def resolve_stream(url: str, extractor, opener=urllib.request.urlopen, video: bool = False) -> dict:
     """Devuelve la información de yt-dlp con un enlace validado.
 
@@ -42,13 +55,15 @@ def resolve_stream(url: str, extractor, opener=urllib.request.urlopen, video: bo
     error o se indica que no hubo enlace reproducible.
     """
     last_error: Exception | None = None
-    for client in CLIENT_SETS:
+    for client in _client_order():
         try:
             info = extractor(_options(client, format=VIDEO_FORMAT if video else AUDIO_FORMAT), url)
             stream = (info or {}).get("url", "")
             if video and stream and (info.get("vcodec") == "none" or info.get("acodec") == "none"):
                 continue
             if stream and stream_is_reachable(stream, info.get("http_headers"), opener):
+                global _preferred_client
+                _preferred_client = client
                 return info
         except Exception as exc:  # cada cliente puede fallar de forma distinta
             last_error = exc

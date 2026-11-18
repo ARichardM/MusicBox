@@ -1,5 +1,6 @@
 """Isolated API contracts: no user account, cookies, or external requests."""
 import os
+import re
 import sys
 import unittest
 import tempfile
@@ -73,6 +74,23 @@ class ApiTest(unittest.TestCase):
         with patch.object(api.ytmusic, 'find_artist', return_value=None), patch.object(api.ytmusic, 'search_songs', return_value=tracks):
             self.assertEqual([t['id'] for t in self.client.get('/api/recommendations').json()['songs']], ['a'])
 
+    def test_search_page_returns_items_and_the_next_token(self):
+        page = {'items': [{'id': 'abcdefghijk'}], 'continuation': 'TOKEN-2'}
+        with patch.object(api.ytmusic, 'search_page', return_value=page) as search_page:
+            first = self.client.get('/api/search/page', params={'q': ' queen ', 'type': 'videos'})
+            more = self.client.get('/api/search/page', params={'q': 'queen', 'type': 'videos', 'continuation': 'TOKEN-1'})
+        self.assertEqual(first.json(), page)
+        self.assertEqual(more.json(), page)
+        self.assertEqual(search_page.call_args_list[0].args, ('queen', 'videos', ''), 'La primera página va sin token y con el texto limpio')
+        self.assertEqual(search_page.call_args_list[1].args, ('queen', 'videos', 'TOKEN-1'))
+        self.assertEqual(self.client.get('/api/search/page', params={'q': '  '}).json(), {'items': [], 'continuation': ''})
+
+    def test_search_page_failure_does_not_leak_upstream_details(self):
+        with patch.object(api.ytmusic, 'search_page', side_effect=RuntimeError('private upstream detail')):
+            response = self.client.get('/api/search/page', params={'q': 'queen'})
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn('private upstream detail', response.text)
+
     def test_stream_resolution_failure_is_actionable(self):
         with patch.object(api.youtube_streams, 'resolve_stream', side_effect=RuntimeError('private upstream detail')):
             response = self.client.get('/api/stream/abcdefghijk')
@@ -95,6 +113,69 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(client.build_request.call_args.kwargs['headers']['Range'],'bytes=0-9')
         self.assertEqual(client.build_request.call_args.kwargs['headers']['Origin'],'https://www.youtube.com')
         self.assertEqual(client.build_request.call_args.kwargs['headers']['Referer'],'https://www.youtube.com/')
+
+    @staticmethod
+    def _range_only_client(body):
+        """Proveedor simulado que, como googlevideo con algunos enlaces, rechaza rangos abiertos o ausentes."""
+        requested = []
+
+        def build_request(method, url, headers):
+            requested.append(headers.get('Range'))
+            return headers['Range']
+
+        async def send(range_header, stream=True):
+            match = re.fullmatch(r'bytes=(\d+)-(\d+)', range_header or '')
+            if not match:
+                return MagicMock(status_code=403, aclose=AsyncMock())
+            start, end = int(match[1]), min(int(match[2]), len(body) - 1)
+            piece = body[start:end + 1]
+
+            async def chunks(chunk_size=65536):
+                yield piece
+
+            return MagicMock(status_code=206, aiter_bytes=chunks, aclose=AsyncMock(), headers={
+                'content-type': 'video/mp4', 'content-length': str(len(piece)),
+                'content-range': f'bytes {start}-{end}/{len(body)}'})
+
+        client = MagicMock(build_request=build_request, send=send, aclose=AsyncMock())
+        return client, requested
+
+    def test_open_ended_range_is_bounded_for_the_provider(self):
+        api.store_cached_stream('abcdefghijk', 'https://example.test/audio', {})
+        body = bytes(range(100))
+        client, requested = self._range_only_client(body)
+        with patch.object(api.httpx, 'AsyncClient', return_value=client), patch.object(api, 'STREAM_CHUNK', 30):
+            response = self.client.get('/api/stream/abcdefghijk', headers={'Range': 'bytes=40-'})
+        self.assertEqual(requested, ['bytes=40-69'])
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers['content-range'], 'bytes 40-69/100')
+        self.assertEqual(response.content, body[40:70])
+
+    def test_request_without_range_receives_the_whole_file_in_chunks(self):
+        api.store_cached_stream('abcdefghijk', 'https://example.test/audio', {})
+        body = bytes(range(100))
+        client, requested = self._range_only_client(body)
+        with patch.object(api.httpx, 'AsyncClient', return_value=client), patch.object(api, 'STREAM_CHUNK', 30):
+            response = self.client.get('/api/stream/abcdefghijk')
+        self.assertEqual(requested, ['bytes=0-29', 'bytes=30-59', 'bytes=60-89', 'bytes=90-99'])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['content-length'], '100')
+        self.assertNotIn('content-range', response.headers)
+        self.assertEqual(response.content, body)
+
+    def test_video_stream_has_its_own_cache_and_resolves_the_clip(self):
+        api.store_cached_stream('abcdefghijk', 'https://example.test/audio', {})
+        upstream = MagicMock(status_code=206, headers={'content-type': 'video/mp4'})
+        upstream.aclose = AsyncMock()
+        client = MagicMock(send=AsyncMock(return_value=upstream), aclose=AsyncMock())
+        with patch.object(api.httpx, 'AsyncClient', return_value=client), \
+                patch.object(api.ytmusic, 'playable_video_source', return_value='12345678901'), \
+                patch.object(api.youtube_streams, 'resolve_stream', return_value={'url': 'https://example.test/video'}) as resolve:
+            response = self.client.head('/api/stream/abcdefghijk?video=1', headers={'Range': 'bytes=0-9'})
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers['content-type'], 'video/mp4')
+        resolve.assert_called_once_with('https://www.youtube.com/watch?v=12345678901', api._extract_info, video=True)
+        self.assertEqual(api.get_cached_stream('abcdefghijk')[0], 'https://example.test/audio')
 
     def test_upstream_failure_invalidates_cached_url(self):
         api.store_cached_stream('abcdefghijk','https://example.test/audio',{})

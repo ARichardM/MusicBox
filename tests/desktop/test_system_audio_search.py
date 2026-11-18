@@ -137,7 +137,7 @@ class SystemAudioSearchTests(unittest.TestCase):
         player.play.assert_not_called()
 
     def test_typing_debounces_and_enter_does_not_repeat_the_search(self):
-        with patch.object(module.ytmusic, "search_songs", return_value=[]) as search, \
+        with patch.object(module.ytmusic, "search_page", return_value={"items": [], "continuation": ""}) as search, \
                 patch.object(module.youtube_streams, "search", return_value=[]):
             self.bridge.scheduleSearch("lu")
             QTest.qWait(150)
@@ -153,8 +153,47 @@ class SystemAudioSearchTests(unittest.TestCase):
             self.assertEqual(search.call_count, 2)
             self.assertEqual(self.bridge._recent_queries[:2], ["otra canción", "luis jara"])
 
+    def test_scrolling_loads_the_next_search_page_once_and_stops_at_the_end(self):
+        pages = {"": ([{"id": "a1", "title": "A1"}, {"id": "a2", "title": "A2"}], "T1"),
+                 "T1": ([{"id": "a2", "title": "A2"}, {"id": "a3", "title": "A3"}], "")}
+        calls = []
+
+        def fake_page(query, kind="songs", continuation="", api=None):
+            calls.append(continuation)
+            items, token = pages[continuation]
+            return {"items": [dict(item) for item in items], "continuation": token}
+
+        def wait_for(condition):
+            for _ in range(80):
+                if condition():
+                    return
+                QTest.qWait(50)
+            self.fail("La condición no se cumplió a tiempo")
+
+        with patch.object(module.ytmusic, "search_page", side_effect=fake_page):
+            self.bridge.search("queen")
+            wait_for(lambda: not self.bridge.busy and self.bridge.searchResults)
+            self.assertEqual([r["id"] for r in self.bridge.searchResults], ["a1", "a2"])
+            self.assertTrue(self.bridge.searchHasMore)
+            self.bridge.loadMoreSearch()
+            self.bridge.loadMoreSearch()  # un segundo aviso mientras carga no repite la petición
+            wait_for(lambda: not self.bridge.searchLoadingMore and len(self.bridge.searchResults) > 2)
+            self.assertEqual([r["id"] for r in self.bridge.searchResults], ["a1", "a2", "a3"], "Sin repetir lo ya mostrado")
+            self.assertFalse(self.bridge.searchHasMore, "Sin token no hay más páginas")
+            self.bridge.loadMoreSearch()
+            QTest.qWait(150)
+            self.assertEqual(calls, ["", "T1"], "Cada página se pide una sola vez")
+
+    def test_a_newer_search_discards_a_late_page_of_the_old_one(self):
+        self.bridge._search_query = "antigua"
+        self.bridge._search_generation = 5
+        self.bridge._search_loading_more = True
+        self.bridge._search_results = [{"id": "nuevo"}]
+        self.bridge._apply_search_page([{"id": "viejo"}], "T9", "", 4)
+        self.assertEqual([r["id"] for r in self.bridge.searchResults], ["nuevo"], "Una página de una búsqueda anterior se descarta")
+
     def test_clearing_or_pasting_a_link_cancels_pending_live_search(self):
-        with patch.object(module.ytmusic, "search_songs", return_value=[]) as search, \
+        with patch.object(module.ytmusic, "search_page", return_value={"items": [], "continuation": ""}) as search, \
                 patch.object(module.youtube_streams, "search", return_value=[]):
             for query in ("", "x", "https://www.youtube.com/watch?v=abcdefghijk", "youtu.be/abcdefghijk"):
                 self.bridge.scheduleSearch("luis jara")

@@ -31,7 +31,7 @@ Las pruebas de navegador requieren Playwright y Chromium. `MUSICBOX_PLAYWRIGHT_M
 
 Desde `apps/web`, `docker compose up -d --build`. El contenedor publica únicamente `127.0.0.1:8005`; Nginx ofrece HTTPS. Antes de sustituir el proyecto del servidor, guardar una copia completa y validar la nueva imagen en otro puerto.
 
-El reproductor en línea utiliza el iframe oficial de YouTube; con crossfade activado y video oculto utiliza el stream del servidor para poder mezclar audio. La reproducción local usa archivos guardados en el navegador. Las descargas directas dependen de que YouTube permita acceder al servidor. Los errores del proveedor deben mostrarse como errores: una reproducción en línea exitosa no verifica una descarga.
+El reproductor del navegador usa /api/stream para audio en línea y los archivos guardados en IndexedDB para escuchar sin conexión. El modo MP4 usa el mismo marco en la interfaz y solicita vídeo con ?video=1. La reproducción en línea y las descargas dependen del acceso del servidor al proveedor. Verifica ambas con canciones reales desde el servidor de destino antes de publicar.
 
 Las cookies del servidor se administran fuera de la interfaz pública. El endpoint de carga exige `MUSICBOX_ADMIN_TOKEN` por cabecera Bearer; por defecto está deshabilitado. `MUSICBOX_COOKIE_PATH` permite usar un archivo privado persistente. No compartir cookies personales a través de una web pública.
 

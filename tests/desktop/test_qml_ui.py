@@ -1,4 +1,5 @@
 """Carga real de QML y paneles de cola/estadísticas con datos y preferencias aislados."""
+import json
 import os
 import tempfile
 import unittest
@@ -147,9 +148,13 @@ class QmlUiTests(unittest.TestCase):
             self.assertTrue(engine.rootObjects(), "\n".join(errors))
             root = engine.rootObjects()[0]
             root.setProperty("page", 1)
+            # «Importar playlists» ya no es un botón suelto: vive en el menú «⋯» de la cabecera de la biblioteca.
+            more_button = root.findChild(QObject, "libraryMoreButton")
+            self.assertIsNotNone(more_button, "La cabecera de la biblioteca tiene un botón de tres puntos")
+            self.assertTrue(more_button.property("visible"))
             import_button = root.findChild(QObject, "importLinkButton")
             self.assertEqual(import_button.property("text"), "Importar playlists")
-            QMetaObject.invokeMethod(import_button, "clicked", Qt.DirectConnection)
+            QMetaObject.invokeMethod(import_button, "triggered", Qt.DirectConnection)
             import_dialog = root.findChild(QObject, "importLinkDialog")
             QTest.qWait(80)
             self.assertTrue(import_dialog.property("visible"))
@@ -282,6 +287,7 @@ class QmlUiTests(unittest.TestCase):
                 {"id": "folder", "title": "De una carpeta", "thumbnail": photo_url, "downloaded": True, "fromFolder": True},
                 {"id": "pending", "title": "Descargando", "thumbnail": photo_url}]
             bridge._downloading_ids = {"pending"}
+            bridge._active_download_id = "pending"
             bridge.searchResultsChanged.emit()
             bridge.downloadingIdsChanged.emit()
             QTest.qWait(100)
@@ -408,6 +414,201 @@ class QmlUiTests(unittest.TestCase):
             from PySide6.QtCore import QCoreApplication, QEvent
             QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
             self.assertEqual(errors, [])
+
+    def test_reopening_on_a_saved_playlist_loads_its_songs(self):
+        """Al reabrir en una playlist guardada, el título y la lista deben coincidir (no «0 canciones»)."""
+        QQuickStyle.setStyle("Material")
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.IniFormat)
+            settings.setValue("sessionView", json.dumps({"page": 1, "filter": "playlists", "playlist": "chill", "folder": ""}))
+            with patch.object(module, "QSettings", return_value=settings), \
+                    patch.object(module, "FirebaseDesktopClient", return_value=SimpleNamespace(refresh_token="", configured=False)), \
+                    patch.object(module.MusicBoxBridge, "refresh"), \
+                    patch.object(module.MusicBoxBridge, "checkForUpdate"), \
+                    patch.object(module.MusicBoxBridge, "refreshForYou"):
+                bridge = module.MusicBoxBridge()
+            bridge._library_all = [{"path": f"/test/{i}.mp3", "title": f"Tema {i}", "artist": "Ana"} for i in range(3)]
+            bridge._playlists["chill"] = [row["path"] for row in bridge._library_all]
+            engine = QQmlApplicationEngine()
+            errors = []
+            engine.warnings.connect(lambda warnings: errors.extend(warning.toString() for warning in warnings))
+            bridge.attach_engine(engine)
+            engine.rootContext().setContextProperty("musicbox", bridge)
+            downloads = DownloadsController(bridge)
+            bridge.downloads = downloads
+            engine.rootContext().setContextProperty("downloads", downloads)
+            engine.addImageProvider("importer", ImporterImageProvider(downloads.importer))
+            engine.load(QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "Main.qml")))
+            self.assertTrue(engine.rootObjects(), "\n".join(errors))
+            root = engine.rootObjects()[0]
+            try:
+                APP.processEvents()
+                self.assertEqual(root.property("libraryPlaylist"), "chill")
+                heading = root.findChild(QObject, "libraryHeading")
+                self.assertEqual(heading.property("text"), "chill")
+                self.assertEqual(len(bridge._library), 3, "El backend debe mostrar las canciones de la playlist restaurada")
+                count = root.findChild(QObject, "libraryCollectionCount")
+                self.assertEqual(count.property("text"), "3 canciones")
+            finally:
+                root.setProperty("visible", False)
+                bridge._listening_timer.stop()
+                bridge._device_timer.stop()
+                engine.deleteLater()
+                from PySide6.QtCore import QCoreApplication, QEvent
+                QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+    def test_reaching_the_end_of_the_search_results_loads_the_next_page(self):
+        """Scroll infinito en Inicio: al llegar al final de los resultados se pide la página siguiente."""
+        QQuickStyle.setStyle("Material")
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.IniFormat)
+            with patch.object(module, "QSettings", return_value=settings),                     patch.object(module, "FirebaseDesktopClient", return_value=SimpleNamespace(refresh_token="", configured=False)),                     patch.object(module.MusicBoxBridge, "refresh"),                     patch.object(module.MusicBoxBridge, "checkForUpdate"),                     patch.object(module.MusicBoxBridge, "refreshForYou"):
+                bridge = module.MusicBoxBridge()
+            bridge._search_query = "queen"
+            bridge._search_results = [{"id": f"first{i:06d}", "title": f"Tema {i}", "subtitle": "Artista", "web": True} for i in range(12)]
+            bridge._search_continuation = "T1"
+            engine = QQmlApplicationEngine()
+            errors = []
+            engine.warnings.connect(lambda warnings: errors.extend(warning.toString() for warning in warnings))
+            bridge.attach_engine(engine)
+            engine.rootContext().setContextProperty("musicbox", bridge)
+            downloads = DownloadsController(bridge)
+            bridge.downloads = downloads
+            engine.rootContext().setContextProperty("downloads", downloads)
+            engine.addImageProvider("importer", ImporterImageProvider(downloads.importer))
+            engine.load(QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "Main.qml")))
+            self.assertTrue(engine.rootObjects(), "\n".join(errors))
+            root = engine.rootObjects()[0]
+            pages = []
+            try:
+                root.setProperty("splashVisible", False)
+                root.setProperty("page", 0)
+                bridge.searchResultsChanged.emit()
+                APP.processEvents()
+                results = root.findChild(QObject, "searchResultsList")
+                self.assertIsNotNone(results, "La lista de resultados está identificada para el scroll")
+                def fake_page(query, kind="songs", continuation="", api=None):
+                    pages.append(continuation)
+                    return {"items": [{"id": f"second{i:05d}", "title": f"Más {i}", "subtitle": "Artista"} for i in range(5)], "continuation": ""}
+                with patch.object(module.ytmusic, "search_page", side_effect=fake_page):
+                    QMetaObject.invokeMethod(results, "positionViewAtEnd", Qt.DirectConnection)
+                    for _ in range(60):
+                        QTest.qWait(50)
+                        if len(bridge.searchResults) > 12:
+                            break
+                self.assertEqual(pages, ["T1"], "Al llegar al final se pide la página siguiente una sola vez")
+                self.assertEqual(len(bridge.searchResults), 17)
+                self.assertFalse(bridge.searchHasMore)
+            finally:
+                root.setProperty("visible", False)
+                bridge._listening_timer.stop()
+                bridge._device_timer.stop()
+                engine.deleteLater()
+                from PySide6.QtCore import QCoreApplication, QEvent
+                QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+    def test_video_mode_uses_a_wide_frame_instead_of_a_small_square(self):
+        """En el reproductor ampliado, el vídeo ocupa un marco 16:9 mayor en vez de un clip pequeño en un cuadrado."""
+        QQuickStyle.setStyle("Material")
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.IniFormat)
+            with patch.object(module, "QSettings", return_value=settings), \
+                    patch.object(module, "FirebaseDesktopClient", return_value=SimpleNamespace(refresh_token="", configured=False)), \
+                    patch.object(module.MusicBoxBridge, "refresh"), \
+                    patch.object(module.MusicBoxBridge, "checkForUpdate"), \
+                    patch.object(module.MusicBoxBridge, "refreshForYou"):
+                bridge = module.MusicBoxBridge()
+            thumbnail = QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "icons" / "music.svg")).toString()
+            bridge._online_queue = [{"id": "sample", "url": "https://example.invalid/sample", "title": "Canción de prueba", "thumbnail": thumbnail}]
+            bridge._online_index = 0
+            bridge._current = dict(bridge._online_queue[0])
+            engine = QQmlApplicationEngine()
+            errors = []
+            engine.warnings.connect(lambda warnings: errors.extend(warning.toString() for warning in warnings))
+            bridge.attach_engine(engine)
+            engine.rootContext().setContextProperty("musicbox", bridge)
+            downloads = DownloadsController(bridge)
+            bridge.downloads = downloads
+            engine.rootContext().setContextProperty("downloads", downloads)
+            engine.addImageProvider("importer", ImporterImageProvider(downloads.importer))
+            engine.load(QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "Main.qml")))
+            self.assertTrue(engine.rootObjects(), "\n".join(errors))
+            root = engine.rootObjects()[0]
+            try:
+                root.setProperty("splashVisible", False)
+                root.setProperty("width", 1000)
+                root.setProperty("height", 760)
+                root.setProperty("expanded", True)
+                QTest.qWait(500)
+                cover = root.findChild(QObject, "largeCover")
+                square = (cover.property("width"), cover.property("height"))
+                self.assertAlmostEqual(square[0], square[1], delta=1, msg="Sin vídeo la portada es cuadrada")
+                bridge._video_mode = True
+                bridge.videoModeChanged.emit()
+                QTest.qWait(500)
+                wide = (cover.property("width"), cover.property("height"))
+                self.assertAlmostEqual(wide[0] / wide[1], 16 / 9, delta=.05, msg=f"Con vídeo el marco es 16:9: {wide}")
+                self.assertGreater(wide[0], square[0] * 1.3, f"El vídeo gana tamaño: {square} -> {wide}")
+                bridge._video_mode = False
+                bridge.videoModeChanged.emit()
+                QTest.qWait(500)
+                self.assertAlmostEqual(cover.property("width"), cover.property("height"), delta=1, msg="Al salir del vídeo vuelve a ser cuadrada")
+            finally:
+                root.setProperty("visible", False)
+                bridge._listening_timer.stop()
+                bridge._device_timer.stop()
+                engine.deleteLater()
+                from PySide6.QtCore import QCoreApplication, QEvent
+                QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+    def test_the_lyrics_drawer_closes_when_clicking_outside_it(self):
+        """En Windows, el panel de letras se cierra al tocar fuera (referencia del comportamiento de la web)."""
+        QQuickStyle.setStyle("Material")
+        with tempfile.TemporaryDirectory() as directory:
+            settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.IniFormat)
+            with patch.object(module, "QSettings", return_value=settings), \
+                    patch.object(module, "FirebaseDesktopClient", return_value=SimpleNamespace(refresh_token="", configured=False)), \
+                    patch.object(module.MusicBoxBridge, "refresh"), \
+                    patch.object(module.MusicBoxBridge, "checkForUpdate"), \
+                    patch.object(module.MusicBoxBridge, "refreshForYou"):
+                bridge = module.MusicBoxBridge()
+            engine = QQmlApplicationEngine()
+            errors = []
+            engine.warnings.connect(lambda warnings: errors.extend(warning.toString() for warning in warnings))
+            bridge.attach_engine(engine)
+            engine.rootContext().setContextProperty("musicbox", bridge)
+            downloads = DownloadsController(bridge)
+            bridge.downloads = downloads
+            engine.rootContext().setContextProperty("downloads", downloads)
+            engine.addImageProvider("importer", ImporterImageProvider(downloads.importer))
+            engine.load(QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "Main.qml")))
+            self.assertTrue(engine.rootObjects(), "\n".join(errors))
+            root = engine.rootObjects()[0]
+            try:
+                root.setProperty("splashVisible", False)
+                root.setProperty("width", 1100)
+                root.setProperty("height", 760)
+                QTest.qWait(400)
+                drawer = root.findChild(QObject, "lyricsDrawer")
+                self.assertIsNotNone(drawer)
+                def wait_for(condition):
+                    for _ in range(40):
+                        if condition():
+                            return True
+                        QTest.qWait(50)
+                    return False
+
+                QMetaObject.invokeMethod(drawer, "open", Qt.DirectConnection)
+                self.assertTrue(wait_for(lambda: drawer.property("opened") and drawer.property("position") > .99), "El panel de letras se abre")
+                QTest.mouseClick(root, Qt.LeftButton, Qt.NoModifier, QPoint(200, 300))
+                self.assertTrue(wait_for(lambda: not drawer.property("opened")), "Tocar fuera del panel de letras lo cierra")
+            finally:
+                root.setProperty("visible", False)
+                bridge._listening_timer.stop()
+                bridge._device_timer.stop()
+                engine.deleteLater()
+                from PySide6.QtCore import QCoreApplication, QEvent
+                QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 if __name__ == "__main__":

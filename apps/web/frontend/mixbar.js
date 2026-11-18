@@ -190,7 +190,7 @@
       this.display = approximate('');
       this.from = this.display.slice(); this.to = this.display.slice();
       this.key = null; this.real = false; this.morphStart = 0; this.morph = 1; this.realness = 1;
-      this.waveAlpha = 0; this.zoneShown = 0; this.zoom = 0;
+      this.waveAlpha = 0; this.zoneShown = 0; this.zoom = 0; this.mixFraming = null;
       this.envelope = null; this.nextEnvelope = null;
       this.size = { w: 0, h: 0, dpr: 1 };
       new ResizeObserver(() => this.resize()).observe(wrap);
@@ -239,7 +239,7 @@
     frame(now) {
       const dt = Math.min(64, now - this.last); this.last = now;
       const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      const on = wanted() && state.isOfflinePlayback && !state.videoDockOpen;
+      const on = wanted() && audio.hasAttribute('src') && !state.videoDockOpen;
       const media = (typeof outgoingAudio !== 'undefined' && outgoingAudio) ? outgoingAudio : audio;
       const mixing = typeof outgoingAudio !== 'undefined' && !!outgoingAudio;
       const approach = (current, target, ms) => reduced ? target : current + Math.sign(target - current) * Math.min(Math.abs(target - current), dt / ms);
@@ -256,8 +256,9 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
-      const track = mixing ? this.outgoingTrack : state.currentTrack;
-      if (!mixing) this.outgoingTrack = state.currentTrack;
+      const frozen = mixing && typeof outgoingMix !== 'undefined' ? outgoingMix : null;
+      const track = mixing ? frozen?.track || this.outgoingTrack : state.currentTrack;
+      if (!mixing) this.outgoingTrack = track;
       const envelope = track ? MixEnv.peek(track.id) : null;
       const index = state.queueIndex + 1 < state.queue.length ? state.queueIndex + 1 : state.repeatMode === 'all' ? 0 : -1;
       const nextTrack = mixing ? state.currentTrack : (index >= 0 ? state.queue[index] : null);
@@ -275,13 +276,18 @@
           this.display[i] = this.from[i] + (this.to[i] - this.from[i]) * eased;
         }
       }
-      const zoneSeconds = (!state.queue.length || state.repeatMode === 'one' || index < 0 && !mixing) ? 0 : state.crossfadeSeconds;
-      const endSeconds = duration ? MixEnv.endSeconds(track ? track.id : '', duration) : 0;
+      const zoneSeconds = frozen?.seconds ?? ((!state.queue?.length || state.repeatMode === 'one' || index < 0 && !mixing) ? 0 : state.crossfadeSeconds);
+      const endSeconds = frozen?.endSeconds ?? (duration ? MixEnv.endSeconds(track?.id || '', duration) : 0);
       const zoneTarget = duration && endSeconds >= zoneSeconds * 2 ? zoneSeconds / duration : 0;
       const endFraction = duration ? Math.min(1, endSeconds / duration) : 1;
       this.zoneShown = approach(this.zoneShown, zoneTarget, 560);
       this.zoom = approach(this.zoom, mixing && zoneTarget > 0 ? 1 : 0, mixing ? 720 : 880);
-      const zoomStart = Math.max(0, endFraction - zoneTarget * 2.2), zoomEnd = Math.min(1, endFraction + Math.max(.01, zoneTarget * .15));
+      // Al terminar la mezcla el zoom tarda en salir: se conserva el encuadre de la mezcla en vez de recalcularlo con la
+      // canción nueva, para que la ventana se abra suave y no dé un salto.
+      const framing = { start: Math.max(0, endFraction - zoneTarget * 2.2), end: Math.min(1, endFraction + Math.max(.01, zoneTarget * .15)) };
+      if (mixing) this.mixFraming = framing;
+      else if (this.zoom <= .001) this.mixFraming = null;
+      const { start: zoomStart, end: zoomEnd } = !mixing && this.mixFraming ? this.mixFraming : framing;
       const e = smooth(this.zoom);
       const v0 = e * zoomStart, v1 = 1 + (zoomEnd - 1) * e;
       this.view = { v0, v1, duration };

@@ -117,10 +117,12 @@
     await waitFor(()=>downloadJobs.has(cancelledTrack.id));downloadJobs.get(cancelledTrack.id).controller.abort();await downloading;holdDownload=false;
     assert(!await storage.getOfflineTrack(cancelledTrack.id) && !downloadJobs.size,'Cancelar descarga libera el trabajo y no guarda archivos parciales');
     await loadDownloadsView();
-    document.getElementById('download-format').value='mp4';document.getElementById('download-format').dispatchEvent(new Event('change'));
+    document.querySelector('.dl-format[data-format="mp4"]').click();
     assert(state.downloadFormat==='mp4' && state.downloadQuality===720,'Formato MP4 selecciona calidad de video válida');
-    document.getElementById('download-format').value='mp3';document.getElementById('download-format').dispatchEvent(new Event('change'));
-    document.getElementById('download-quality').value='320';document.getElementById('download-quality').dispatchEvent(new Event('change'));
+    document.querySelector('.dl-format[data-format="mp3"]').click();
+    const quality = document.getElementById('dl-quality');
+    quality.value='320';
+    quality.dispatchEvent(new Event('change'));
     assert(state.downloadFormat==='mp3' && state.downloadQuality===320,'Formato MP3 guarda la calidad elegida');
     const autoTrack={...songs[2],id:'testTrack05',title:'Descarga automática de prueba'};
     await storage.savePlaylist({id:'auto-test',name:'Automática',autoDownload:true,tracks:[autoTrack]});await runAutoDownloads();
@@ -128,16 +130,28 @@
     await loadLibraryView('songs'); assert(document.getElementById('library-sort'),'Orden de biblioteca disponible');
     document.getElementById('library-search-input').value='Segunda'; document.getElementById('library-search-input').dispatchEvent(new Event('input'));
     assert(document.querySelectorAll('#library-content-list .row-item').length === 1,'Filtro de biblioteca');
-    await loadHistoryView('plays'); assert(document.querySelectorAll('#history-content-list .row-item').length === 2,'Historial solo registra reproducciones reales');
-    await loadHistoryView(); assert(document.querySelector('#download-history-list').textContent.includes('Completada'),'Historial de descargas disponible');
+    await loadHistoryView();
+    const filterHistory = value => {
+      const filter = document.getElementById('history-filter');
+      filter.value = value;
+      filter.dispatchEvent(new Event('change'));
+    };
+    filterHistory('plays');
+    assert(document.querySelectorAll('.history-row').length === 2,'Historial solo registra reproducciones reales');
+    filterHistory('downloads');
+    assert([...document.querySelectorAll('.history-row .history-state')].some(row => row.textContent === 'Guardada'),'Historial de descargas disponible');
     if (matchMedia('(max-width:680px)').matches) {
       const tabs = [...document.querySelectorAll('.nav-item')].filter(e => e.getClientRects().length);
       assert(tabs.length === 2 && tabs[0].textContent.trim() === 'Inicio' && tabs[1].textContent.trim() === 'Música','Navegación móvil Android con dos pestañas');
       assert(document.querySelector('.mobile-account').getClientRects().length,'Cuenta accesible en móvil');
-      document.querySelector('.player-left').click(); assert(document.body.classList.contains('player-expanded'),'Minirreproductor abre pantalla completa');
+      document.querySelector('.player-left').click();
+      await waitFor(() => document.body.classList.contains('player-expanded') && !document.documentElement.classList.contains('player-morph'));
+      assert(document.body.classList.contains('player-expanded'),'Minirreproductor abre pantalla completa');
       const footer=document.getElementById('bottom-player').getBoundingClientRect(); assert(footer.height >= innerHeight - 1 && footer.top===0,'Reproductor móvil ocupa pantalla');
       assert(document.getElementById('shuffle-btn').getClientRects().length && document.getElementById('lyrics-toggle-btn').getClientRects().length,'Aleatorio y letras accesibles en reproductor móvil');
-      document.querySelector('.mobile-player-top button').click(); assert(!document.body.classList.contains('player-expanded'),'Cerrar reproductor móvil');
+      document.querySelector('.close-expanded-player').click();
+      await waitFor(() => !document.body.classList.contains('player-expanded') && !document.documentElement.classList.contains('player-morph'));
+      assert(!document.body.classList.contains('player-expanded'),'Cerrar reproductor móvil');
     }
     assert(document.documentElement.scrollWidth <= innerWidth,'Sin desbordamiento horizontal');
     audio.pause();

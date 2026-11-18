@@ -126,8 +126,8 @@ async def health():
     return {
         "status": "ok",
         "app": "MusicBox Web",
-        "version": "2.4.6",
-        "build": "experience-20261116-v246",
+        "version": "2.4.7",
+        "build": "release-v247",
         "has_cookies": COOKIE_PATH.is_file() and COOKIE_PATH.stat().st_size > 0,
     }
 
@@ -211,6 +211,21 @@ async def search(q: Annotated[str, Query(max_length=500)], type: Literal['songs'
     except Exception as exc:
         logger.error("Error en búsqueda '%s': %s", query, exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/search/page")
+async def search_page(q: Annotated[str, Query(max_length=500)],
+                      type: Literal['songs', 'artists', 'videos', 'all'] = "songs",
+                      continuation: Annotated[str, Query(max_length=4000)] = ""):
+    """Una página de resultados y el token de la siguiente (scroll infinito). Sin token es la primera página."""
+    query = q.strip()
+    if not query and not continuation:
+        return {"items": [], "continuation": ""}
+    try:
+        return await asyncio.to_thread(ytmusic.search_page, query, type, continuation)
+    except Exception as exc:
+        logger.error("Error en la página de búsqueda '%s': %s", query, exc)
+        raise HTTPException(status_code=502, detail="No se pudieron cargar más resultados.")
 
 
 @app.get("/api/recommendations")
@@ -374,21 +389,49 @@ def _remember_fallback(video_id: str, path: str) -> None:
             pass
 
 
+STREAM_CHUNK = 2 * 1024 * 1024
+_OPEN_RANGE = re.compile(r"^bytes=(\d+)-$")
+_CONTENT_RANGE = re.compile(r"^bytes \d+-\d+/(\d+)$")
+
+
+def _upstream_range(header: str | None) -> tuple[str, bool]:
+    """Algunos enlaces firmados de YouTube rechazan rangos abiertos (403): se pide siempre un rango acotado.
+
+    Devuelve el rango para el proveedor y si el cliente quería el archivo completo (sin Range)."""
+    if not header:
+        return f"bytes=0-{STREAM_CHUNK - 1}", True
+    match = _OPEN_RANGE.match(header.strip())
+    if match:
+        start = int(match[1])
+        return f"bytes={start}-{start + STREAM_CHUNK - 1}", False
+    return header, False
+
+
 @app.api_route("/api/stream/{video_id}", methods=["GET", "HEAD"])
-async def stream_audio(video_id: VideoId, request: Request):
-    """Proxy de streaming de audio con soporte para Range requests."""
-    cached = get_cached_stream(video_id)
+async def stream_audio(video_id: VideoId, request: Request, video: bool = False):
+    """Sirve audio y clips MP4 con soporte para solicitudes Range."""
+    cache_key = f"{video_id}:video" if video else video_id
+    cached = get_cached_stream(cache_key)
     if cached:
         stream_url, yt_headers = cached
     else:
         loop = asyncio.get_running_loop()
         local = FALLBACK_FILES.get(video_id)
-        if local and Path(local).is_file():
+        if not video and local and Path(local).is_file():
             return FileResponse(local, media_type=_audio_type(local), headers={"Accept-Ranges": "bytes"})
         try:
             url = f"https://www.youtube.com/watch?v={video_id}"
-            kind, result = await loop.run_in_executor(None, youtube_streams.resolve_or_cache, url, _extract_info,
-                                                      _download_audio, FALLBACK_FOLDER)
+            if video:
+                def resolve_video():
+                    source = ytmusic.playable_video_source(video_id)
+                    if not source:
+                        raise HTTPException(status_code=404, detail="Esta canción no tiene un clip disponible.")
+                    return youtube_streams.resolve_stream(f"https://www.youtube.com/watch?v={source}", _extract_info, video=True)
+
+                kind, result = "url", await asyncio.to_thread(resolve_video)
+            else:
+                kind, result = await loop.run_in_executor(None, youtube_streams.resolve_or_cache, url, _extract_info,
+                                                          _download_audio, FALLBACK_FOLDER)
             if kind == "file":
                 # Ninguna herramienta dio un enlace directo: se sirvió el audio descargado, sin cortar la música.
                 _remember_fallback(video_id, result)
@@ -398,19 +441,20 @@ async def stream_audio(video_id: VideoId, request: Request):
             if not stream_url:
                 raise HTTPException(status_code=404, detail="No se encontró stream de audio")
             yt_headers = info.get("http_headers") or {}
-            store_cached_stream(video_id, stream_url, yt_headers)
+            store_cached_stream(cache_key, stream_url, yt_headers)
         except HTTPException:
             raise
         except Exception as exc:
             logger.error("Error resolviendo stream para '%s': %s", video_id, exc)
+            if video:
+                raise HTTPException(status_code=503, detail="El vídeo no está disponible desde el servidor.")
             raise HTTPException(status_code=503, detail="YouTube no permitió obtener el audio desde el servidor. Puedes reproducir en línea; la descarga requiere que el administrador revise el acceso del servidor a YouTube.")
 
     # Use the same headers with which the resolver validated the signed URL.
     req_headers = dict(yt_headers)
     req_headers.setdefault("User-Agent", "Mozilla/5.0")
-    range_header = request.headers.get("range")
-    if range_header:
-        req_headers["Range"] = range_header
+    range_header, whole_file = _upstream_range(request.headers.get("range"))
+    req_headers["Range"] = range_header
 
     client = httpx.AsyncClient(timeout=20.0, follow_redirects=True)
     try:
@@ -420,35 +464,63 @@ async def stream_audio(video_id: VideoId, request: Request):
             status = upstream_resp.status_code
             await upstream_resp.aclose()
             await client.aclose()
-            STREAM_CACHE.pop(video_id, None)
-            raise HTTPException(status_code=502, detail=f'El proveedor rechazó el audio ({status}). Reintenta la descarga.')
+            STREAM_CACHE.pop(cache_key, None)
+            raise HTTPException(status_code=502, detail=f'El proveedor rechazó el {"vídeo" if video else "audio"} ({status}).')
+
+        # Sin Range, el cliente espera el archivo entero: se encadenan fragmentos acotados y se responde 200.
+        total = None
+        if whole_file and upstream_resp.status_code == 206:
+            match = _CONTENT_RANGE.match(upstream_resp.headers.get("content-range", ""))
+            total = int(match[1]) if match else None
+        status_code = 200 if total is not None else upstream_resp.status_code
 
         async def stream_generator() -> AsyncGenerator[bytes, None]:
+            sent = 0
             try:
                 async for chunk in upstream_resp.aiter_bytes(chunk_size=65536):
+                    sent += len(chunk)
                     yield chunk
+                while total is not None and sent < total:
+                    next_req = client.build_request("GET", stream_url, headers={
+                        **req_headers, "Range": f"bytes={sent}-{min(sent + STREAM_CHUNK, total) - 1}"})
+                    next_resp = await client.send(next_req, stream=True)
+                    try:
+                        if next_resp.status_code != 206:
+                            break
+                        received = 0
+                        async for chunk in next_resp.aiter_bytes(chunk_size=65536):
+                            received += len(chunk)
+                            sent += len(chunk)
+                            yield chunk
+                        if not received:
+                            break
+                    finally:
+                        await next_resp.aclose()
             finally:
                 await upstream_resp.aclose()
                 await client.aclose()
 
         response_headers = {
             "Accept-Ranges": "bytes",
-            "Content-Type": upstream_resp.headers.get("content-type", "audio/webm"),
+            "Content-Type": upstream_resp.headers.get("content-type", "video/mp4" if video else "audio/webm"),
             "Cache-Control": "public, max-age=1800",
         }
-        if "content-length" in upstream_resp.headers:
-            response_headers["Content-Length"] = upstream_resp.headers["content-length"]
-        if "content-range" in upstream_resp.headers:
-            response_headers["Content-Range"] = upstream_resp.headers["content-range"]
+        if total is not None:
+            response_headers["Content-Length"] = str(total)
+        else:
+            if "content-length" in upstream_resp.headers:
+                response_headers["Content-Length"] = upstream_resp.headers["content-length"]
+            if "content-range" in upstream_resp.headers:
+                response_headers["Content-Range"] = upstream_resp.headers["content-range"]
 
         if request.method == "HEAD":
             await upstream_resp.aclose()
             await client.aclose()
-            return Response(status_code=upstream_resp.status_code, headers=response_headers)
+            return Response(status_code=status_code, headers=response_headers)
 
         return StreamingResponse(
             stream_generator(),
-            status_code=upstream_resp.status_code,
+            status_code=status_code,
             headers=response_headers,
         )
     except HTTPException:
@@ -491,9 +563,11 @@ async def download_file(video_id: VideoId, format: Literal['mp3','mp4'] = 'mp3',
 
 @app.get('/api/artwork')
 async def animated_artwork(title: str = Query(max_length=300), artist: str = Query(max_length=200),
-                           album: str = Query(default='', max_length=300), duration: int = Query(default=0, ge=0, le=86400)):
+                           album: str = Query(default='', max_length=300), duration: int = Query(default=0, ge=0, le=86400),
+                           quality: str = Query(default='', pattern=r'^(low|medium|high)?$')):
     try:
-        return {'url': await asyncio.to_thread(artwork.resolve, title, artist, album, duration)}
+        args = (title, artist, album, duration, quality) if quality else (title, artist, album, duration)
+        return {'url': await asyncio.to_thread(artwork.resolve, *args)}
     except Exception:
         return {'url': ''}
 

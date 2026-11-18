@@ -86,13 +86,22 @@ const server = http.createServer(async (req, res) => {
 
     if (process.env.MIXBAR_SHOTS) await page.locator('#bottom-player').screenshot({ path: process.env.MIXBAR_SHOTS + '-idle.png' });
     // La mezcla empieza unos 4 s antes de que deje de sonar (16 s), no al final del archivo (34 s).
+    // Cada fotograma registra la ventana visible: el zoom debe entrar y salir sin saltos, también al terminar la mezcla.
+    await page.evaluate(() => {
+      window.__views = [];
+      const tick = (t) => { const view = window.mixBar.view; if (view) window.__views.push({ t, v0: view.v0, v1: view.v1, zoom: window.mixBar.zoom }); requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    });
     await page.evaluate(() => seekTo(12));
     await page.waitForFunction(() => typeof outgoingAudio !== 'undefined' && !!outgoingAudio, null, { timeout: 15000 });
     const mix = await page.evaluate(() => ({ outgoing: outgoingAudio.currentTime, incoming: audio.currentTime, zoomWanted: window.mixBar.zoom }));
     assert(mix.outgoing > 15 && mix.outgoing < 17.5, 'La mezcla empieza sobre el sonido: ' + mix.outgoing);
     assert(mix.incoming >= 4.5, 'La siguiente entra pasado su silencio inicial: ' + mix.incoming);
-    // Mientras suena, la barra sigue a la que sale y se acerca al tramo.
-    await page.waitForTimeout(1200);
+    // Resize during overlap to exercise the visible interval after the canvas changes size.
+    if (!mobile) await page.setViewportSize({width:900,height:620});
+    await page.waitForFunction(() => window.mixBar.zoom > .7 && !!outgoingAudio);
+    const projected = await page.evaluate(() => ({ view:window.mixBar.view, width:window.mixBar.size.w }));
+    assert(projected.view.v0 > .2 && projected.view.v1 < .9 && projected.width > 0,'The resized wave still frames the outgoing end');
     const during = await page.evaluate(() => ({
       time: document.getElementById('current-time').textContent, zoom: window.mixBar.zoom, title: document.getElementById('player-title').textContent
     }));
@@ -102,6 +111,14 @@ const server = http.createServer(async (req, res) => {
     await page.waitForFunction(() => document.getElementById('player-title').textContent === 'Segunda', null, { timeout: 6000 });
     await page.waitForFunction(() => typeof outgoingAudio === 'undefined' || !outgoingAudio, null, { timeout: 8000 });
     await page.waitForFunction(() => window.mixBar.zoom < .05, null, { timeout: 8000 });
+    const views = await page.evaluate(() => window.__views);
+    let jump = 0, jumpAt = null;
+    for (let i = 1; i < views.length; i++) {
+      const step = Math.max(Math.abs(views[i].v0 - views[i - 1].v0), Math.abs(views[i].v1 - views[i - 1].v1));
+      if (step > jump) { jump = step; jumpAt = { before: views[i - 1], after: views[i] }; }
+    }
+    assert(views.some(row => row.zoom > .95), 'El zoom llegó a su punto máximo durante la mezcla');
+    assert(jump < .08, 'La ventana de la barra no salta entre fotogramas (salto máximo ' + jump.toFixed(3) + '): ' + JSON.stringify(jumpAt));
     assert.deepEqual(errors, [], 'Sin errores de la página: ' + errors.join('; '));
     console.log(JSON.stringify({ ok: true, bounds: { end: bounds.a.audibleEndMs, start: bounds.b.audibleStartMs }, mixAt: mix.outgoing, incomingAt: mix.incoming }));
   } finally {

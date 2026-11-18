@@ -45,6 +45,8 @@ def make_bridge():
     bridge._path_ids = {}
     bridge._linked_ids = {}
     bridge._auto_attempted = set()
+    bridge._auto_batches = {}
+    bridge._auto_ready = set()
     bridge._library_scanned = True
     bridge._downloading_ids = set()
     bridge._library_playlist = "Favoritos"
@@ -56,7 +58,7 @@ def make_bridge():
     bridge._search_results = []
     bridge._schedule_cloud_save = lambda: None
     bridge.downloaded = []
-    bridge.downloadOnlineTrack = lambda meta: bridge.downloaded.append(meta["id"])
+    bridge._queue_online_downloads = lambda tracks: bridge.downloaded.extend(meta['id'] for meta in tracks)
     return bridge
 
 
@@ -129,6 +131,20 @@ class PlaylistIdentityTest(unittest.TestCase):
         bridge._reconcile_auto_downloads()
         bridge._reconcile_auto_downloads()
         self.assertEqual(bridge.downloaded, ["zTDeEJyCmNA"])
+
+    def test_auto_download_groups_a_large_playlist_into_one_submission(self):
+        bridge = make_bridge()
+        tracks = {f'test{index:07d}': {"title": f"Song {index}"} for index in range(137)}
+        bridge._online_tracks = identity.normalize_online_tracks(tracks)
+        bridge._playlists = {"Favoritos": list(bridge._online_tracks)}
+        batches = []
+        bridge._queue_online_downloads = batches.append
+
+        bridge._reconcile_auto_downloads()
+        bridge._reconcile_auto_downloads()
+
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(len(batches[0]), 137)
 
     def test_unfavoriting_removes_every_copy(self):
         bridge = make_bridge()

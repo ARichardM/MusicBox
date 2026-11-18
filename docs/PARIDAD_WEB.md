@@ -30,7 +30,7 @@ Ver [resultados y compilaciones](RESULTADO_MEJORAS_MULTIPLATAFORMA.md) para cifr
 
 - El navegador requiere importar archivos/carpetas; no puede escanear automáticamente las carpetas privadas de Windows o Android. La sincronización conserva las entradas de otros dispositivos aunque sus archivos no sean accesibles aquí.
 - Las descargas y el stream del servidor dependen del acceso permitido por YouTube. La reproducción incrustada no verifica esa disponibilidad. No se usaron cuentas reales ni se desplegó esta implementación en el VPS.
-- El iframe de YouTube no permite mezclar su audio con precisión. La web usa el motor HTML y el endpoint de stream cuando crossfade está activado y no se está viendo video. Si la siguiente pista no está lista, se conserva la reproducción normal.
+- La web usa el motor HTML para el audio local y en línea. Durante el crossfade, Windows y la web conservan el tramo de la canción saliente al ampliar la forma de onda. Si la siguiente pista no está lista, la pista actual sigue sonando.
 - Android y Windows también mantienen reproducción normal si no se preparó la siguiente pista. No se fuerza crossfade sobre video ni repetición de una sola canción.
 - Las portadas animadas dependen de la disponibilidad del catálogo externo; siempre existe respaldo estático. La web respeta movimiento reducido y visibilidad de la página.
 - Docker no está instalado en este equipo: se probaron la API y los archivos web, pero no se construyó la imagen Docker aquí.

@@ -182,6 +182,7 @@ class UiTests(unittest.TestCase):
             # Se espera por la condición, no por un tiempo fijo: las animaciones tardan más con muchas ventanas en el proceso.
             self.assertTrue(wait_for(lambda: toggle.property("visible")))
             self.assertFalse(panel.property("visible"))
+            root.setProperty("expanded", True)
             with patch.object(bridge, "_play_online"):
                 bridge.setVideoMode(True)
             self.assertTrue(wait_for(lambda: panel.property("visible"), 10))

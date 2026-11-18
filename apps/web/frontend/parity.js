@@ -1,7 +1,34 @@
 /* Browser interactions following the existing QML interface. */
 const downloadJobs = new Map();
+const autoDownloadBatches = new Map();
+const completedDownloads = new Set();
+let downloadPaintFrame = 0;
+
+function paintTrackDownload(row) {
+  const badge = row.querySelector('.row-download-state');
+  if (!badge) return;
+  const id = row.dataset.trackId;
+  const job = downloadJobs.get(id);
+  const source = badge.dataset.source || (completedDownloads.has(id) ? 'downloaded' : '');
+  badge.hidden = !job && !source;
+  badge.className = 'row-download-state ' + (job ? (job.progress === null ? 'transfer transfer-unknown' : 'transfer') : source);
+  badge.style.setProperty('--track-progress', (job?.progress || 0) + '%');
+  badge.title = job ? (job.progress === null ? 'Descargando…' : 'Descargando · ' + job.progress + '%')
+    : source === 'folder' ? 'Archivo importado' : 'Descargada';
+  badge.setAttribute('aria-label', badge.title);
+}
+
+function scheduleDownloadFeedback() {
+  if (downloadPaintFrame) return;
+  downloadPaintFrame = requestAnimationFrame(() => {
+    downloadPaintFrame = 0;
+    document.querySelectorAll('.row-item[data-track-id]').forEach(paintTrackDownload);
+    document.querySelector('.playlist-auto-download')?.updateProgress();
+  });
+}
 function downloadHistory() { try { return JSON.parse(localStorage.getItem('musicbox_download_history') || '[]'); } catch { return []; } }
 function recordDownload(job, status, message='') {
+  if (status === 'done') completedDownloads.add(job.track.id);
   const entries=downloadHistory();entries.unshift({track:{id:job.track.id,title:job.track.title,artist:job.track.artist,thumbnail:job.track.thumbnail},format:job.format,quality:job.quality,status,message,at:Date.now()});
   localStorage.setItem('musicbox_download_history',JSON.stringify(entries.slice(0,100)));
 }
@@ -34,6 +61,7 @@ function addHistoryTabs(mode) {
   document.getElementById('main-content').querySelector('h1').after(tabs);
 }
 function renderDownloadJobs() {
+  scheduleDownloadFeedback();
   if (state.activeView !== 'downloads') return;
   let panel = document.getElementById('active-download-jobs');
   if (!panel) { panel = document.createElement('div'); panel.id = 'active-download-jobs'; document.getElementById('main-content').append(panel); }
@@ -145,8 +173,8 @@ async function playlistSettings(playlist) {
   form.className = 'modal-body playlist-form';
   form.innerHTML = `<label>Nombre<input name="name" class="modal-input" required maxlength="80" value="${escapeHTML(playlist.name)}"></label>
     <label>Descripción<textarea name="description" class="modal-input" maxlength="500">${escapeHTML(playlist.description || '')}</textarea></label>
-    <label class="check-row"><input name="pinned" type="checkbox" ${playlist.pinned ? 'checked' : ''}> Fijar en Inicio</label>
-    <label class="check-row"><input name="autoDownload" type="checkbox" ${playlist.autoDownload ? 'checked' : ''}> Descarga automática</label>
+    <label class="check-row">Fijar en Inicio <input name="pinned" type="checkbox" role="switch" ${playlist.pinned ? 'checked' : ''}></label>
+    <label class="check-row">Descargar canciones nuevas <input name="autoDownload" type="checkbox" role="switch" ${playlist.autoDownload ? 'checked' : ''}></label>
     <p class="setting-desc">Las canciones locales de otro dispositivo se conservan y se reproducen desde ese dispositivo.</p>
     <div class="modal-actions"><button type="button" class="pill-btn-danger" id="delete-playlist">Eliminar playlist</button><button class="pill-btn-accent" type="submit">Guardar</button></div>`;
   const dialog = openDialog('Configurar playlist', form);
@@ -318,7 +346,7 @@ function setupAccessibility() {
         seekTo(e.key === 'Home' ? 0 : e.key === 'End' ? max : Math.max(0, Math.min(max, current + (e.key === 'ArrowRight' ? 5 : -5))));
       } else {
         state.volume = e.key === 'Home' ? 0 : e.key === 'End' ? 1 : Math.max(0, Math.min(1, state.volume + (e.key === 'ArrowRight' ? .05 : -.05)));
-        state.isMuted = false; audio.volume = state.volume; ytPlayer?.unMute?.(); ytPlayer?.setVolume?.(state.volume * 100);
+        state.isMuted = false; audio.volume = state.volume;
         document.getElementById('volume-fill').style.width = state.volume * 100 + '%';
         slider.setAttribute('aria-valuenow', Math.round(state.volume * 100));
       }
@@ -345,20 +373,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const nav = document.getElementById('nav-library');
   nav.querySelector('.nav-label').dataset.desktopLabel = 'Mi música';
   const mobileHeader = document.createElement('div'); mobileHeader.className = 'mobile-player-top';
-  mobileHeader.append(actionButton('Cerrar reproductor', 'collapse', () => document.body.classList.remove('player-expanded')));
+  mobileHeader.append(actionButton('Cerrar reproductor', 'collapse', () => document.body.classList.remove('player-expanded'), 'icon-btn close-expanded-player'));
   const modes = document.createElement('div'); modes.className = 'mobile-player-modes';
-  modes.append(actionButton('MP3', '', () => document.getElementById('hide-video-dock-btn').click(), 'pill-btn-sm'),
-    actionButton('MP4', '', () => document.getElementById('video-toggle-btn').click(), 'pill-btn-sm'),
+  modes.append(actionButton('MP3', '', () => setInlineVideo(false), 'pill-btn-sm'),
+    actionButton('MP4', '', () => setInlineVideo(true), 'pill-btn-sm'),
     actionButton('Letra', '', () => document.getElementById('lyrics-toggle-btn').click(), 'pill-btn-sm'));
-  mobileHeader.append(modes, actionButton('Favorito', 'heart', () => document.getElementById('player-fav-btn').click()),
-    actionButton('Más opciones', 'more', e => { if (state.currentTrack) openTrackContextMenu(e, state.currentTrack); }, 'icon-btn more-btn'));
+  mobileHeader.append(modes, actionButton('Favorito', 'heart', () => document.getElementById('player-fav-btn').click(), 'icon-btn mobile-player-action'),
+    actionButton('Más opciones', 'more', e => { if (state.currentTrack) openTrackContextMenu(e, state.currentTrack); }, 'icon-btn more-btn mobile-player-action'));
   document.getElementById('bottom-player').prepend(mobileHeader);
   const modeButtons = [...modes.children];
   let modeTrack = null;
   let modeLyricsReady = false;
   let updateModes = () => {
     const track = state.currentTrack;
-    const available = [true, !!track && (!track.id.startsWith('local:') || audio.videoWidth > 0),
+    const noClip = !!track && videoClips.get(track.id) === false;
+    const toggle = document.getElementById('video-toggle-btn');
+    if (toggle) toggle.hidden = noClip;
+    const available = [true, !!track && !noClip && (!track.id.startsWith('local:') || audio.videoWidth > 0),
       !!track && modeLyricsReady];
     // Los chips aparecen al instante con su animación, pero solo se ocultan si la ausencia se mantiene: así no parpadean al cambiar de canción.
     modeButtons.forEach((button, index) => {
@@ -398,6 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateModes();
   };
   audio.addEventListener('loadedmetadata', () => updateModes());
+  document.addEventListener('musicbox:video-clip', () => updateModes());
   updateModes();
   // El chip activo se rellena y los demás mantienen buen contraste (igual que en escritorio y Android).
   const paintModes = () => {
@@ -416,12 +448,18 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('.now-playing-cover-wrap').addEventListener('keydown', e => { if (e.key === 'Enter') openPlayer(); });
   const miniQueue = actionButton('Abrir cola', 'queue', () => document.getElementById('queue-toggle-btn').click(), 'control-btn mini-queue');
   document.querySelector('.player-controls').insertBefore(miniQueue, document.getElementById('next-btn'));
+  const miniMore = actionButton('Más opciones', 'more', e => {
+    if (state.currentTrack) openTrackContextMenu(e, state.currentTrack);
+  }, 'control-btn mini-more more-btn');
+  document.querySelector('.player-controls').append(miniMore);
   const updateMobile = () => {
     nav.querySelector('.nav-label').textContent = matchMedia('(max-width:680px), (pointer:coarse) and (max-height:600px)').matches ? 'Música' : 'Mi música';
     document.body.classList.toggle('has-track', !!state.currentTrack);
     if (!document.body.classList.contains('player-expanded')) document.body.classList.remove('cover-zoom');
     const main = document.getElementById('main-content');
-    if (main.querySelector('h1') && !main.querySelector('.mobile-account')) {
+    const accountButton = main.querySelector('.mobile-account');
+    if (state.activeView === 'library') accountButton?.remove();
+    else if (main.querySelector('h1') && !accountButton) {
       const account = actionButton('Cuenta', 'account', () => document.getElementById('settings-btn').click(), 'icon-btn mobile-account');
       main.prepend(account);
     }
@@ -433,26 +471,77 @@ document.addEventListener('DOMContentLoaded', () => {
   let touchStart = null;
   const cover = document.querySelector('.now-playing-cover-wrap');
   const slot = document.createElement('div'); slot.style.display = 'contents'; cover.before(slot); slot.append(cover);
-  let coverRest = null, coverAnimation = null;
-  const restoreCover = (animate = true) => {
-    if (animate) localStorage.setItem('musicbox_zoom_mp3', '0');
+  let coverRest = null, coverAnimation = null, zoomed = false;
+  const coverFrame = () => {
+    const { left, top, width, height } = cover.getBoundingClientRect();
+    return { left: left + 'px', top: top + 'px', width: width + 'px', height: height + 'px',
+      borderRadius: getComputedStyle(cover).borderRadius };
+  };
+  const animateCover = (from, to, finish) => {
     coverAnimation?.cancel();
-    const finish=()=>{cover.removeAttribute('style');slot.style.cssText='display:contents';document.body.classList.remove('cover-zoom');coverRest=null;};
-    if(!coverRest||!animate||matchMedia('(prefers-reduced-motion:reduce)').matches){finish();return;}
-    coverAnimation=cover.animate([{left:'0px',top:'0px',width:innerWidth+'px',height:cover.style.height,borderRadius:'0px'},
-      {left:coverRest.left+'px',top:coverRest.top+'px',width:coverRest.width+'px',height:coverRest.height+'px',borderRadius:'20px'}],{duration:320,easing:'cubic-bezier(.2,.8,.2,1)'});
-    coverAnimation.finished.then(finish).catch(()=>{});
+    Object.assign(cover.style, to);
+    if (matchMedia('(prefers-reduced-motion:reduce)').matches) { finish?.(); return; }
+    const animation = cover.animate([from, to], {duration:320,easing:'cubic-bezier(.2,.8,.2,1)'});
+    coverAnimation = animation;
+    animation.finished.then(() => {
+      if (coverAnimation === animation) { coverAnimation = null; finish?.(); }
+    }).catch(() => {});
+  };
+  const zoomKey = () => state.videoDockOpen ? 'musicbox_zoom_mp4' : 'musicbox_zoom_mp3';
+  const zoomWidth = () => {
+    const drawer = document.getElementById('lyrics-drawer');
+    const besideLyrics = matchMedia('(min-width:681px) and (min-height:601px), (min-width:681px) and (pointer:fine)').matches && drawer.classList.contains('open');
+    return besideLyrics ? Math.max(1, drawer.getBoundingClientRect().left - 19) : innerWidth;
+  };
+  // En modo inmersivo la portada ocupa todo el alto libre entre la cabecera y los controles; antes quedaba un hueco muerto
+  // porque el título seguía a la altura de la portada pequeña.
+  const fillFreeHeight = () => {
+    if (!coverRest) return;
+    const restHeight = parseFloat(coverRest.height);
+    slot.style.height = restHeight + 'px';
+    const info = document.querySelector('.now-playing-info'), center = document.querySelector('.player-center');
+    // Varias pasadas: al crecer la portada la fila de controles también puede moverse.
+    for (let pass = 0; pass < 4; pass++) {
+      const gap = center.getBoundingClientRect().top - info.getBoundingClientRect().bottom - 24;
+      if (Math.abs(gap) < 2) break;
+      slot.style.height = Math.max(restHeight, parseFloat(slot.style.height) + gap) + 'px';
+    }
+  };
+  const expandedFrame = () => ({
+    left:'0px', top:'0px', width:zoomWidth()+'px',
+    height:Math.max(1, document.querySelector('.now-playing-info').getBoundingClientRect().top)+'px',
+    borderRadius:'0px'
+  });
+  const restoreCover = (animate = true) => {
+    if (animate) localStorage.setItem(zoomKey(), '0');
+    zoomed = false;
+    const finish = () => {
+      coverAnimation?.cancel();
+      coverAnimation = null;
+      cover.removeAttribute('style');
+      slot.style.cssText = 'display:contents';
+      document.body.classList.remove('cover-zoom');
+      coverRest = null;
+    };
+    if (!coverRest || !animate) { finish(); return; }
+    slot.style.height = coverRest.height;
+    const {left,top,width,height} = slot.getBoundingClientRect();
+    animateCover(coverFrame(), {left:left+'px', top:top+'px', width:width+'px', height:height+'px',
+      borderRadius:coverRest.borderRadius}, finish);
   };
   const toggleCover = (remember = true) => {
-    if (remember && !coverRest) localStorage.setItem('musicbox_zoom_mp3', '1');
-    if (coverRest) { restoreCover(); return; }
-    coverRest = cover.getBoundingClientRect();
-    const top = document.querySelector('.now-playing-info').getBoundingClientRect().top;
-    slot.style.cssText = `display:block;flex:none;align-self:center;width:${coverRest.width}px;height:${coverRest.height}px`;
-    const before = {left:coverRest.left+'px',top:coverRest.top+'px',width:coverRest.width+'px',height:coverRest.height+'px',borderRadius:getComputedStyle(cover).borderRadius};
-    Object.assign(cover.style,{position:'fixed',left:'0px',top:'0px',width:'100vw',height:Math.max(coverRest.height,top)+'px',margin:'0',maxWidth:'none',borderRadius:'0',zIndex:'1'});
+    if (zoomed) { restoreCover(); return; }
+    if (remember) localStorage.setItem(zoomKey(), '1');
+    const before = coverFrame();
+    if (!coverRest) {
+      coverRest = before;
+      Object.assign(slot.style, {display:'block', flex:'none', alignSelf:'center', width:before.width, height:before.height});
+      Object.assign(cover.style, {position:'fixed', margin:'0', maxWidth:'none', minWidth:'0', zIndex:'1'});
+    }
+    zoomed = true;
     document.body.classList.add('cover-zoom');
-    if(!matchMedia('(prefers-reduced-motion:reduce)').matches)coverAnimation=cover.animate([before,{left:'0px',top:'0px',width:innerWidth+'px',height:Math.max(coverRest.height,top)+'px',borderRadius:'0px'}],{duration:320,easing:'cubic-bezier(.2,.8,.2,1)'});
+    fillFreeHeight();
+    animateCover(before, expandedFrame());
   };
   // El zoom elegido se recuerda: al abrir de nuevo el reproductor grande vuelve como se dejó.
   new MutationObserver(()=>{
@@ -465,8 +554,18 @@ document.addEventListener('DOMContentLoaded', () => {
       paintModes();
     }
     if(coverRest&&!expanded)restoreCover(false);
-    else if(expanded&&!coverRest&&localStorage.getItem('musicbox_zoom_mp3')==='1')requestAnimationFrame(()=>requestAnimationFrame(()=>{if(document.body.classList.contains('player-expanded')&&!coverRest)toggleCover(false);}));
+    else if(expanded&&!coverRest&&localStorage.getItem(zoomKey())==='1')requestAnimationFrame(()=>requestAnimationFrame(()=>{if(document.body.classList.contains('player-expanded')&&!coverRest)toggleCover(false);}));
   }).observe(document.body,{attributes:true,attributeFilter:['class']});
+  const fitZoom = () => {
+    if (zoomed && !coverAnimation) { fillFreeHeight(); Object.assign(cover.style, expandedFrame()); }
+  };
+  window.addEventListener('resize', fitZoom);
+  document.getElementById('lyrics-drawer').addEventListener('transitionend', fitZoom);
+  new MutationObserver(() => {
+    if (!document.body.classList.contains('player-expanded')) return;
+    if (coverRest) restoreCover(false);
+    if (localStorage.getItem(zoomKey()) === '1') toggleCover(false);
+  }).observe(document.getElementById('video-dock'), {attributes:true,attributeFilter:['class']});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&coverRest){event.stopImmediatePropagation();restoreCover();}},true);
   document.querySelector('.now-playing-cover-wrap').addEventListener('pointerdown', e => { touchStart = {x:e.clientX,y:e.clientY}; });
   document.querySelector('.now-playing-cover-wrap').addEventListener('pointerup', e => {
@@ -477,6 +576,9 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (Math.abs(dx)>80 && Math.abs(dy)<50) dx<0 ? playNext() : playPrevious();
   });
   const settingsBody = document.querySelector('#settings-modal .modal-scroll-body');
+  mountArtworkPreferences(settingsBody);
+  document.addEventListener('pointerdown', () => document.body.classList.add('pointer-input'), true);
+  document.addEventListener('keydown', () => document.body.classList.remove('pointer-input'), true);
   const links = document.createElement('div'); links.className = 'collection-toolbar mobile-account-links';
   links.append(actionButton('Descargas', 'download', () => { document.getElementById('settings-modal').style.display = 'none'; loadDownloadsView(); }, 'pill-btn'),
     actionButton('Historial', 'history', () => { document.getElementById('settings-modal').style.display = 'none'; loadHistoryView(); }, 'pill-btn'));
@@ -603,17 +705,50 @@ function applyLanguage() {
 }
 
 let reconcilingDownloads=false;
-async function runAutoDownloads() {
-  if(reconcilingDownloads || !navigator.onLine)return;
+let reconcileDownloadsAgain=false;
+let reconcileInFlight=null;
+// Si ya hay una pasada en curso se pide otra y se devuelve la misma promesa: quien espera obtiene el resultado completo,
+// no un retorno inmediato mientras la descarga todavía no empezó.
+function runAutoDownloads() {
+  if (!navigator.onLine) return Promise.resolve();
+  if (reconcilingDownloads) {
+    reconcileDownloadsAgain=true;
+    return reconcileInFlight;
+  }
   reconcilingDownloads=true;
+  reconcileInFlight=reconcileAutoDownloads();
+  return reconcileInFlight;
+}
+async function reconcileAutoDownloads() {
   try {
-    for(const playlist of await storage.getAllPlaylists()) {
-      if(!playlist.autoDownload)continue;
-      for(const track of playlist.tracks || []) {
-        if(downloadJobs.has(track.id) || await storage.getOfflineTrack(track.id))continue;
-        if(!await downloadTrackForOffline(track))return;
+    for (const playlist of await storage.getAllPlaylists()) {
+      if (!playlist.autoDownload) continue;
+      const tracks = [];
+      for (const track of playlist.tracks || []) {
+        if (/^[A-Za-z0-9_-]{11}$/.test(track.id) && !await storage.getOfflineTrack(track.id)) tracks.push(track);
       }
+      if (!tracks.length) continue;
+      const batch = { total: tracks.length, done: 0, activeId: '', phase: 'running' };
+      autoDownloadBatches.set(playlist.id, batch);
+      scheduleDownloadFeedback();
+      for (const track of tracks) {
+        if (!navigator.onLine) break;
+        batch.activeId = track.id;
+        const saved = await storage.getOfflineTrack(track.id) ||
+          (!downloadJobs.has(track.id) && await downloadTrackForOffline(track, null, true));
+        if (saved) batch.done++;
+        scheduleDownloadFeedback();
+      }
+      batch.activeId = '';
+      batch.phase = batch.done === batch.total ? 'complete' : 'failed';
+      scheduleDownloadFeedback();
     }
-  } finally {reconcilingDownloads=false;}
+  } finally {
+    reconcilingDownloads=false;
+    if (reconcileDownloadsAgain) {
+      reconcileDownloadsAgain=false;
+      await runAutoDownloads();
+    }
+  }
 }
 window.addEventListener('online',()=>{if(!verificationMode)runAutoDownloads();});

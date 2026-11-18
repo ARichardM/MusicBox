@@ -289,6 +289,48 @@ def search_artists(query: str, api=post) -> list[dict]:
     return [a for a in (_artist_from_row(r) for r in walk(data, "musicResponsiveListItemRenderer")) if a]
 
 
+ALL_THEN_SONGS = "all>songs"  # «sigue con las canciones»: marca el paso de la búsqueda sin filtro a la lista de canciones
+
+
+def _search_token(data: dict) -> str:
+    """Token para pedir la página siguiente de una búsqueda; vacío cuando ya no hay más."""
+    for node in walk(data, "nextContinuationData"):
+        if node.get("continuation"):
+            return node["continuation"]
+    for node in walk(data, "continuationCommand"):
+        if node.get("token"):
+            return node["token"]
+    return ""
+
+
+def search_page(query: str, kind: str = "songs", continuation: str = "", api=post) -> dict:
+    """Una página de resultados (unos 20) y el token de la siguiente, como hace Android.
+
+    ``kind``: songs, videos, artists o all. Artistas no trae más páginas. La búsqueda sin filtro («all») tampoco trae token en
+    YouTube Music, así que al acabarse continúa con la lista de canciones (``ALL_THEN_SONGS`` y luego sus tokens reales).
+    """
+    if kind == "all" and continuation:
+        return search_page(query, "songs", "" if continuation == ALL_THEN_SONGS else continuation, api)
+    if continuation:
+        data = api("search", {"continuation": continuation})
+    else:
+        body = {"query": query}
+        params = {"songs": FILTER_SONGS, "videos": FILTER_VIDEOS, "artists": FILTER_ARTISTS}.get(kind)
+        if params:
+            body["params"] = params
+        data = api("search", body)
+    rows = walk(data, "musicResponsiveListItemRenderer")
+    if kind == "artists":
+        items = [a for a in (_artist_from_row(row) for row in rows) if a]
+    else:
+        items = [t for t in (track_from_row(row) for row in rows) if t]
+        if kind == "songs":
+            items = [t for t in items if t["kind"] in ("song", "")]
+        elif kind == "videos":
+            items = [t for t in items if t["kind"] != "song"]
+    return {"items": items, "continuation": _search_token(data) or (ALL_THEN_SONGS if kind == "all" else "")}
+
+
 def normalize(text: str) -> str:
     return re.sub(r"[^\w]+", " ", str(text or "").casefold()).strip()
 

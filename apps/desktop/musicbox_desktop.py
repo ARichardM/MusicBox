@@ -173,6 +173,7 @@ class MusicBoxBridge(QObject):
     updateChanged = Signal()
     _updateEvent = Signal(object)
     _searchFinished = Signal(object, str, int)
+    _searchPageFinished = Signal(object, str, str, int)
     _downloadEvent = Signal(object)
     _streamReady = Signal(object, str)
     _videoChecked = Signal(str, object)
@@ -190,6 +191,9 @@ class MusicBoxBridge(QObject):
         self._search_results = []
         self._search_artists = []
         self._search_query = ""
+        self._search_continuation = ""   # token de la página siguiente (scroll infinito)
+        self._search_loading_more = False
+        self._search_tokens = {}
         self._library = []
         self._library_all = []
         self._folders = []
@@ -301,6 +305,9 @@ class MusicBoxBridge(QObject):
         self._linked_ids = {str(k): str(v) for k, v in linked.items()} if isinstance(linked, dict) else {}
         self._path_ids = {}
         self._auto_attempted = set()
+        self._auto_batches = {}
+        self._auto_ready = set()
+        self._active_download_id = ''
         self._library_scanned = False
         self._library_scan_running = False
         self._library_scan_pending = False
@@ -356,6 +363,7 @@ class MusicBoxBridge(QObject):
         self._listening_timer.start()
         self._player.mediaStatusChanged.connect(self._media_status)
         self._searchFinished.connect(self._apply_search)
+        self._searchPageFinished.connect(self._apply_search_page)
         self._artist_open = self._album_open = False
         self._artist, self._album, self._artist_all = {}, {}, []
         self._artist_loading = self._album_loading = self._artist_all_loading = self._artist_all_loaded = False
@@ -407,6 +415,10 @@ class MusicBoxBridge(QObject):
         self._forYouReady.connect(self._apply_for_you)
         self._playlistSuggestionsReady.connect(self._apply_playlist_suggestions)
         self._downloadEvent.connect(self._handle_download_event)
+        self._refresh_after_download = QTimer(self)
+        self._refresh_after_download.setSingleShot(True)
+        self._refresh_after_download.setInterval(900)
+        self._refresh_after_download.timeout.connect(self.refresh)
         self._streamReady.connect(self._play_stream)
         self._autoplayReady.connect(self._apply_autoplay)
         self._autoplay_tried, self._autoplay_loading = "", False
@@ -450,6 +462,14 @@ class MusicBoxBridge(QObject):
     def searchArtists(self):
         return self._search_artists
 
+    @Property(bool, notify=searchResultsChanged)
+    def searchHasMore(self):
+        return bool(self._search_continuation)
+
+    @Property(bool, notify=searchResultsChanged)
+    def searchLoadingMore(self):
+        return self._search_loading_more
+
     SEARCH_FILTERS = ("all", "songs", "videos", "artists")
 
     @Property(str, notify=searchFilterChanged)
@@ -469,13 +489,18 @@ class MusicBoxBridge(QObject):
 
     def _search_catalog(self, query, kind):
         """Busca en el catálogo de YouTube Music; si no responde, cae a la búsqueda normal de YouTube."""
+        return self._search_catalog_page(query, kind)[0]
+
+    def _search_catalog_page(self, query, kind):
+        """Como _search_catalog, pero devuelve también el token de la página siguiente (canciones y videos)."""
         try:
             if kind == "artists":
                 return [{"kind": "artist", "name": artist["name"], "browseId": artist["browse_id"], "photo": artist["photo"]}
-                        for artist in ytmusic.search_artists(query)[:24]]
-            found = {"all": ytmusic.search_all, "videos": ytmusic.search_videos}.get(kind, ytmusic.search_songs)(query)
-            if found:
-                return found[:30]
+                        for artist in ytmusic.search_artists(query)[:24]], ""
+            # Canciones, videos y «Todos» van por páginas; «Todos» continúa después con la lista de canciones.
+            page = ytmusic.search_page(query, kind if kind in ("songs", "videos", "all") else "songs")
+            if page["items"]:
+                return page["items"], page["continuation"]
         except Exception:
             if kind == "artists":
                 raise
@@ -489,7 +514,7 @@ class MusicBoxBridge(QObject):
                 "thumbnail": f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
                 "url": item.get("webpage_url") or f"https://www.youtube.com/watch?v={video_id}",
             })
-        return results
+        return results, ""
 
     def _save_clicks(self):
         self._settings.setValue("clickStats", json.dumps(self._clicks_stats.export(), ensure_ascii=False, separators=(",", ":")))
@@ -1006,6 +1031,8 @@ class MusicBoxBridge(QObject):
             position = int(self._player.position())
             self._video_local = current
             self._video_mode = True
+            if getattr(self, '_video_output', None) is not None:
+                self._player.setVideoOutput(self._video_output)
             online = {key: current[key] for key in ("title", "artist", "album", "thumbnail", "duration") if current.get(key)}
             online.update({"id": video_id, "url": self._watch_url(video_id), "kind": ""})
             self._pending_seek = position
@@ -1024,6 +1051,8 @@ class MusicBoxBridge(QObject):
             self.videoModeChanged.emit()
             return
         self._video_mode = value
+        if value and getattr(self, '_video_output', None) is not None:
+            self._player.setVideoOutput(self._video_output)
         if current.get("url") and not current.get("path"):
             was_playing = self.playing or bool(getattr(self, "_play_when_ready", True))
             self._pending_seek = max(int(self._player.position()), int(self._pending_seek))
@@ -1034,6 +1063,7 @@ class MusicBoxBridge(QObject):
     @Slot(QObject)
     def attachVideoOutput(self, output):
         """Conecta la superficie de video de la interfaz al reproductor."""
+        self._video_output = output
         self._player.setVideoOutput(output)
 
     @Property(QObject, constant=True)
@@ -1716,7 +1746,7 @@ class MusicBoxBridge(QObject):
     @Property("QVariantMap", notify=playerChanged)
     def currentWave(self):
         self._warm_waves()
-        return self._wave_of(self._crossfade.held or self._current) or {}
+        return self._wave_of(self._crossfade.outgoing_track or self._current) or {}
 
     @Property("QVariantMap", notify=playerChanged)
     def nextWave(self):
@@ -1734,6 +1764,8 @@ class MusicBoxBridge(QObject):
 
     @Property(int, notify=playerChanged)
     def crossfadeZoneMs(self):
+        if self._crossfade.outgoing is not None:
+            return self._crossfade.zone_ms
         seconds = self.crossfadeSeconds
         if not seconds or self.videoMode or self._repeat_mode == 2:
             return 0
@@ -1744,7 +1776,8 @@ class MusicBoxBridge(QObject):
         return seconds * 1000 if self.crossfade_end_ms() >= seconds * 2000 else 0
 
     @Property(int, notify=playerChanged)
-    def crossfadeEndMs(self): return self.crossfade_end_ms()
+    def crossfadeEndMs(self):
+        return self._crossfade.end_ms if self._crossfade.outgoing is not None else self.crossfade_end_ms()
 
     # ---- pantalla abierta: al reabrir la app queda donde se dejó (junto con la canción y su minuto) ----
     @Slot(int, str, str, str)
@@ -1883,7 +1916,23 @@ class MusicBoxBridge(QObject):
     @Property("QVariantMap", notify=downloadItemProgressChanged)
     def downloadItemProgress(self):
         """Avance real de cada canción en descarga; las que esperan turno valen 0."""
-        return {vid: self._download_item_progress.get(vid, 0.0) for vid in self._downloading_ids}
+        return dict(self._download_item_progress)
+
+    @Property(str, notify=downloadStateChanged)
+    def activeDownloadId(self):
+        return self._active_download_id
+
+    @Slot(str, result='QVariantMap')
+    def autoDownloadStatus(self, section):
+        name = 'Favoritos' if section == 'favorites' else section.removeprefix('playlist:')
+        ids = self._auto_batches.get(name, set())
+        if not ids:
+            return {}
+        pending = ids & self._downloading_ids
+        ready = ids & self._auto_ready
+        progress = (len(ready) + sum(self._download_item_progress.get(vid, 0) for vid in pending)) / len(ids)
+        phase = 'running' if pending else ('complete' if len(ready) == len(ids) else 'failed')
+        return dict(phase=phase, progress=progress, done=len(ready), total=len(ids))
 
     @Slot()
     def _prune_item_progress(self):
@@ -1902,6 +1951,9 @@ class MusicBoxBridge(QObject):
         elif total:
             value = min(1.0, max(0.0, downloaded / total))
         else:
+            if vid in self._download_item_progress:
+                del self._download_item_progress[vid]
+                self.downloadItemProgressChanged.emit()
             return
         if value != self._download_item_progress.get(vid):
             self._download_item_progress[vid] = value
@@ -1922,7 +1974,8 @@ class MusicBoxBridge(QObject):
         if name:
             if enabled:
                 self._auto_download_playlists.add(name)
-                self._auto_attempted.clear()
+                self._auto_attempted.difference_update(self._auto_batches.get(name, set()))
+                self._auto_batches.pop(name, None)
             else:
                 self._auto_download_playlists.discard(name)
             self._save_playlists()
@@ -2000,7 +2053,7 @@ class MusicBoxBridge(QObject):
             path = row.get("path", "")
             if video_id and video_id in path: return row
             row_title = "".join(c for c in row.get("title", "").lower() if c.isalnum())
-            if norm_title and len(norm_title) > 3 and (norm_title in row_title or row_title in norm_title): return row
+            if len(norm_title) > 3 and row_title and (norm_title in row_title or row_title in norm_title): return row
         return None
 
     def _is_video_downloaded(self, video_id, title=""):
@@ -2014,6 +2067,10 @@ class MusicBoxBridge(QObject):
     def _missing_tracks(self, playlist_names):
         """Canciones de YouTube de las playlists dadas que aún no están descargadas ni en descarga."""
         missing, seen = [], set()
+        local_ids = set(self._path_ids.values())
+        local_rows = [(row.get("path", ""),
+                       "".join(c for c in row.get("title", "").lower() if c.isalnum()))
+                      for row in self._library_all]
         for name in playlist_names:
             for entry in self._playlists.get(name, []):
                 vid = identity.bare_id(entry)
@@ -2021,7 +2078,11 @@ class MusicBoxBridge(QObject):
                 if not vid or not meta or vid in seen:
                     continue
                 seen.add(vid)
-                if vid in self._downloading_ids or self._is_video_downloaded(vid, meta.get("title", "")):
+                if vid in self._downloading_ids or vid in local_ids:
+                    continue
+                title = "".join(c for c in meta.get("title", "").lower() if c.isalnum())
+                if any(vid in path or len(title) > 3 and local and (title in local or local in title)
+                       for path, local in local_rows):
                     continue
                 missing.append(meta)
         return missing
@@ -2030,11 +2091,19 @@ class MusicBoxBridge(QObject):
         """La descarga automática vigila las playlists: lo que falte se descarga aunque se haya agregado desde otro dispositivo."""
         if not self._library_scanned or not self._auto_download_playlists:
             return
-        for meta in self._missing_tracks(sorted(self._auto_download_playlists)):
-            if meta["id"] in self._auto_attempted:
-                continue
-            self._auto_attempted.add(meta["id"])
-            self.downloadOnlineTrack(meta)
+        tracks = [meta for meta in self._missing_tracks(sorted(self._auto_download_playlists))
+                  if meta["id"] not in self._auto_attempted]
+        if not tracks:
+            return
+        ids = {track["id"] for track in tracks}
+        self._auto_attempted.update(ids)
+        self._auto_ready.difference_update(ids)
+        for name in self._auto_download_playlists:
+            matches = ids & {identity.bare_id(entry) for entry in self._playlists.get(name, [])}
+            if matches:
+                previous = self._auto_batches.get(name, set())
+                self._auto_batches[name] = (previous if previous & self._downloading_ids else set()) | matches
+        self._queue_online_downloads(tracks)
 
     def _merge_favorites_sources(self):
         """Migra datos antiguos y mantiene Favoritos como una única colección."""
@@ -2522,28 +2591,36 @@ class MusicBoxBridge(QObject):
 
     @Slot(str)
     def downloadAllInPlaylist(self, name):
-        for meta in self._missing_tracks([name.strip()]):
-            self.downloadOnlineTrack(meta)
+        self._queue_online_downloads(self._missing_tracks([name.strip()]))
 
     @Slot()
     def downloadAllInFavorites(self):
-        for meta in self._missing_tracks(["Favoritos"]):
-            self.downloadOnlineTrack(meta)
+        self._queue_online_downloads(self._missing_tracks(["Favoritos"]))
 
     @Slot("QVariantMap")
     def downloadOnlineTrack(self, track):
-        item = dict(track or {})
-        video_id = item.get("id", "")
-        url = item.get("url") or (f"https://www.youtube.com/watch?v={video_id}" if video_id else "")
-        if not url: return
-        if video_id:
-            self._downloading_ids.add(video_id)
-            self.downloadingIdsChanged.emit()
-        target = Path(self.defaultDownloadFolder).expanduser().resolve()
-        target.mkdir(parents=True, exist_ok=True)
+        self._queue_online_downloads([dict(track or {})])
+
+    def _queue_online_downloads(self, tracks):
+        urls = []
+        ids = set()
+        for item in tracks:
+            video_id = item.get("id", "")
+            url = item.get("url") or (self._watch_url(video_id) if video_id else "")
+            if not url or video_id and video_id in self._downloading_ids | ids:
+                continue
+            urls.append(url)
+            if video_id:
+                ids.add(video_id)
+        if not urls:
+            return
+        self._downloading_ids.update(ids)
+        self.downloadingIdsChanged.emit()
         prefs = self.downloadPrefs
         fmt = prefs["autoFormat"]
-        self.startDownload(url, False, "", fmt, prefs["quality_mp4" if fmt == "MP4" else "quality_mp3"], str(target), "")
+        self.startDownload("\n".join(urls), False, "", fmt,
+                           prefs["quality_mp4" if fmt == "MP4" else "quality_mp3"],
+                           self.defaultDownloadFolder, "")
 
     @Property(bool, notify=authChanged)
     def authenticated(self): return bool(self._user)
@@ -3175,6 +3252,11 @@ class MusicBoxBridge(QObject):
     def _player_error(self, error, message=""):
         if error == QMediaPlayer.NoError or self._stream_resolving or self._player.source().isEmpty():
             return
+        if self.videoMode:
+            self._no_video.add(self._current.get("id", ""))
+            self.setVideoMode(False)
+            self._show_notice(i18n.tr("No se pudo cargar el vídeo. Volvimos al audio."))
+            return
         self._recover_playback(message)
 
     def _recover_playback(self, message):
@@ -3543,13 +3625,16 @@ class MusicBoxBridge(QObject):
         self._search_generation += 1
         generation = self._search_generation
         kind = self.searchFilter
+        self._search_continuation = ""
+        self._search_loading_more = False
         self._set_busy(True)
         self._set_status(i18n.tr("Buscando en YouTube Music…"))
 
         def worker():
             results, error = [], ""
             try:
-                results = self._search_catalog(query, kind)
+                results, token = self._search_catalog_page(query, kind)
+                self._search_tokens[generation] = token
             except Exception as exc:
                 error = str(exc).splitlines()[-1] if str(exc) else i18n.tr("No se pudo completar la búsqueda")
             if generation == self._search_generation:
@@ -3569,12 +3654,58 @@ class MusicBoxBridge(QObject):
             item["favorite"] = bool(f"youtube:{vid}" in self._favorites or item.get("url", "") in self._favorites)
         self._search_results = results
         self._search_artists = artists
+        self._search_continuation = self._search_tokens.pop(generation, "")
         self.searchResultsChanged.emit()
         self._set_busy(False)
         self._set_status(error or i18n.tr("{n} resultados", n=len(results) + len(artists)))
         if error:
             query = self._recent_queries[0] if self._recent_queries else ""
             self._show_notice(i18n.tr("No se pudo completar la búsqueda. ") + error, (lambda: self.search(query)) if query else None)
+
+    @Slot()
+    def loadMoreSearch(self):
+        """Scroll infinito: pide la página siguiente de la búsqueda con su token (una sola a la vez)."""
+        if self._search_loading_more or not self._search_continuation or self._busy or not self._search_query:
+            return
+        generation, token = self._search_generation, self._search_continuation
+        query, kind = self._search_query, self.searchFilter
+        self._search_loading_more = True
+        self.searchResultsChanged.emit()
+
+        def worker():
+            items, next_token, error = [], "", ""
+            try:
+                page = ytmusic.search_page(query, kind, token)
+                items, next_token = page["items"], page["continuation"]
+            except Exception as exc:
+                error = str(exc).splitlines()[-1] if str(exc) else i18n.tr("No se pudo completar la búsqueda")
+            if generation == self._search_generation:
+                self._searchPageFinished.emit(items, next_token, error, generation)
+
+        threading.Thread(target=worker, daemon=True, name="musicbox-search-page").start()
+
+    @Slot(object, str, str, int)
+    def _apply_search_page(self, items, next_token, error, generation):
+        if generation != self._search_generation:
+            return  # llegó tarde: ya hay otra búsqueda
+        self._search_loading_more = False
+        if error:
+            self._set_status(i18n.tr("No se pudieron cargar más resultados."))
+            self.searchResultsChanged.emit()  # el token se conserva: se reintenta al volver al final
+            return
+        known = {item.get("id") for item in self._search_results}
+        fresh = []
+        for item in items:
+            vid = item.get("id", "")
+            if not vid or vid in known:
+                continue
+            known.add(vid)
+            self._mark_local(item, vid, item.get("title", ""))
+            item["favorite"] = bool(f"youtube:{vid}" in self._favorites or item.get("url", "") in self._favorites)
+            fresh.append(item)
+        self._search_results = self._search_results + fresh
+        self._search_continuation = next_token
+        self.searchResultsChanged.emit()
 
     @Slot()
     def clearSearch(self):
@@ -3584,6 +3715,8 @@ class MusicBoxBridge(QObject):
         self._search_results = []
         self._search_artists = []
         self._search_query = ""
+        self._search_continuation = ""
+        self._search_loading_more = False
         self.searchResultsChanged.emit()
         self._set_busy(False)
         self._set_status(i18n.tr("Todo listo"))
@@ -3667,6 +3800,7 @@ class MusicBoxBridge(QObject):
             self.downloadingIdsChanged.emit()
             self._show_notice(error)
             return
+        config["keep_filenames"] = True
         self._begin_download(config, from_page=False)
 
     @Slot(str, bool, str, str, str, str, str, result=str)
@@ -3735,6 +3869,9 @@ class MusicBoxBridge(QObject):
             if level == "error": self._download_error_count += 1
             self._append_download_log(event.get("text", ""), level)
         elif kind == "link" and not cancelling:
+            link = urlsplit(event.get("url") or "")
+            self._active_download_id = (link.path.strip("/") if link.hostname == "youtu.be"
+                                        else parse_qs(link.query).get("v", [""])[0])
             self._download_status = i18n.tr("Analizando enlace {i} de {n}…", i=event.get("index"), n=event.get("count"))
             self._download_detail = i18n.tr("Consultando la información del enlace.")
             self._download_badge = "preparing"; self._download_percent_text = "…"
@@ -3777,16 +3914,28 @@ class MusicBoxBridge(QObject):
                                          "format": path.suffix.lstrip(".").upper()})
             self.downloadFilesChanged.emit()
             self._append_download_log(i18n.tr("Listo: ") + filename, "ready")
-            for vid in list(self._downloading_ids):
-                if vid in filename: self._downloading_ids.discard(vid)
-            self.downloadingIdsChanged.emit()
-            self.refresh()
+            match = re.search(r"\[([A-Za-z0-9_-]{11})\]$", path.stem)
+            if match:
+                vid = match[1]
+                if vid in self._auto_attempted:
+                    self._auto_ready.add(vid)
+                self._downloading_ids.discard(vid)
+                self.downloadingIdsChanged.emit()
+            timer = getattr(self, "_refresh_after_download", None)
+            if timer is not None and not timer.isActive():
+                timer.start()
+        elif kind == "link_done":
+            if self._active_download_id in self._downloading_ids:
+                self._downloading_ids.discard(self._active_download_id)
+                self.downloadingIdsChanged.emit()
+            self._active_download_id = ""
         elif kind == "summary":
             self._download_completed = int(event.get("completed", 0))
             self._download_error_count = int(event.get("errors", 0))
             self._download_had_summary = True
         elif kind == "done":
             self._download_running = False; self._download_indeterminate = False
+            self._active_download_id = ""
             cancelled = bool(event.get("cancelled"))
             if cancelled: self._download_queue.clear()
             queued = self._download_queue.pop(0) if self._download_queue else None
@@ -4053,6 +4202,9 @@ class MusicBoxBridge(QObject):
             return
         if track.pop("_video_unavailable", False):
             self._no_video.add(track.get("id", ""))
+            if self._video_local is not None:
+                self.setVideoMode(False)
+                return
             self._video_mode = False
             self.videoModeChanged.emit()
         self._stream_resolving = False

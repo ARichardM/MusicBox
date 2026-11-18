@@ -325,6 +325,7 @@ EN = {
     "Sin título": "Untitled",
     "No se pudo completar la búsqueda": "The search could not be completed",
     "No se pudo completar la búsqueda. ": "The search could not be completed. ",
+    "No se pudieron cargar más resultados.": "Could not load more results.",
     "No se pudo abrir la carpeta": "The folder could not be opened",
     "No se encontró FFmpeg. Coloca ffmpeg.exe junto al programa o en PATH.":
         "FFmpeg was not found. Place ffmpeg.exe next to the program or on PATH.",
@@ -345,6 +346,7 @@ EN = {
     "No se pudo reproducir este resultado": "This result could not be played",
     "No se pudo reproducir este resultado.": "This result could not be played.",
     "Reproduciendo": "Playing",
+    "No se pudo cargar el vídeo. Volvimos al audio.": "Couldn't load the video. Playback returned to audio.",
     "Analizando enlace {i} de {n}…": "Analyzing link {i} of {n}…",
     "{n} resultados": "{n} results",
     "{n} completadas · {e} errores": "{n} completed · {e} errors",

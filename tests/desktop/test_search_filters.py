@@ -32,9 +32,14 @@ class SearchFilterTests(unittest.TestCase):
         self.bridge._schedule_cloud_save = Mock()
         self.bridge._listening_timer.stop()
         self.bridge._device_timer.stop()
+        catalog = {"songs": [song("s1"), song("s2")], "videos": [dict(song("v1"), kind="video")]}
+
+        def fake_page(query, kind="songs", continuation="", api=None):
+            return {"items": catalog[kind], "continuation": ""}
+
         self.patches = {
-            "songs": patch.object(ytmusic, "search_songs", return_value=[song("s1"), song("s2")]),
-            "videos": patch.object(ytmusic, "search_videos", return_value=[dict(song("v1"), kind="video")]),
+            # Canciones y videos se piden por páginas (scroll infinito): una sola función para ambos.
+            "page": patch.object(ytmusic, "search_page", side_effect=fake_page),
             "artists": patch.object(ytmusic, "search_artists",
                                     return_value=[{"name": "Vegetta777", "browse_id": "UCabc", "photo": "https://foto"}]),
             "youtube": patch.object(youtube_streams, "search", return_value=[{"id": "gameplay", "title": "Minecraft"}]),
@@ -73,7 +78,7 @@ class SearchFilterTests(unittest.TestCase):
         self.assertEqual(self.bridge._settings.value("searchFilter"), "videos")
 
     def test_plain_youtube_is_only_a_fallback_when_the_catalog_fails(self):
-        self.mocks["songs"].side_effect = OSError("sin respuesta")
+        self.mocks["page"].side_effect = OSError("sin respuesta")
         self.bridge.search("vegetta777")
         self.wait()
         self.assertEqual([row["id"] for row in self.bridge.searchResults], ["gameplay"])

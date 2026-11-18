@@ -13,8 +13,7 @@
 
   function currentPosition() {
     try {
-      if (state.isOfflinePlayback) return audio.currentTime || 0;
-      if (typeof ytPlayer !== 'undefined' && ytPlayer?.getCurrentTime) return ytPlayer.getCurrentTime() || 0;
+      return audio.currentTime || 0;
     } catch {}
     return 0;
   }
@@ -75,7 +74,7 @@
       if (pending.position < 2) return;
       const deadline = Date.now() + 9000;
       const tick = () => {
-        const ready = state.isOfflinePlayback ? audio.readyState >= 1 : (typeof ytReady !== 'undefined' && ytReady && ytPlayer?.getDuration?.() > 0);
+        const ready = audio.readyState >= 1;
         if (ready) { seekTo(pending.position); return; }
         if (Date.now() < deadline) setTimeout(tick, 150);
       };

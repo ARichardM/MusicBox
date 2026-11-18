@@ -9,7 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-from PySide6.QtCore import QSettings, QCoreApplication, QEvent
+from PySide6.QtCore import QSettings, QCoreApplication, QEvent, QMetaObject, Qt, QUrl
+from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 import musicbox_desktop as module
@@ -51,6 +52,62 @@ class WaveformTests(unittest.TestCase):
 
 
 class SilenceAwareCrossfadeTests(unittest.TestCase):
+    def test_wave_can_resize_during_the_zoom(self):
+        engine = QQmlEngine()
+        component = QQmlComponent(engine, QUrl.fromLocalFile(str(
+            module.CODE_DIR / 'ui' / 'components' / 'WaveBar.qml')))
+        bar = component.create()
+        self.assertIsNotNone(bar, component.errorString())
+        bar.setProperty('width', 640)
+        bar.setProperty('duration', 10000)
+        bar.setProperty('endMs', 4300)
+        bar.setProperty('mixing', True)
+        bar.setProperty('zoneMs', 1000)
+        QTest.qWait(350)
+        bar.setProperty('width', 350)
+        QTest.qWait(450)
+        self.assertGreater(bar.property('zoom'), .95)
+        bar.setProperty('mixing', False)
+        QTest.qWait(930)
+        self.assertLess(bar.property('zoom'), .05)
+        delete(bar)
+        delete(engine)
+
+    def test_the_window_does_not_jump_when_the_mix_ends_and_the_next_song_takes_over(self):
+        """Al terminar la mezcla el zoom sale despacio: la ventana visible no debe saltar a la canción nueva."""
+        engine = QQmlEngine()
+        component = QQmlComponent(engine, QUrl.fromLocalFile(str(
+            module.CODE_DIR / 'ui' / 'components' / 'WaveBar.qml')))
+        bar = component.create()
+        self.assertIsNotNone(bar, component.errorString())
+        update = lambda: QMetaObject.invokeMethod(bar, 'updateView', Qt.DirectConnection)
+        window = lambda: (bar.property('viewStart'), bar.property('viewEnd'))
+        bar.setProperty('width', 640)
+        bar.setProperty('duration', 40000)
+        bar.setProperty('endMs', 20000)
+        bar.setProperty('zoneMs', 4000)
+        bar.setProperty('mixing', True)
+        QTest.qWait(900)
+        self.assertGreater(bar.property('zoom'), .95)
+        update()
+        during = window()
+        # La mezcla termina: la canción nueva es más corta y tiene otro final audible.
+        bar.setProperty('mixing', False)
+        bar.setProperty('duration', 25000)
+        bar.setProperty('endMs', 25000)
+        bar.setProperty('zoneMs', 0)
+        update()
+        after = window()
+        self.assertLess(max(abs(after[0] - during[0]), abs(after[1] - during[1])), .08,
+                        f'La ventana saltó de {during} a {after} con el zoom en {bar.property("zoom")}')
+        QTest.qWait(1000)
+        update()
+        self.assertLess(bar.property('zoom'), .05)
+        self.assertAlmostEqual(window()[0], 0, delta=.05)
+        self.assertAlmostEqual(window()[1], 1, delta=.05)
+        delete(bar)
+        delete(engine)
+
     def test_the_mix_starts_over_sound_and_skips_the_next_songs_silence(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             settings = QSettings(str(Path(directory) / 'settings.ini'), QSettings.IniFormat)
@@ -78,7 +135,13 @@ class SilenceAwareCrossfadeTests(unittest.TestCase):
                     self.assertTrue(2500 <= outgoing_at <= 3800, f'La mezcla empezó en {outgoing_at} ms')
                     # La barra sigue a la canción que sale (no vuelve a 0 con la nueva).
                     self.assertGreaterEqual(bridge.playerPosition, 2500)
-                    QTest.qWait(900)
+                    self.assertEqual(bridge.crossfadeZoneMs, 1000, 'The final queue item keeps the outgoing zoom active')
+                    self.assertAlmostEqual(bridge.crossfadeEndMs, 4000, delta=300)
+                    outgoing_wave = bridge.currentWave
+                    QTest.qWait(550)
+                    if bridge.mixing:
+                        self.assertEqual(bridge.currentWave, outgoing_wave, 'The waveform stays on the outgoing song after the title changes')
+                    QTest.qWait(350)
                     self.assertGreaterEqual(bridge._player.position(), 2500, 'La siguiente entra pasado su silencio inicial')
                 finally:
                     bridge._crossfade.cancel()

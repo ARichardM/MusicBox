@@ -361,6 +361,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
             // El recuadro mide siempre lo ancho de la pantalla; el lado corto de la imagen (el cuadrado central de una portada, aunque
             // venga dentro de una miniatura 16:9) se ajusta a ese ancho y queda centrado: no se recorta el arte al ampliar.
             android.graphics.drawable.Drawable art = imgNowPlayingCover.getDrawable();
+            int imageHeight = lp.height; // sin imagen conocida la portada llena el marco
             if (art != null && art.getIntrinsicWidth() > 0 && art.getIntrinsicHeight() > 0) {
                 float dw = art.getIntrinsicWidth(), dh = art.getIntrinsicHeight();
                 float scale = lp.width / Math.min(dw, dh);
@@ -369,16 +370,32 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
                 matrix.postTranslate((lp.width - dw * scale) / 2f, (lp.height - dh * scale) / 2f);
                 imgNowPlayingCover.setScaleType(ImageView.ScaleType.MATRIX);
                 imgNowPlayingCover.setImageMatrix(matrix);
+                imageHeight = Math.round(dh * scale);
             } else imgNowPlayingCover.setScaleType(ImageView.ScaleType.CENTER_CROP);
             int shade = Math.round(0x1C * (1f - t));
             frame.setCardBackgroundColor(0xFF000000 | (shade << 16) | (shade << 8) | shade);
             animatedArtwork.fit(t > .001f, lp.width);
+            // Los degradados se apoyan en los bordes de la imagen, no en los del marco (más alto): así el arte se funde con el
+            // fondo en vez de quedar cortado de golpe sobre una barra negra.
+            int[] shown = cl.arichard.descargador.util.CoverFadeBounds.visible(lp.height, imageHeight);
+            placeCoverFade(coverFadeTop, shown[0]);
+            placeCoverFade(coverFadeBottom, cl.arichard.descargador.util.CoverFadeBounds.bottomFadeTop(
+                    shown[0], shown[1], coverFadeBottom.getLayoutParams().height));
         }
         (isMp3Mode ? coverFadeTop : videoFadeTop).setAlpha(t);
         (isMp3Mode ? coverFadeBottom : videoFadeBottom).setAlpha(t);
         playingFromBlock.setAlpha(1f - t);
         // La barra superior queda por encima del video cuando este sube hasta el borde.
         playerTopBar.setTranslationZ(t > 0f ? dp(24) : 0f);
+    }
+
+    /** Coloca un degradado de la portada a [top] píxeles del borde superior del marco. */
+    private void placeCoverFade(View fade, int top) {
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) fade.getLayoutParams();
+        if (params.gravity == android.view.Gravity.TOP && params.topMargin == top) return;
+        params.gravity = android.view.Gravity.TOP;
+        params.topMargin = top;
+        fade.setLayoutParams(params);
     }
 
     private boolean savedZoom(boolean mp3) {

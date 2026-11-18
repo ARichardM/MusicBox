@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from app_paths import CODE_DIR, DATA_ROOT, RESOURCE_ROOT, worker_command
 
 APP_DIR = DATA_ROOT
-APP_VERSION = "2.4.6"
+APP_VERSION = "2.4.7"
 AUDIO_QUALITY = ("192 kbps", "128 kbps", "256 kbps", "320 kbps")
 VIDEO_QUALITY = ("1080p", "720p", "480p", "360p", "Mejor disponible")
 
@@ -62,7 +62,7 @@ def build_output_template(config: dict, queue_position: int = 1) -> str:
         return str(destination / "%(playlist_title|Sin playlist).100B"
                    / "%(playlist_index|0)03d - %(title).140B [%(id)s].%(ext)s")
     prefix = (f"{queue_position:03d} - "
-              if not config["playlist"] and len(config.get("urls", [])) > 1 else "")
+              if not config["playlist"] and not config.get("keep_filenames") and len(config.get("urls", [])) > 1 else "")
     return str(destination / (prefix + "%(title).150B [%(id)s].%(ext)s"))
 
 
@@ -234,8 +234,14 @@ def run_worker(config: dict) -> int:
             for index, url in enumerate(config["urls"], 1):
                 current_url, current_info, existing_file = url, {}, False
                 downloader.params["outtmpl"]["default"] = build_output_template(config, index)
-                emit("link", index=index, count=len(config["urls"]))
-                downloader.download([url])
+                emit("link", index=index, count=len(config["urls"]), url=url)
+                try:
+                    downloader.download([url])
+                except Exception as exc:
+                    errors += 1
+                    emit("log", level="error", text=str(exc))
+                finally:
+                    emit("link_done")
     except Exception as exc:
         errors += 1
         emit("log", level="error", text=str(exc))
