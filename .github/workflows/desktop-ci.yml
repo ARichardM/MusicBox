@@ -26,7 +26,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r apps/desktop/requirements.txt pip-audit
       - name: Auditar dependencias
-        run: python -m pip_audit -r apps/desktop/requirements.txt
+        run: python -m pip_audit -r apps/desktop/requirements.txt --desc on --progress-spinner off
       - name: Validar código Python
         run: python -m compileall -q apps/desktop
       - name: Ejecutar pruebas
