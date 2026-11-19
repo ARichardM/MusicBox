@@ -131,14 +131,17 @@ public final class SettingsActivity extends AppearanceActivity {
         if (state == null) animateIn(findViewById(R.id.cardAppearance), 80);
     }
 
+    private SharedPreferences.OnSharedPreferenceChangeListener playbackSettingsListener;
     private void setupCrossfade() {
+        boolean[] binding={false};
         SharedPreferences prefs = getSharedPreferences("player", MODE_PRIVATE);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(12), dp(18), dp(12));
         card.setBackgroundResource(R.drawable.bg_settings_card);
         SwitchMaterial toggle = new SwitchMaterial(this);
-        toggle.setText("Crossfade");
+        toggle.setText(Tr.t("Transiciones suaves"));
+        toggle.setTextColor(AccentColors.getColor(this, R.color.text_primary));toggle.setMinHeight(dp(48));
         int seconds = Math.max(0, Math.min(12, prefs.getInt("crossfade_seconds", 0)));
         toggle.setChecked(seconds > 0);
         android.widget.SeekBar duration = new android.widget.SeekBar(this);
@@ -156,6 +159,7 @@ public final class SettingsActivity extends AppearanceActivity {
             detail.setText(value + " s");
         };
         toggle.setOnCheckedChangeListener((button, checked) -> {
+            if(binding[0])return;
             duration.setEnabled(checked);
             save.accept(checked ? duration.getProgress() + 1 : 0);
         });
@@ -169,12 +173,32 @@ public final class SettingsActivity extends AppearanceActivity {
         SwitchMaterial zone = new SwitchMaterial(this);
         zone.setText(cl.arichard.descargador.util.Tr.t("Mostrar el crossfade en la barra de progreso"));
         zone.setChecked(prefs.getBoolean("crossfade_show_zone", true));
-        zone.setOnCheckedChangeListener((button, checked) -> prefs.edit().putBoolean("crossfade_show_zone", checked).apply());
-        card.addView(toggle); card.addView(duration); card.addView(detail); card.addView(zone);
+        zone.setOnCheckedChangeListener((button, checked) -> {if(!binding[0])prefs.edit().putBoolean("crossfade_show_zone", checked).apply();});
+        SwitchMaterial autoplay=new SwitchMaterial(this);autoplay.setText(Tr.t("Reproducción automática"));
+        autoplay.setTextColor(AccentColors.getColor(this,R.color.text_primary));autoplay.setMinHeight(dp(48));
+        autoplay.setChecked(prefs.getBoolean("autoplay",true));
+        autoplay.setOnCheckedChangeListener((button,checked)->{if(binding[0])return;prefs.edit().putBoolean("autoplay",checked).apply();cl.arichard.descargador.player.PlayerManager.getInstance().setAutoplay(checked);});
+        card.addView(autoplay);card.addView(toggle);
+        LinearLayout durationRow=new LinearLayout(this);durationRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        durationRow.addView(duration,new LinearLayout.LayoutParams(0,dp(48),1));durationRow.addView(detail,new LinearLayout.LayoutParams(dp(44),-2));
+        card.addView(durationRow);zone.setMinHeight(dp(48));zone.setTextColor(AccentColors.getColor(this,R.color.text_primary));card.addView(zone);
         LinearLayout parent = (LinearLayout)findViewById(R.id.rowDownloader).getParent();
         LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
         layout.topMargin = dp(12);
-        parent.addView(card, parent.indexOfChild(findViewById(R.id.rowDownloader)), layout);
+        int index=parent.indexOfChild(findViewById(R.id.cardAppearance))+1;
+        TextView title=new TextView(this);title.setText(Tr.t("REPRODUCCIÓN"));title.setTextSize(12);title.setTypeface(null,android.graphics.Typeface.BOLD);
+        title.setTextColor(AccentColors.getColor(this,R.color.text_secondary));
+        LinearLayout.LayoutParams titleLayout=new LinearLayout.LayoutParams(-1,-2);titleLayout.topMargin=dp(28);titleLayout.leftMargin=dp(6);
+        parent.addView(title,index,titleLayout);parent.addView(card,index+1,layout);
+        playbackSettingsListener=(changed,key)->runOnUiThread(()->{
+            binding[0]=true;
+            try{
+                int next=Math.max(0,Math.min(12,prefs.getInt("crossfade_seconds",0)));
+                toggle.setChecked(next>0);duration.setEnabled(next>0);duration.setProgress(Math.max(0,next-1));detail.setText(next+" s");
+                autoplay.setChecked(prefs.getBoolean("autoplay",true));zone.setChecked(prefs.getBoolean("crossfade_show_zone",true));
+            }finally{binding[0]=false;}
+        });
+        prefs.registerOnSharedPreferenceChangeListener(playbackSettingsListener);
     }
 
     private void setupDownloadQuality() {
@@ -333,6 +357,7 @@ public final class SettingsActivity extends AppearanceActivity {
 
     @Override protected void onDestroy() {
         getSharedPreferences("musicbox_prefs", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(settingsListener);
+        if(playbackSettingsListener!=null)getSharedPreferences("player",MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(playbackSettingsListener);
         if (cloudPrefs != null) cloudPrefs.unregisterOnSharedPreferenceChangeListener(devicesListener);
         super.onDestroy();
     }

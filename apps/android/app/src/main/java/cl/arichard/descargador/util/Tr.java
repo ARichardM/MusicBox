@@ -9,6 +9,12 @@ public final class Tr {
     private static final Map<String, String> EN = new HashMap<>();
     static {
         Map<String, String> m = EN;
+        m.put("REPRODUCCIÓN", "PLAYBACK");
+        m.put("Transiciones suaves", "Smooth transitions");
+        m.put("Abrir cola", "Open queue");
+        m.put("Mostrar el crossfade en la barra de progreso", "Show crossfade on the progress bar");
+        m.put("Baja", "Low");
+        m.put("Alta", "High");
         m.put("Todos los artistas", "All artists");
         m.put("Artistas", "Artists");
         m.put("Videos", "Videos");

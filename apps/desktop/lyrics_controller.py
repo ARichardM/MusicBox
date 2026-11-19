@@ -160,6 +160,12 @@ class LyricsController(QObject):
         signature = (ident, item.get("title"), item.get("artist"), item.get("album"), item.get("duration"))
         if not force and signature == self._request_signature:
             return
+        # Switching MP3/MP4 can refine the measured duration of the same recording.
+        # Existing lyrics stay usable; reloading here made the drawer and layout blink.
+        if not force and self._lines and self._request_signature and signature[:4] == self._request_signature[:4]:
+            self._request_signature = signature
+            self._track = item
+            return
         self._request_signature = signature
         self._clock.stop()
         self._track = item

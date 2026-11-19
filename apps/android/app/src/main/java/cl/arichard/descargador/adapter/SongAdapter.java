@@ -66,6 +66,8 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     public enum Sort { DEFAULT, TITLE, ARTIST, RECENT, PLAYS, DURATION }
     private Sort sort = Sort.DEFAULT;
     private boolean playlistOrder;
+    private String playlistName = "";
+    public void setPlaylistName(String name) { playlistName = name == null ? "" : name; }
     /** Sentido natural de cada orden: A→Z, de menor a mayor duración, lo más reciente o lo más escuchado primero. */
     private boolean ascending = true;
 
@@ -123,9 +125,18 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
                 if (playlistOrder) {
                     java.util.Map<String, Integer> positions = new java.util.HashMap<>();
                     for (int i = 0; i < originalList.size(); i++) positions.put(originalList.get(i).getPath(), i);
-                    order = (a, b) -> Integer.compare(positions.get(b.getPath()), positions.get(a.getPath()));
+                    cl.arichard.descargador.data.PlaylistManager manager = cl.arichard.descargador.data.PlaylistManager.getInstance(context);
+                    order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(
+                            manager.addedAt(playlistName, b) > 0 ? manager.addedAt(playlistName, b) : positions.get(b.getPath()) + 1,
+                            manager.addedAt(playlistName, a) > 0 ? manager.addedAt(playlistName, a) : positions.get(a.getPath()) + 1))
+                            .thenComparing(a -> a.getVideoId() != null ? a.getVideoId() : a.getPath());
                 } else {
-                    order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(b.getDateAdded(), a.getDateAdded())).thenComparing(byTitle);
+                    cl.arichard.descargador.data.PlaylistManager manager = cl.arichard.descargador.data.PlaylistManager.getInstance(context);
+                    java.util.Map<String, Long> dates = manager.libraryDates();
+                    java.util.Map<String, Long> stamps = new java.util.HashMap<>();
+                    for (Song song : displayedList) stamps.put(song.getPath(), dates.getOrDefault(manager.canonicalKey(song), song.getDateAdded()));
+                    order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(stamps.get(b.getPath()), stamps.get(a.getPath())))
+                            .thenComparing(a -> a.getVideoId() != null ? a.getVideoId() : a.getPath());
                 }
                 break;
             }
@@ -387,7 +398,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
             holder.imgDownloadedBadge.setImageResource(fromFolder ? R.drawable.ic_folder_badge : R.drawable.ic_downloaded_badge);
             // El acento puro se pierde sobre el fondo oscuro: se aclara para que la marca de descarga se lea con claridad.
             int markColor = AccentColors.getColor(context, fromFolder ? R.color.text_secondary : R.color.accent);
-            if (!fromFolder) markColor = androidx.core.graphics.ColorUtils.blendARGB(markColor, 0xFFFFFFFF, .5f);
+            if (!fromFolder) markColor = androidx.core.graphics.ColorUtils.blendARGB(markColor, 0xFFFFFFFF, .18f);
             holder.imgDownloadedBadge.setImageTintList(android.content.res.ColorStateList.valueOf(markColor));
             holder.imgDownloadedBadge.setContentDescription(Tr.t(fromFolder ? "De una carpeta" : "Descargada en el dispositivo"));
             holder.imgDownloadedBadge.setVisibility((isLocalFile || savedOnline) && !downloading && !selectionMode

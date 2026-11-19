@@ -126,8 +126,8 @@ async def health():
     return {
         "status": "ok",
         "app": "MusicBox Web",
-        "version": "2.4.7",
-        "build": "release-v247",
+        "version": "2.4.8",
+        "build": "release-v248",
         "has_cookies": COOKIE_PATH.is_file() and COOKIE_PATH.stat().st_size > 0,
     }
 

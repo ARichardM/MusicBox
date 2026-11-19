@@ -89,4 +89,24 @@ public class PlaylistSyncTest {
         manager.importJson(section("['c']"));
         assertEquals("c", manager.getSongPaths("driving").get(0));
     }
+    @Test public void conflictingOrdersConvergeFromBothDevices() throws Exception {
+        JSONObject base=section("['a']"),phone=section("['a','c']"),pc=section("['a','b']");
+        assertTrue(PlaylistSync.same(PlaylistSync.merge(base,phone,pc),PlaylistSync.merge(base,pc,phone)));
+    }
+    @Test public void accountActivityKeepsBothDevicesAndHonorsClearMarks() throws Exception {
+        JSONObject phone=new JSONObject("{queries:{old:10,new:50},played:{a:{id:'a',at:30}}}");
+        JSONObject pc=new JSONObject("{queries:{other:40},queriesClearedAt:20,played:{b:{id:'b',at:60}}}");
+        JSONObject result=cl.arichard.descargador.data.AccountActivity.merge(phone,pc);
+        assertFalse(result.getJSONObject("queries").has("old"));
+        assertTrue(result.getJSONObject("played").has("a"));assertTrue(result.getJSONObject("played").has("b"));
+        assertTrue(PlaylistSync.same(result,cl.arichard.descargador.data.AccountActivity.merge(pc,phone)));
+    }
+    @Test public void membershipDatesConvergeForTheSameConcurrentAddition() throws Exception {
+        JSONObject base=section("[]"),phone=section("['a']"),pc=section("['a']");
+        phone.put("entryAddedAt",new JSONObject("{driving:{a:100}}"));pc.put("entryAddedAt",new JSONObject("{driving:{a:200}}"));
+        JSONObject merged=PlaylistSync.merge(base,phone,pc);
+        assertEquals(200,merged.getJSONObject("entryAddedAt").getJSONObject("driving").getLong("a"));
+        assertTrue(PlaylistSync.same(merged,PlaylistSync.merge(base,pc,phone)));
+    }
+
 }

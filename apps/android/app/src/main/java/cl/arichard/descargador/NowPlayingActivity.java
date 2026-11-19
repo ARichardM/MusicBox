@@ -686,6 +686,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
     private void toggleLyricsMode() {
         if (!isLyricsMode && currentLyrics.lines.isEmpty()) return;
         isLyricsMode = !isLyricsMode;
+        getSharedPreferences("player", MODE_PRIVATE).edit().putBoolean("lyrics_shown",isLyricsMode).apply();
         setMediaMode(isMp3Mode);
         syncLyrics();
         if (isLyricsMode) recyclerLyrics.post(() -> scrollToActiveLyric(false));

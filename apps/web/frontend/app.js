@@ -156,6 +156,7 @@ class MusicBoxStorage {
   // --- Historial ---
   async recordHistory(track) {
     if (!track || !track.id) return;
+    recordAccountPlay(track);
     return new Promise((resolve) => {
       const tx = this.db.transaction("history", "readwrite");
       const store = tx.objectStore("history");
@@ -175,6 +176,7 @@ class MusicBoxStorage {
   }
 
   async getRecentHistory(limit = 40) {
+    if(state.user?.authenticated)return Object.values(accountActivity().played||{}).sort((a,b)=>b.at-a.at).slice(0,limit).map(row=>({...row,playedAt:row.at}));
     return new Promise((resolve) => {
       const tx = this.db.transaction("history", "readonly");
       const store = tx.objectStore("history");
@@ -189,6 +191,7 @@ class MusicBoxStorage {
   }
 
   async clearHistory() {
+    mergeAccountActivity({...accountActivity(),playedClearedAt:Date.now()});scheduleCloudSave();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("history", "readwrite");
       const store = tx.objectStore("history");
@@ -210,6 +213,9 @@ class MusicBoxStorage {
   }
 
   async savePlaylist(playlist) {
+    const dates={...playlist.entryAddedAt};
+    for(const track of playlist.tracks||[])if(track.id&&!dates['youtube:'+track.id])dates['youtube:'+track.id]=Date.now();
+    playlist={...playlist,entryAddedAt:dates};
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("playlists", "readwrite");
       const store = tx.objectStore("playlists");
@@ -556,6 +562,7 @@ function checkAuthSession() {
     }
     state.user = null;
     cloudBase = null;
+    stopAccountWatch();
     for (const key of Object.keys(dirtyPreferences)) delete dirtyPreferences[key];
     revocationUnsubscribe?.(); revocationUnsubscribe = null;
     clearTimeout(cloudSaveTimer);
@@ -580,13 +587,14 @@ async function applyCloudSection(section) {
     tx.objectStore("playlists").clear();
     for (const entry of all.Favoritos || []) {
       const item = MusicBoxCore.track(entry, online);
-      if (item?.id) tx.objectStore("favorites").put(item);
+      if (item?.id) tx.objectStore("favorites").put({...item,addedAt:section.entryAddedAt?.Favoritos?.[entry]||0});
     }
     const order = section.playlistOrder || Object.keys(all);
     for (const [name, entries] of Object.entries(all)) {
       if (name === "Favoritos" || !Array.isArray(entries)) continue;
       const tracks = entries.map(e => MusicBoxCore.track(e, online)).filter(Boolean);
       tx.objectStore("playlists").put({ id: name, name, tracks,
+        cloudEntries:[...entries], entryAddedAt:section.entryAddedAt?.[name]||{},
         unavailableEntries: entries.filter(e => !MusicBoxCore.track(e, online)),
         description: section.descriptions?.[name] || '', pinned: (section.pinnedPlaylists || []).includes(name),
         autoDownload: (section.autoDownload || []).includes(name),
@@ -621,10 +629,13 @@ async function syncWithFirestore(uid, reportErrors=false) {
     localStorage.setItem('musicbox_cloud_local:' + uid, JSON.stringify(incoming));
     cloudBase = JSON.parse(JSON.stringify(section));
     await registerWebDevice(uid);
+    mergeAccountActivity(remote.activity);
+    watchCloudAccount(uid);
     const prefs = remote.preferences || {};
     mergeWebStats(remote.clicks);
     for (const key of Object.keys(dirtyPreferences)) delete dirtyPreferences[key];
     Object.assign(dirtyPreferences, JSON.parse(localStorage.getItem('musicbox_pending_prefs:' + uid) || '{}'));
+    applyAccountPreferences(prefs);
     applyArtworkPreferences({ ...prefs, ...dirtyPreferences });
     setDarkMode(dirtyPreferences.darkMode ?? prefs.darkMode ?? remote.darkMode ?? (state.theme === 'dark'), false);
     applyPrimaryColor(dirtyPreferences.accentColor || prefs.accentColor || prefs.primaryColor || state.accent, false);
@@ -642,7 +653,7 @@ async function syncWithFirestore(uid, reportErrors=false) {
     if (JSON.stringify(incoming) !== JSON.stringify(section) || Object.keys(dirtyPreferences).length) scheduleCloudSave();
   } catch (err) {
     cloudBase = null;
-    showToast("No se pudo sincronizar. Tus cambios se conservan en este navegador; vuelve a iniciar sesión para reintentar.");
+    showToast("No se pudo sincronizar. Tus cambios se conservan en este navegador.",{kind:'error',retry:()=>syncWithFirestore(uid,true)});
     console.warn("[MusicBox] No se pudo leer la biblioteca", err.code || err.message);
     if(reportErrors)throw err;
   }
@@ -681,24 +692,27 @@ async function pushStateToFirestore() {
       const merged = MusicBoxCore.merge(base, local, remote.playlists || {});
       const payload = { ...remote, schema: 1, playlists: merged, favorites: merged.playlists?.Favoritos || [],
         clicks: MusicBoxCore.mergeStats(remote.clicks || {},getWebStats()),
+        activity: MusicBoxCore.mergeActivity(remote.activity,accountActivity()),
         devices: { ...remote.devices, [webDeviceId]: {name:'MusicBox Web',platform:'Web',lastSeen:Date.now()} },
         preferences: { ...remote.preferences, ...preferences } };
       if ('darkMode' in preferences) payload.darkMode = preferences.darkMode;
       transaction.set(ref, { payload: JSON.stringify(payload) }, { merge: true });
-      return merged;
+      return {playlists:merged,activity:payload.activity,preferences:payload.preferences};
     });
     if (state.user?.uid === uid) {
+      mergeAccountActivity(synced.activity);applyAccountPreferences(synced.preferences);
+      const syncedSection=synced.playlists;
       const current = MusicBoxCore.section(await storage.getAllPlaylists(), await storage.getAllFavorites(), base);
-      const reconciled = MusicBoxCore.merge(local, current, synced);
+      const reconciled = MusicBoxCore.merge(local, current, syncedSection);
       await applyCloudSection(reconciled);
-      cloudBase = synced;
-      localStorage.setItem('musicbox_cloud_base:' + uid, JSON.stringify(synced));
+      cloudBase = syncedSection;
+      localStorage.setItem('musicbox_cloud_base:' + uid, JSON.stringify(syncedSection));
       localStorage.setItem('musicbox_cloud_local:' + uid, JSON.stringify(reconciled));
       for (const [key, value] of Object.entries(preferences)) if (dirtyPreferences[key] === value) delete dirtyPreferences[key];
       localStorage.setItem('musicbox_pending_prefs:' + uid, JSON.stringify(dirtyPreferences));
-      if (JSON.stringify(reconciled) !== JSON.stringify(synced)) cloudSaveAgain = true;
+      if (JSON.stringify(reconciled) !== JSON.stringify(syncedSection)) cloudSaveAgain = true;
     }
-  } catch (err) { showToast('No se pudieron guardar los cambios en la nube. Tu copia local se conserva.'); }
+  } catch (err) { showToast('No se pudieron guardar los cambios en la nube. Tu copia local se conserva.',{kind:'error',retry:pushStateToFirestore}); }
   finally { cloudSaving = false; if (cloudSaveAgain) { cloudSaveAgain = false; scheduleCloudSave(); } }
 }
 
@@ -980,7 +994,7 @@ function setupAudioListeners() {
       return;
     }
     showToast(navigator.onLine ? "No se pudo abrir el audio. Pulsa Reproducir para reintentar o Siguiente para continuar."
-      : "Sin conexión. Las canciones descargadas siguen disponibles.");
+      : "Sin conexión. Las canciones descargadas siguen disponibles.",{kind:'error',retry:()=>playTrack(state.currentTrack,true)});
   });
 }
 
@@ -988,7 +1002,7 @@ function startSyncLoop() {
   if (syncInterval) clearInterval(syncInterval);
   syncInterval = setInterval(() => {
     const timeline = outgoingAudio || audio;
-    const current = timeline.currentTime || 0;
+    const current = window.musicboxSession?.pendingPosition?.() ?? (timeline.currentTime || 0);
     const duration = Number.isFinite(timeline.duration) ? timeline.duration : state.currentTrack?.duration || 0;
 
     if (state.currentTrack) {
@@ -1225,7 +1239,7 @@ async function downloadTrackForOffline(track, btnElement, quiet = false) {
   } catch (err) {
     console.error("Error al descargar:", err);
     recordDownload(job,err.name === 'AbortError' ? 'cancelled' : 'failed',err.message);
-    if (!quiet) showToast(err.name === 'AbortError' ? 'Descarga cancelada' : err.message);
+    if (!quiet) showToast(err.name === 'AbortError' ? 'Descarga cancelada' : err.message,err.name==='AbortError'?{kind:'info'}:{kind:'error',retry:()=>downloadTrackForOffline(track)});
     if (btnElement) {
       btnElement.style.opacity = "1";
       btnElement.style.pointerEvents = "auto";
@@ -1642,6 +1656,7 @@ function setupHomeSearchListeners() {
 }
 
 async function performSearch(query, filter = "all") {
+  recordAccountQuery(query);
   const generation = ++searchGeneration;
   state.searchQuery = query;
   state.searchFilter = filter;
@@ -2636,7 +2651,7 @@ function setupUIListeners() {
   }
   lyricsBtn.addEventListener("click", () => {
     state.lyricsOpen = !state.lyricsOpen;
-    localStorage.setItem("musicbox_lyrics_open", state.lyricsOpen ? "1" : "0");
+    localStorage.setItem("musicbox_lyrics_open", state.lyricsOpen ? "1" : "0");accountPreference("lyricsShown",state.lyricsOpen);
     lyricsDrawer.classList.toggle("open", state.lyricsOpen);
     lyricsBtn.classList.toggle("active", state.lyricsOpen);
     document.body.classList.toggle("lyrics-open", state.lyricsOpen && !!state.lyrics?.length);
@@ -2648,7 +2663,7 @@ function setupUIListeners() {
 
   const closeLyricsDrawer = () => {
     state.lyricsOpen = false;
-    localStorage.setItem("musicbox_lyrics_open", "0");
+    localStorage.setItem("musicbox_lyrics_open", "0");accountPreference("lyricsShown",false);
     lyricsDrawer.classList.remove("open");
     lyricsBtn.classList.remove("active");
     document.body.classList.remove("lyrics-open");
@@ -2800,6 +2815,7 @@ function setupSettingsModal() {
   const modal = document.getElementById("settings-modal");
   document.getElementById("settings-btn").addEventListener("click", () => {
     modal.style.display = "flex";
+    modal.querySelector('.modal-scroll-body').scrollTop=0;
     checkCookiesStatus();
     updateOfflineStorageInfo();
     updateStatsSummary();
@@ -3100,26 +3116,28 @@ function formatDuration(sec) {
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
-function showToast(message) {
-  let container = document.getElementById("toast-container");
-  if (!container) {
-    container = document.createElement("div");
-    container.id = "toast-container";
-    container.className = "toast-container";
-    document.body.appendChild(container);
-  }
-
-  const toast = document.createElement("div");
-  container.replaceChildren();
-  toast.className = "toast";
-  toast.setAttribute('role', 'status');
-  toast.textContent = message;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    toast.style.transform = "translateY(10px)";
-    toast.style.transition = "all 0.25s";
-    setTimeout(() => toast.remove(), 250);
-  }, 2800);
+function showToast(message, options = {}) {
+  const kind=options.kind||(/^(No (se |pud|hay|encontr)|Error|Couldn't|Could not|Unable)/i.test(message)?'error':'info');
+  let container=document.getElementById('toast-container');
+  if(!container){container=document.createElement('div');container.id='toast-container';container.className='toast-container';document.body.append(container);}
+  const toast=document.createElement('div');toast.className='toast';toast.dataset.kind=kind;
+  toast.setAttribute('role',kind==='error'?'alert':'status');
+  const dot=document.createElement('span');dot.className='notice-dot';dot.setAttribute('aria-hidden','true');
+  const text=document.createElement('span');text.className='notice-text';text.textContent=message;
+  const close=document.createElement('button');close.className='notice-close';close.setAttribute('aria-label','Cerrar aviso');
+  const icon=document.createElement('img');icon.src='icons/close.svg';icon.alt='';close.append(icon);
+  toast.append(dot,text);
+  if(options.retry){const retry=document.createElement('button');retry.className='notice-retry';retry.textContent=typeof Tr==='function'?Tr('REINTENTAR'):'REINTENTAR';retry.onclick=()=>{dismiss();Promise.resolve().then(options.retry).catch(()=>showToast(message,options));};toast.append(retry);}
+  toast.append(close);container.replaceChildren(toast);
+  let remaining=options.retry?9000:kind==='error'?7000:4500,started=performance.now(),timer;
+  const dismiss=()=>{clearTimeout(timer);toast.classList.add('notice-leaving');toast.addEventListener('transitionend',()=>toast.remove(),{once:true});setTimeout(()=>toast.remove(),260);};
+  let hovered=false,focused=false;
+  const arm=()=>{if(hovered||focused)return;clearTimeout(timer);started=performance.now();timer=setTimeout(dismiss,Math.max(0,remaining));};
+  const pause=()=>{if(timer){clearTimeout(timer);timer=null;remaining-=performance.now()-started;}};
+  close.onclick=dismiss;
+  toast.addEventListener('pointerenter',()=>{hovered=true;pause();});
+  toast.addEventListener('pointerleave',()=>{hovered=false;arm();});
+  toast.addEventListener('focusin',()=>{focused=true;pause();});
+  toast.addEventListener('focusout',()=>{focused=false;arm();});
+  arm();setTimeout(dismiss,14000);
 }

@@ -28,12 +28,53 @@ def _merge(base, local, remote):
     if isinstance(local, list) and isinstance(remote, list):
         before = base if isinstance(base, list) else []
         removed = {entry for entry in before if entry not in local or entry not in remote}
-        return list(dict.fromkeys(entry for entry in [*local, *remote] if entry not in removed))
+        # Conflicting orders must converge regardless of which device is local.
+        first, second = sorted((local, remote))
+        return list(dict.fromkeys(entry for entry in [*first, *second] if entry not in removed))
     return local
 
 
 def merge_playlists(base, local, remote):
-    return deepcopy(_merge(base or {}, local or {}, remote or {}))
+    result = deepcopy(_merge(base or {}, local or {}, remote or {}))
+    if any("entryAddedAt" in (source or {}) for source in (base, local, remote)):
+        dates = {}
+        for name, entries in result.get("playlists", {}).items():
+            dates[name] = {key: max((source or {}).get("entryAddedAt", {}).get(name, {}).get(key, 0)
+                                   for source in (base, local, remote)) for key in entries}
+        result["entryAddedAt"] = dates
+    return result
+
+
+def entry_dates(playlists, dates=None, previous=None, now=0):
+    """Preserve legacy order; only new memberships receive the current time."""
+    dates, previous = dates or {}, playlists if previous is None else previous
+    result = {}
+    for name, entries in playlists.items():
+        known = dates.get(name, {})
+        old = previous.get(name, [])
+        result[name] = {key: known.get(key) or (old.index(key) + 1 if key in old else now or index + 1)
+                        for index, key in enumerate(entries)}
+    return result
+
+
+def merge_activity(left=None, right=None):
+    """Portable, bounded history: IDs and metadata, never a device's file paths."""
+    left, right = left or {}, right or {}
+    result = {}
+    for kind, limit in (("queries", 8), ("played", 50)):
+        cleared = max(left.get(kind + "ClearedAt", 0), right.get(kind + "ClearedAt", 0))
+        rows = {}
+        for source in (left.get(kind, {}), right.get(kind, {})):
+            for key, value in source.items():
+                stamp = value.get("at", 0) if isinstance(value, dict) else value
+                old = rows.get(key, {})
+                old_stamp = old.get("at", 0) if isinstance(old, dict) else old
+                if stamp > cleared and stamp >= old_stamp:
+                    rows[key] = deepcopy(value)
+        stamp = lambda key: -(rows[key].get("at", 0) if isinstance(rows[key], dict) else rows[key])
+        result[kind] = {key: rows[key] for key in sorted(rows, key=lambda key: (stamp(key), key))[:limit]}
+        result[kind + "ClearedAt"] = cleared
+    return result
 
 
 def append_audit(root, previous, current, device, platform, now):

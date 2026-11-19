@@ -1,4 +1,4 @@
-const CACHE_NAME = "musicbox-cache-v2.4.7";
+const CACHE_NAME = "musicbox-cache-v2.4.8";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const SHELL_ASSETS = [
   "./style.css",
   "./app.js",
   "./core.js",
+  "./account.js",
   "./images.js",
   "./parity.js",
   "./stats.js",

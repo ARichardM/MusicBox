@@ -5,7 +5,7 @@ function setWebCrossfadeEnabled(enabled) {
   cancelWebFade();
   if(state.crossfadeSeconds>0)localStorage.setItem('musicbox_crossfade_last',state.crossfadeSeconds);
   state.crossfadeSeconds=enabled?Math.max(1,Math.min(12,Number(localStorage.getItem('musicbox_crossfade_last'))||5)):0;
-  localStorage.setItem('musicbox_crossfade',state.crossfadeSeconds);
+  localStorage.setItem('musicbox_crossfade',state.crossfadeSeconds);accountPreference('crossfadeSeconds',state.crossfadeSeconds);
   if(typeof showToast==='function')showToast(state.crossfadeSeconds>0?`Crossfade activado · ${state.crossfadeSeconds} s`:'Crossfade desactivado');
   const toggle=document.getElementById('crossfade-setting'),range=document.getElementById('crossfade-duration');
   if(toggle)toggle.checked=enabled;
@@ -23,6 +23,7 @@ let radioRequest = null;
 let radioGeneration = -1;
 const collectionPositions = new Map();
 let disposeTrackList=()=>{};
+let disposeCollectionControls=()=>{};
 function renderTrackList(list,tracks,create=createTrackRow) {
   disposeTrackList();
   const main=document.getElementById('main-content');
@@ -253,9 +254,13 @@ async function locatePlayingTrack() {
   else if(!state.queueOpen)document.getElementById('queue-toggle-btn').click();
 }
 async function libraryData() {
-  const [playlists,favorites,offline,history]=await Promise.all([storage.getAllPlaylists(),storage.getAllFavorites(),storage.getAllOfflineTracks(),storage.getRecentHistory(100)]);
-  const songs=[...new Map([...offline,...favorites,...playlists.flatMap(row=>row.tracks||[]),...history].filter(Boolean).map(row=>[row.id,row])).values()];
-  return {playlists:[...(favorites.length?[{id:'favorites',name:'Favoritos',tracks:favorites,favorite:true}]:[]),...playlists],songs,
+  const [playlists,favorites,offline]=await Promise.all([storage.getAllPlaylists(),storage.getAllFavorites(),storage.getAllOfflineTracks()]);
+  playlists.sort((a,b)=>(a.order??Number.MAX_SAFE_INTEGER)-(b.order??Number.MAX_SAFE_INTEGER)||String(a.id).localeCompare(String(b.id)));
+  const dates={};
+  for(const list of playlists)for(const [entry,at] of Object.entries(list.entryAddedAt||{}))if(at)dates[entry]=Math.min(dates[entry]||at,at);
+  for(const row of favorites)if(row.addedAt)dates['youtube:'+row.id]=Math.min(dates['youtube:'+row.id]||row.addedAt,row.addedAt);
+  const songs=[...new Map([...offline,...favorites,...playlists.flatMap(row=>row.tracks||[])].filter(Boolean).map(row=>[row.id,row])).values()].map(row=>({...row,addedAt:dates['youtube:'+row.id]||row.savedAt||0}));
+  return {playlists:[...(favorites.length?[{id:'favorites',name:'Favoritos',tracks:favorites,favorite:true,entryAddedAt:Object.fromEntries(favorites.map(row=>['youtube:'+row.id,row.addedAt||0]))}]:[]),...playlists],songs,
     folders:[...new Set(offline.map(row=>row.folder).filter(Boolean))].map(name=>({id:'folder:'+name,name,kind:'folder',tracks:offline.filter(row=>row.folder===name)}))};
 }
 function collectionCard(collection) {
@@ -296,6 +301,7 @@ function actionMenu(event,items) {
   menu.querySelector('button').focus();document.addEventListener('pointerdown',outside);document.addEventListener('keydown',keys);
 }
 function libraryShell(title,context='') {
+  disposeCollectionControls();
   disposeTrackList();
   const main=document.getElementById('main-content');
   main.classList.toggle('viewing-collection',!!context);
@@ -325,14 +331,17 @@ loadLibraryView = async function(filter='songs') {
   ]));actions.append(more);
   const sort=document.createElement('select');sort.id='library-sort';sort.className='collection-sort';sort.setAttribute('aria-label','Ordenar');
   for(const [key,label] of [['recent','Más recientes'],['default','Orden original'],['title','Título A–Z'],['artist','Artista A–Z'],['plays','Más escuchadas']])sort.add(new Option(label,key));
+  sort.value=(localStorage.getItem('musicbox_library_sort')||'default:1').split(':')[0];
+  sort.addEventListener('change',()=>{localStorage.setItem('musicbox_library_sort',sort.value+':1');accountPreference('librarySort',sort.value+':1');});
   const total=document.createElement('small');total.className='collection-count library-total';
   const tabs=main.querySelector('.search-filter-tabs');if(tabs)tabs.append(sort,total);else main.querySelector('.library-toolbar').append(sort,total);
   const render=()=>{
     const query=main.querySelector('input').value.toLocaleLowerCase();
     let items=[...data[libraryFilter]].filter(row=>`${row.name||row.title} ${row.artist||''}`.toLocaleLowerCase().includes(query));
     if(sort.value==='title'||sort.value==='artist')items.sort((a,b)=>String(a[sort.value]||a.name||'').localeCompare(String(b[sort.value]||b.name||'')));
-    if(sort.value==='recent')items.sort((a,b)=>(b.createdAt||b.savedAt||0)-(a.createdAt||a.savedAt||0));
+    if(sort.value==='recent')items.sort((a,b)=>(b.addedAt||b.createdAt||b.savedAt||0)-(a.addedAt||a.createdAt||a.savedAt||0)||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0));
     if(sort.value==='plays')items.sort((a,b)=>(b.plays||0)-(a.plays||0));
+    if((localStorage.getItem('musicbox_library_sort')||'default:1').endsWith(':0'))items.reverse();
     const list=main.querySelector('#library-content-list');list.replaceChildren();list.classList.toggle('collection-grid',libraryFilter!=='songs');
     total.textContent=items.length+' '+(libraryFilter==='songs'?'canciones':libraryFilter==='playlists'?'playlists':'carpetas');
     if(libraryFilter==='songs'){currentLibraryTracks=items;renderTrackList(list,items);if(!items.length&&!query){const empty=document.createElement('div');empty.className='library-empty';empty.innerHTML='<strong>Tu biblioteca está vacía</strong><span>El navegador no puede leer tus carpetas por sí solo: importa canciones o una carpeta para empezar.</span>';const row=document.createElement('div');row.className='library-empty-actions';row.append(actionButton('Importar canciones','plus',importLocalFiles,'pill-btn'),actionButton('Importar carpeta','folder',()=>importLocalFiles(true),'pill-btn'));empty.append(row);list.replaceChildren(empty);}}
@@ -345,7 +354,7 @@ loadLibraryView = async function(filter='songs') {
       empty.append(row);list.classList.remove('collection-grid');list.replaceChildren(empty);
     } else if(!items.length&&libraryFilter!=='songs'){const empty=document.createElement('p');empty.className='empty-state';empty.textContent='No hay elementos con estos filtros.';list.append(empty);}
   };
-  main.querySelector('input').oninput=render;sort.onchange=render;render();
+  main.querySelector('input').oninput=render;sort.onchange=render;installAccountSort(sort,render);render();
 };
 function createAutoDownloadPill(collection) {
   const button = actionButton('Auto-descarga', 'download', async () => {
@@ -533,6 +542,8 @@ loadPlaylistView = async function(collection) {
   [...new Set(collection.tracks.map(row=>row.artist||row.channel).filter(Boolean))].sort().forEach(name=>artist.add(new Option(name,name)));toolbar.append(artist);
   const sort=document.createElement('select');sort.className='collection-sort';sort.setAttribute('aria-label','Ordenar');
   for(const [key,label] of [['default','Orden original'],['title','Título A–Z'],['artist','Artista A–Z'],['recent','Más recientes'],['plays','Más escuchadas'],['duration','Más cortas']])sort.add(new Option(label,key));
+  sort.value=(localStorage.getItem('musicbox_library_sort')||'default:1').split(':')[0];
+  sort.addEventListener('change',()=>{localStorage.setItem('musicbox_library_sort',sort.value+':1');accountPreference('librarySort',sort.value+':1');});
   if(matchMedia('(max-width:680px), (pointer:coarse) and (max-height:600px)').matches)toolbar.append(sort);else main.querySelector('.search-filter-tabs').append(sort);
   if (!collection.kind && !collection.favorite) toolbar.append(createAutoDownloadPill(collection));
   const suggestions = !collection.kind && !collection.favorite ? createPlaylistSuggestions(collection, () => {
@@ -546,8 +557,9 @@ loadPlaylistView = async function(collection) {
     const tracks=collection.tracks.filter(track=>(!artist.value||(track.artist||track.channel)===artist.value)&&`${track.title} ${track.artist}`.toLocaleLowerCase().includes(query));
     if(['title','artist'].includes(sort.value))tracks.sort((a,b)=>String(a[sort.value]||'').localeCompare(String(b[sort.value]||'')));
     if(sort.value==='duration')tracks.sort((a,b)=>(a.duration||0)-(b.duration||0));
-    if(sort.value==='recent')tracks.reverse();
+    if(sort.value==='recent')tracks.sort((a,b)=>(collection.entryAddedAt?.['youtube:'+b.id]||collection.tracks.indexOf(b)+1)-(collection.entryAddedAt?.['youtube:'+a.id]||collection.tracks.indexOf(a)+1)||(a.id<b.id?-1:a.id>b.id?1:0));
     if(sort.value==='plays'){const plays=new Map(webStatsRows().map(row=>[row.id,row.plays]));tracks.sort((a,b)=>(plays.get(b.id)||0)-(plays.get(a.id)||0));}
+    if((localStorage.getItem('musicbox_library_sort')||'default:1').endsWith(':0'))tracks.reverse();
     currentLibraryTracks=tracks;
     renderTrackList(list,tracks,track=>{
       const isPlaylist = !collection.kind && !collection.favorite;
@@ -576,8 +588,37 @@ loadPlaylistView = async function(collection) {
       return row;
     });
   };
-  main.querySelector('.home-search-input').oninput=render;artist.onchange=render;sort.onchange=render;render();main.scrollTop=collectionPositions.get(collection.id)||0;
+  main.querySelector('.home-search-input').oninput=render;artist.onchange=render;sort.onchange=render;installAccountSort(sort,render);installCollectionControls(main);render();main.scrollTop=collectionPositions.get(collection.id)||0;
 };
+
+
+function installCollectionControls(main) {
+  const controls=document.createElement('div'),inner=document.createElement('div');
+  controls.className='collection-controls';inner.className='collection-controls-inner';controls.append(inner);
+  const nodes=[...main.children].filter(node=>node.matches('.home-search-card,.search-filter-tabs,.library-toolbar,.playlist-suggestions'));
+  if(!nodes.length)return;nodes[0].before(controls);inner.append(...nodes);
+  let previous=main.scrollTop,travel=0,frame=0,suppressUntil=0,touchY=null;
+  const editing=()=>inner.contains(document.activeElement)&&document.activeElement.matches('input,textarea');
+  const setHidden=hidden=>{
+    if(controls.classList.contains('controls-hidden')===hidden)return;
+    suppressUntil=performance.now()+260;travel=0;controls.classList.toggle('controls-hidden',hidden);
+    controls.inert=hidden;
+  };
+  const scroll=()=>{if(frame)return;frame=requestAnimationFrame(()=>{
+    frame=0;if(!controls.isConnected){disposeCollectionControls();return;}
+    const current=main.scrollTop,delta=current-previous;previous=current;
+    if(performance.now()<suppressUntil||editing())return;
+    if(current<16){setHidden(false);return;}
+    if(delta*travel<0)travel=0;travel+=delta;
+    if(travel>32)setHidden(true);else if(travel< -20)setHidden(false);
+  });};
+  const wheel=event=>{if(event.deltaY< -8&&!editing())setHidden(false);};
+  const touchStart=event=>{touchY=event.touches[0]?.clientY??null;};
+  const touchMove=event=>{const next=event.touches[0]?.clientY;if(touchY!==null&&next-touchY>14&&!editing())setHidden(false);touchY=next;};
+  main.addEventListener('scroll',scroll,{passive:true});main.addEventListener('wheel',wheel,{passive:true});
+  main.addEventListener('touchstart',touchStart,{passive:true});main.addEventListener('touchmove',touchMove,{passive:true});
+  disposeCollectionControls=()=>{cancelAnimationFrame(frame);main.removeEventListener('scroll',scroll);main.removeEventListener('wheel',wheel);main.removeEventListener('touchstart',touchStart);main.removeEventListener('touchmove',touchMove);};
+}
 
 let preparedNext=null, preparingNext=false, outgoingAudio=null, outgoingMix=null, outgoingBlobUrl=null, webFadeStarting=false, fadeFrame=0;
 function cancelWebFade() {
@@ -863,15 +904,18 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.addEventListener('keydown',event=>{if(event.key==='Escape')document.body.classList.remove('player-expanded');});
   const body=document.querySelector('#settings-modal .modal-scroll-body');
   const card=document.createElement('section');card.className='settings-card';
-  card.innerHTML=`<label class="settings-row">Reproducción automática<input id="autoplay-setting" type="checkbox" ${state.autoplayEnabled?'checked':''}></label>
-   <label class="settings-row">Transiciones suaves<input id="crossfade-setting" type="checkbox" ${state.crossfadeSeconds?'checked':''}></label>
-   <label class="settings-row">Mostrar el crossfade en la barra de progreso<input id="crossfade-bar-setting" type="checkbox" ${localStorage.getItem('musicbox_crossfade_bar')!=='0'?'checked':''}></label>
+  card.innerHTML=`<div class="settings-row"><span>Reproducción automática</span><label class="switch"><input id="autoplay-setting" aria-label="Reproducción automática" type="checkbox" ${state.autoplayEnabled?'checked':''}><span class="slider"></span></label></div>
+   <div class="settings-row"><span>Transiciones suaves</span><label class="switch"><input id="crossfade-setting" aria-label="Transiciones suaves" type="checkbox" ${state.crossfadeSeconds?'checked':''}><span class="slider"></span></label></div>
+   <div class="settings-row"><span>Mostrar el crossfade en la barra de progreso</span><label class="switch"><input id="crossfade-bar-setting" aria-label="Mostrar el crossfade en la barra de progreso" type="checkbox" ${localStorage.getItem('musicbox_crossfade_bar')!=='0'?'checked':''}><span class="slider"></span></label></div>
    <label class="settings-row">Crossfade<input id="crossfade-duration" aria-label="Duración del crossfade" type="range" min="1" max="12" value="${state.crossfadeSeconds||5}"><output id="crossfade-value">${state.crossfadeSeconds} s</output></label>`;
-  body.prepend(card);
-  card.querySelector('#autoplay-setting').onchange=event=>{state.autoplayEnabled=event.target.checked;localStorage.setItem('musicbox_autoplay',state.autoplayEnabled);if(state.autoplayEnabled)checkAutoplayQueue();};
-  card.querySelector('#crossfade-bar-setting').onchange=event=>localStorage.setItem('musicbox_crossfade_bar',event.target.checked?'1':'0');
+  card.id='playback-settings-card';
+  const heading=document.createElement('h3');heading.className='settings-section-title';heading.id='playback-settings-heading';heading.textContent='REPRODUCCIÓN';
+  card.setAttribute('aria-labelledby',heading.id);
+  body.querySelector('#settings-appearance-block').after(heading,card);
+  card.querySelector('#autoplay-setting').onchange=event=>{state.autoplayEnabled=event.target.checked;localStorage.setItem('musicbox_autoplay',state.autoplayEnabled);accountPreference('autoplay',state.autoplayEnabled);if(state.autoplayEnabled)checkAutoplayQueue();};
+  card.querySelector('#crossfade-bar-setting').onchange=event=>{localStorage.setItem('musicbox_crossfade_bar',event.target.checked?'1':'0');accountPreference('crossfadeBar',event.target.checked);};
   const duration=card.querySelector('#crossfade-duration');
-  const update=()=>{cancelWebFade();state.crossfadeSeconds=card.querySelector('#crossfade-setting').checked?Number(duration.value):0;duration.disabled=!state.crossfadeSeconds;localStorage.setItem('musicbox_crossfade',state.crossfadeSeconds);card.querySelector('output').value=state.crossfadeSeconds+' s';};
+  const update=()=>{cancelWebFade();state.crossfadeSeconds=card.querySelector('#crossfade-setting').checked?Number(duration.value):0;duration.disabled=!state.crossfadeSeconds;localStorage.setItem('musicbox_crossfade',state.crossfadeSeconds);accountPreference('crossfadeSeconds',state.crossfadeSeconds);card.querySelector('output').value=state.crossfadeSeconds+' s';};
   card.querySelector('#crossfade-setting').onchange=event=>setWebCrossfadeEnabled(event.target.checked);
   duration.oninput=()=>{update();localStorage.setItem('musicbox_crossfade_last',state.crossfadeSeconds);fadeToggle.setAttribute('aria-checked',String(state.crossfadeSeconds>0));};duration.disabled=!state.crossfadeSeconds;
   const main=document.getElementById('main-content');let gesture=null;

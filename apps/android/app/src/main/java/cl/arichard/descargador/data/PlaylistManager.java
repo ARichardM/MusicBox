@@ -23,6 +23,7 @@ public class PlaylistManager {
     /** Downloaded file on THIS device -> its YouTube video id (paths are device specific, so this is never synced). */
     private final Map<String, String> pathToId = new HashMap<>();
     private final Map<String, List<String>> playlists = new HashMap<>();
+    private JSONObject entryAddedAt = new JSONObject();
     private final Map<String, SearchResult> onlineTracks = new HashMap<>();
     private final Map<String, String> descriptions = new HashMap<>();
     private final List<String> playlistOrder = new ArrayList<>();
@@ -81,6 +82,14 @@ public class PlaylistManager {
                     playlists.put(name, paths);
                 }
             }
+            entryAddedAt = root.optJSONObject("entryAddedAt");
+            if (entryAddedAt == null) entryAddedAt = new JSONObject();
+            for (Map.Entry<String, List<String>> list : playlists.entrySet()) {
+                JSONObject dates = entryAddedAt.optJSONObject(list.getKey());
+                if (dates == null) dates = new JSONObject();
+                for (int i = 0; i < list.getValue().size(); i++) if (!dates.has(list.getValue().get(i))) dates.put(list.getValue().get(i), i + 1);
+                entryAddedAt.put(list.getKey(), dates);
+            }
             JSONObject tracks = root.optJSONObject("onlineTracks");
             if (tracks != null) {
                 JSONArray ids = tracks.names();
@@ -118,6 +127,15 @@ public class PlaylistManager {
     }
 
     private void save() {
+        JSONObject cleaned = new JSONObject();
+        try {
+            for (Map.Entry<String, List<String>> list : playlists.entrySet()) {
+                JSONObject old = entryAddedAt.optJSONObject(list.getKey()), dates = new JSONObject();
+                for (String key : list.getValue()) dates.put(key, old != null && old.has(key) ? old.optLong(key) : System.currentTimeMillis());
+                cleaned.put(list.getKey(), dates);
+            }
+        } catch (org.json.JSONException ignored) {}
+        entryAddedAt = cleaned;
         if (!persist(exportJson())) return;
         if (changeListener != null) changeListener.run();
         for (Runnable observer : new ArrayList<>(observers)) MAIN.post(observer);
@@ -136,6 +154,7 @@ public class PlaylistManager {
             for (Map.Entry<String, List<String>> entry : playlists.entrySet())
                 lists.put(entry.getKey(), new JSONArray(entry.getValue()));
             root.put("playlists", lists);
+            root.put("entryAddedAt", new JSONObject(entryAddedAt.toString()));
             JSONObject tracks = new JSONObject();
             for (Map.Entry<String, SearchResult> entry : onlineTracks.entrySet()) {
                 SearchResult r = entry.getValue(); JSONObject item = new JSONObject();
@@ -194,7 +213,7 @@ public class PlaylistManager {
 
     public synchronized void resetForAccount() {
         playlists.clear(); onlineTracks.clear(); autoDownloadPlaylists.clear();
-        descriptions.clear(); playlistOrder.clear(); pinnedPlaylists.clear(); freshlyAdded.clear();
+        descriptions.clear(); playlistOrder.clear(); pinnedPlaylists.clear(); freshlyAdded.clear(); entryAddedAt = new JSONObject();
         playlists.put("Favoritos", new ArrayList<>()); save();
     }
 
@@ -281,6 +300,7 @@ public class PlaylistManager {
             List<String> previousOrder = getPlaylistNames();
             List<String> songs = playlists.remove(oldName);
             playlists.put(cleanName, songs);
+            try { Object dates=entryAddedAt.remove(oldName);if(dates!=null)entryAddedAt.put(cleanName,dates); } catch(Exception ignored) {}
             playlistOrder.clear();
             for (String name : previousOrder) playlistOrder.add(oldName.equals(name) ? cleanName : name);
             if (pinnedPlaylists.remove(oldName)) pinnedPlaylists.add(cleanName);
@@ -544,6 +564,29 @@ public class PlaylistManager {
         if (path.startsWith("youtube:")) onlineTracks.remove(path.substring(8));
         if (pathToId.remove(path) != null) localIds.edit().remove(path).apply();
         save();
+    }
+
+    public synchronized List<cl.arichard.descargador.model.Song> accountSongs(List<cl.arichard.descargador.model.Song> local) {
+        java.util.LinkedHashMap<String, cl.arichard.descargador.model.Song> rows=new java.util.LinkedHashMap<>();
+        for(cl.arichard.descargador.model.Song song:local)rows.put(canonicalKey(song),song);
+        for(String name:getPlaylistNames())for(cl.arichard.descargador.model.Song song:resolveSongs(name,local))rows.putIfAbsent(canonicalKey(song),song);
+        return new ArrayList<>(rows.values());
+    }
+
+    public synchronized Map<String, Long> libraryDates() {
+        Map<String, Long> result=new HashMap<>();
+        java.util.Iterator<String> names=entryAddedAt.keys();
+        while(names.hasNext()){
+            JSONObject dates=entryAddedAt.optJSONObject(names.next());if(dates==null)continue;
+            java.util.Iterator<String> keys=dates.keys();
+            while(keys.hasNext()){String key=keys.next();long at=dates.optLong(key);if(at>0)result.put(key,Math.min(result.getOrDefault(key,at),at));}
+        }
+        return result;
+    }
+
+    public synchronized long addedAt(String playlist, cl.arichard.descargador.model.Song song) {
+        JSONObject dates = entryAddedAt.optJSONObject(playlist);
+        return dates == null ? 0 : dates.optLong(canonicalKey(song));
     }
 
     public synchronized List<cl.arichard.descargador.model.Song> resolveSongs(String name,

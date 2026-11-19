@@ -131,6 +131,7 @@ class MusicBoxBridge(QObject):
 
     @Slot(str, str, str, str, int)
     def requestAnimatedArtwork(self, key, title, artist, album, duration):
+        if not self._settings.value("animatedArtwork", True, bool): return
         if artist == i18n.tr("Artista desconocido"):
             return
         if album in ("YouTube", i18n.tr("Álbum desconocido")):
@@ -291,6 +292,10 @@ class MusicBoxBridge(QObject):
             self._playlists = {}
         if "Favoritos" not in self._playlists:
             self._playlists["Favoritos"] = []
+        self._entry_added_at = playlist_sync.entry_dates(self._playlists, json.loads(self._settings.value("entryAddedAt", "{}", str) or "{}"))
+        self._activity = json.loads(self._settings.value("accountActivity", "{}", str) or "{}")
+        if not self._activity:
+            self._activity = {"queries": {query: len(self._recent_queries) - index for index, query in enumerate(self._recent_queries)}}
         self._playlist_order = self._settings.value("playlistOrder", [], list) or []
         self._pinned_playlists = set(self._settings.value("pinnedPlaylists", [], list) or [])
         try:
@@ -437,7 +442,7 @@ class MusicBoxBridge(QObject):
         self._devicesPolled.connect(self._apply_polled_devices)
         self._deviceRevoked.connect(self._device_revoked)
         self._device_timer = QTimer(self)
-        self._device_timer.setInterval(45000)
+        self._device_timer.setInterval(10000)
         self._device_timer.timeout.connect(self._poll_devices)
         self._device_timer.start()
         if load_startup:
@@ -770,6 +775,7 @@ class MusicBoxBridge(QObject):
     @Slot(bool)
     def setAutoplay(self, enabled):
         self._settings.setValue("autoplay", bool(enabled))
+        self._preference_changed("autoplay")
         if not enabled:
             self._autoplay_error = ""
             self._online_waiting = False
@@ -1357,6 +1363,7 @@ class MusicBoxBridge(QObject):
         self._library_sort_ascending = bool(ascending)
         self._settings.setValue("librarySort", f"{self._library_sort}:{1 if ascending else 0}")
         self._apply_library_view()
+        self._preference_changed("librarySort")
 
     def _sorted_rows(self, rows):
         """Ordena como Android: cada modo tiene un sentido natural y el segundo toque lo invierte."""
@@ -1371,8 +1378,19 @@ class MusicBoxBridge(QObject):
             elif mode == "recent":
                 # El escaneo ya entrega lo más reciente primero; en una playlist lo último agregado va al final.
                 position = {id(row): index for index, row in enumerate(rows)}
-                sign = -1 if self._library_playlist else 1
-                key = lambda row: (sign * position[id(row)], title(row))
+                dates = getattr(self, "_entry_added_at", {}).get(self._library_playlist, {})
+                if self._library_playlist:
+                    key = lambda row: (-dates.get(row.get("playlistKey", row.get("path", "")), position[id(row)] + 1), row.get("playlistKey", row.get("path", "")))
+                else:
+                    shared = {}
+                    for values in getattr(self, "_entry_added_at", {}).values():
+                        for entry, stamp in values.items():
+                            if stamp: shared[entry] = min(shared.get(entry, stamp), stamp)
+                    def key(row):
+                        vid = self._id_of(row)
+                        entry = "youtube:" + vid if vid else row.get("path", "")
+                        stamp = shared.get(entry, row.get("dateAdded", 0))
+                        return (-stamp, entry) if stamp else (0, position[id(row)])
             else: key = title
             ordered = sorted(rows, key=key)
         return ordered if self._library_sort_ascending else ordered[::-1]
@@ -1497,7 +1515,9 @@ class MusicBoxBridge(QObject):
     @Property("QVariantList", notify=discoveryChanged)
     def recentPlayed(self):
         by_path = {row.get("path"): row for row in self._library_all}
-        return [by_path[path] for path in self._recent_paths if path in by_path][:10]
+        portable = list(getattr(self, "_activity", {}).get("played", {}).values())
+        seen = {row.get("id") for row in portable}
+        return (portable + [by_path[path] for path in self._recent_paths if path in by_path and self._id_of(by_path[path]) not in seen])[:10]
 
     @Property("QVariantList", notify=discoveryChanged)
     def topPlayed(self):
@@ -1553,6 +1573,13 @@ class MusicBoxBridge(QObject):
                 if qualified:
                     self._listening_started = True
                     self._clicks_stats.record(key, current.get("title", ""))
+                    vid = self._id_of(current)
+                    if vid:
+                        activity = getattr(self, "_activity", {})
+                        played = dict(activity.get("played", {}))
+                        played[vid] = {"at": int(time.time() * 1000), "id": vid,
+                                       **{field: current.get(field, "") for field in ("title", "artist", "thumbnail", "duration")}}
+                        self._apply_account_activity(dict(activity, played=played))
                     path = current.get("path", "")
                     if path:
                         self._recent_paths = [path] + [entry for entry in self._recent_paths if entry != path][:49]
@@ -1800,6 +1827,7 @@ class MusicBoxBridge(QObject):
     def setZoomMp3(self, value):
         """El zoom de la portada se recuerda: al volver a abrir el reproductor grande queda como se dejó."""
         self._settings.setValue("zoomMp3", bool(value))
+        self._preference_changed("zoomMp3")
 
     @Property(bool, notify=playerChanged)
     def lyricsShown(self): return str(self._settings.value("lyricsShown", "true")).lower() != "false"
@@ -1809,6 +1837,7 @@ class MusicBoxBridge(QObject):
         """Si el usuario muestra u oculta la letra, su preferencia se conserva entre canciones."""
         value = bool(value)
         self._settings.setValue("lyricsShown", value)
+        self._preference_changed("lyricsShown")
         self.playerChanged.emit()
 
     @Property(bool, notify=playerChanged)
@@ -1817,6 +1846,7 @@ class MusicBoxBridge(QObject):
     @Slot(bool)
     def setCrossfadeBar(self, value):
         self._settings.setValue("crossfadeBar", bool(value))
+        self._preference_changed("crossfadeBar")
         self.playerChanged.emit()
 
     @Property(float, notify=playerChanged)
@@ -1834,6 +1864,7 @@ class MusicBoxBridge(QObject):
         if value > 0:
             self._settings.setValue("crossfadeLastSeconds", max(1, min(12, value)))
         self._settings.setValue("crossfadeSeconds", max(0, min(12, value)))
+        self._preference_changed("crossfadeSeconds")
         self.playerChanged.emit()
         self._show_notice(i18n.tr("Crossfade activado · {n} s", n=value) if value else i18n.tr("Crossfade desactivado"), kind="info")
 
@@ -1998,6 +2029,12 @@ class MusicBoxBridge(QObject):
                 self._settings.setValue("playlistBackups", json.dumps(backups[-10:]))
         except (TypeError, ValueError, AttributeError):
             pass
+        try:
+            previous_lists = json.loads(previous or "{}")
+        except (TypeError, ValueError):
+            previous_lists = {}
+        self._entry_added_at = playlist_sync.entry_dates(self._playlists, getattr(self, "_entry_added_at", {}), previous_lists, int(time.time() * 1000))
+        self._settings.setValue("entryAddedAt", json.dumps(self._entry_added_at))
         self._settings.setValue("playlistsData", json.dumps(self._playlists))
         self._settings.setValue("onlineTracksData", json.dumps(self._online_tracks))
         self._settings.setValue("autoDownloadPlaylists", list(self._auto_download_playlists))
@@ -2194,6 +2231,8 @@ class MusicBoxBridge(QObject):
             if old_name in getattr(self, "_pinned_playlists", set()):
                 self._pinned_playlists.remove(old_name); self._pinned_playlists.add(new_name)
             self._playlists[new_name] = self._playlists.pop(old_name)
+            dates = getattr(self, "_entry_added_at", {})
+            if old_name in dates: dates[new_name] = dates.pop(old_name)
             if old_name in self._auto_download_playlists:
                 self._auto_download_playlists.remove(old_name); self._auto_download_playlists.add(new_name)
             previous_description = self._playlist_descriptions.pop(old_name, "")
@@ -2705,6 +2744,11 @@ class MusicBoxBridge(QObject):
         if result:
             self._user = dict(result.get("user") or {})
             uid = self._user.get("uid", "")
+            owner = self._settings.value("lastFirebaseUid", "", str)
+            if owner and owner != uid:
+                self._playlists, self._online_tracks, self._entry_added_at = {"Favoritos": []}, {}, {}
+                self._favorites, self._pinned_playlists, self._auto_download_playlists = set(), set(), set()
+                self._playlist_descriptions, self._playlist_order, self._activity = {}, [], {}
             self._settings.setValue("firebaseRefreshToken", result.get("refresh", ""))
             state = result.get("state") or {}
             self._cloud_snapshot = dict(state)
@@ -2724,13 +2768,13 @@ class MusicBoxBridge(QObject):
             devices[self._device_id] = {"name": platform.node() or "Este PC", "platform": "Windows", "lastSeen": int(time.time() * 1000)}
             self._cloud_snapshot["devices"] = devices
             self.devicesChanged.emit()
+            if self._settings.value("lastFirebaseUid", "", str) != uid:
+                self._activity = {}
+            self._apply_account_activity(state.get("activity", {}))
             self._apply_preferences(state)
-            if "recentPlayed" in state:
-                self._recent_paths = list(state.get("recentPlayed") or [])
-                self._settings.setValue("recentPlayed", self._recent_paths)
-            if "recentQueries" in state:
-                self._recent_queries = list(state.get("recentQueries") or [])
-                self._settings.setValue("recentQueries", self._recent_queries)
+            if "activity" not in state and isinstance(state.get("recentQueries"), list):
+                queries=state["recentQueries"]
+                self._apply_account_activity({"queries": {query: len(queries)-i for i,query in enumerate(queries) if isinstance(query,str)}})
             if self._clicks_stats.merge(state.get("clicks")):
                 self._save_clicks()
             local_key = "favorites/" + uid
@@ -2745,6 +2789,7 @@ class MusicBoxBridge(QObject):
                 self._favorites = set()
             if "playlists" in state and isinstance(state["playlists"], dict):
                 p_data = state["playlists"]
+                self._entry_added_at = playlist_sync.entry_dates(p_data.get("playlists", {}), p_data.get("entryAddedAt"))
                 if "playlists" in p_data and isinstance(p_data["playlists"], dict):
                     self._playlists = dict(p_data["playlists"])
                     if "Favoritos" not in self._playlists:
@@ -2796,8 +2841,9 @@ class MusicBoxBridge(QObject):
 
     def _poll_devices(self):
         """Actualiza la lista de dispositivos y comprueba si cerraron esta sesión."""
-        if not self._user or self._auth_busy:
+        if not self._user or self._auth_busy or getattr(self, "_device_poll_busy", False):
             return
+        self._device_poll_busy = True
         uid = self._user.get("uid")
         generation = self._cloud_sync_generation
         def worker():
@@ -2805,12 +2851,14 @@ class MusicBoxBridge(QObject):
                 revoked = self._is_revoked()
                 state = {} if revoked else self._cloud.load_state()
             except Exception:
-                return
+                state, revoked = None, False
             self._devicesPolled.emit({"uid": uid, "generation": generation, "state": state}, revoked)
         threading.Thread(target=worker, daemon=True).start()
 
     @Slot(object, bool)
     def _apply_polled_devices(self, result, revoked):
+        self._device_poll_busy = False
+        if result.get("state") is None: return
         if not self._user or result["uid"] != self._user.get("uid"):
             return
         if revoked:
@@ -2819,6 +2867,11 @@ class MusicBoxBridge(QObject):
         state = result["state"]
         if result["generation"] == self._cloud_sync_generation:
             self._apply_preferences(state)
+        self._apply_account_activity(state.get("activity", {}))
+        if self._clicks_stats.merge(state.get("clicks")):
+            self._save_clicks()
+        if isinstance(state.get("playlists"), dict) and state["playlists"] != self._sync_base_section:
+            self._apply_remote_playlists({"syncedPlaylists": state["playlists"], "uid": self._user["uid"]})
         devices = state.get("devices")
         if isinstance(devices, dict) and devices:
             current = (self._cloud_snapshot.get("devices") or {}).get(self._device_id)
@@ -2858,6 +2911,7 @@ class MusicBoxBridge(QObject):
         playlists_export = {
             "playlists": self._playlists,
             "onlineTracks": identity.export_online_tracks(self._online_tracks),
+            "entryAddedAt": getattr(self, "_entry_added_at", {}),
             "autoDownload": list(self._auto_download_playlists),
             "descriptions": self._playlist_descriptions,
             "playlistOrder": self._ordered_playlist_names(),
@@ -2869,8 +2923,7 @@ class MusicBoxBridge(QObject):
         state.update({"schema": 1, "darkMode": self._dark_mode,
                       "favorites": sorted(self._favorites), "library": library,
                       "playlists": playlists_export, "devices": devices,
-                      "recentPlayed": self._recent_paths, "recentQueries": self._recent_queries,
-                      "clicks": self._clicks_stats.export()})
+                      "clicks": self._clicks_stats.export(), "activity": getattr(self, "_activity", {})})
         return state
 
     @staticmethod
@@ -2897,8 +2950,9 @@ class MusicBoxBridge(QObject):
                         if self._user.get("uid") != uid:
                             raise RuntimeError("La sesión cambió durante la sincronización")
                         merged = dict(remote)
-                        for key in ("schema", "darkMode", "library", "recentPlayed", "recentQueries"):
+                        for key in ("schema", "darkMode"):
                             merged[key] = state[key]
+                        merged["activity"] = playlist_sync.merge_activity(remote.get("activity"), state.get("activity"))
                         preferences = dict(remote.get("preferences") or {})
                         for key, value in local_prefs.items():
                             if key in changed_prefs or key not in preferences:
@@ -2919,7 +2973,8 @@ class MusicBoxBridge(QObject):
 
                     synced = self._cloud.update_state(update)
                     self._remotePlaylists.emit({"syncedPlaylists": synced["playlists"],
-                                               "localSnapshot": state["playlists"], "uid": uid, "sentPrefs": changed_prefs})
+                                               "localSnapshot": state["playlists"], "uid": uid, "sentPrefs": changed_prefs,
+                                               "activity": synced.get("activity", {})})
                 except Exception:
                     # Se conserva la copia local. La siguiente interacción vuelve a intentar sincronizar.
                     pass
@@ -2932,6 +2987,8 @@ class MusicBoxBridge(QObject):
         incoming = data.get("syncedPlaylists", data)
         if "uid" in data and data["uid"] != self._user.get("uid"):
             return
+        if "activity" in data:
+            self._apply_account_activity(data["activity"])
         if data.get("sentPrefs"):
             pending = self._pending_prefs()
             for key, value in data["sentPrefs"].items():
@@ -2943,6 +3000,7 @@ class MusicBoxBridge(QObject):
         if self._user.get("uid"):
             self._settings.setValue("playlistSyncBase/" + self._user["uid"], json.dumps(incoming))
         data = playlist_sync.merge_playlists(baseline, current, incoming)
+        if isinstance(data.get("entryAddedAt"), dict): self._entry_added_at = data["entryAddedAt"]
         if isinstance(data.get("playlists"), dict):
             self._playlists = dict(data["playlists"])
             self._playlists.setdefault("Favoritos", [])
@@ -3030,17 +3088,28 @@ class MusicBoxBridge(QObject):
         return json.loads(self._settings.value("pendingPrefs/" + uid, "{}", str))
 
     def _preference_changed(self, key):
-        if self._applying_preferences or not self._user.get("uid"):
+        if getattr(self, "_applying_preferences", False) or not getattr(self, "_user", {}).get("uid"):
             return
         pending = self._pending_prefs()
         pending[key] = time.time_ns()
         self._settings.setValue("pendingPrefs/" + self._user["uid"], json.dumps(pending))
         self._schedule_cloud_save()
 
+    def _apply_account_activity(self, incoming):
+        activity = playlist_sync.merge_activity(getattr(self, "_activity", {}), incoming)
+        if activity == getattr(self, "_activity", {}): return
+        self._activity = activity
+        self._settings.setValue("accountActivity", json.dumps(self._activity, ensure_ascii=False))
+        self._recent_queries = list(self._activity.get("queries", {}))
+        self._settings.setValue("recentQueries", self._recent_queries)
+        self.discoveryChanged.emit()
+
     def _all_preferences(self):
-        folders = self._settings.value("libraryFoldersJson", "", str)
         return dict(self.downloadPrefs, darkMode=self._dark_mode, accentColor=self.accentColor, language=self.language,
-                    windowsFolders=json.loads(folders) if folders else None)
+                    autoplay=self.autoplay, crossfadeSeconds=self.crossfadeSeconds, crossfadeBar=self.crossfadeBar,
+                    lyricsShown=self.lyricsShown, zoomMp3=self.zoomMp3,
+                    librarySort=self._library_sort + (":1" if self._library_sort_ascending else ":0"),
+                    animatedArtwork=self._settings.value("animatedArtwork", True, bool))
 
     def _apply_preferences(self, state):
         prefs = dict(state.get("preferences") or {})
@@ -3058,11 +3127,20 @@ class MusicBoxBridge(QObject):
                     self.setLanguage(value)
                 elif key == "darkMode" and isinstance(value, bool) and self._dark_mode != value:
                     self.toggleTheme()
-                elif key == "windowsFolders" and value != self._all_preferences()[key]:
-                    if value is None:
-                        self.resetLibraryFolders()
-                    elif isinstance(value, list) and all(isinstance(path, str) for path in value):
-                        self._save_library_roots(value)
+                elif key == "librarySort" and isinstance(value, str):
+                    mode, _, direction = value.partition(":")
+                    if (mode, direction != "0") != (self._library_sort, self._library_sort_ascending):
+                        self.setLibrarySort(mode, direction != "0")
+                elif key in ("autoplay", "crossfadeBar", "lyricsShown", "zoomMp3") and isinstance(value, bool):
+                    setter = {"autoplay": self.setAutoplay, "crossfadeBar": self.setCrossfadeBar,
+                              "lyricsShown": self.setLyricsShown, "zoomMp3": self.setZoomMp3}[key]
+                    if self._all_preferences()[key] != value: setter(value)
+                elif key == "crossfadeSeconds" and isinstance(value, (int, float)) and 0 <= value <= 12:
+                    if self.crossfadeSeconds != value:
+                        self._crossfade.cancel()
+                        self._settings.setValue(key, int(value)); self.playerChanged.emit()
+                elif key == "animatedArtwork" and isinstance(value, bool):
+                    self._settings.setValue(key, value)
         finally:
             self._applying_preferences = False
 
@@ -3404,6 +3482,7 @@ class MusicBoxBridge(QObject):
         files = []
         for path in sorted(found.values(), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True):
             info = media_info(path)
+            info["dateAdded"] = int(path.stat().st_mtime * 1000) if path.exists() else 0
             info["favorite"] = str(path) in self._favorites
             files.append(info)
         # Archivos que MusicBox descargó muestran la marca de descarga; el resto viene de una carpeta de música.
@@ -3535,6 +3614,13 @@ class MusicBoxBridge(QObject):
         elif self._library_folder:
             roots = self._library_roots()
             rows = [row for row in rows if self._folder_of(row["path"], roots) == self._library_folder]
+        else:
+            # Saved account tracks appear even when their files live on another device.
+            seen = {self._id_of(row) or row.get("path", "") for row in rows}
+            for name in self._playlists:
+                for row in self._resolved_playlist(name):
+                    key = self._id_of(row) or row.get("path", "")
+                    if key and key not in seen: rows.append(row); seen.add(key)
         artists = {}
         for row in rows if self._library_playlist else []:
             artist = self._track_artist(row)
@@ -3583,7 +3669,10 @@ class MusicBoxBridge(QObject):
     @Slot()
     def clearRecentQueries(self):
         self._recent_queries = []
+        activity = getattr(self, "_activity", {})
+        self._apply_account_activity(dict(activity, queries={}, queriesClearedAt=int(time.time() * 1000)))
         self._settings.setValue("recentQueries", [])
+        self._schedule_cloud_save()
         self.discoveryChanged.emit()
         self._schedule_cloud_save()
 
@@ -3618,6 +3707,8 @@ class MusicBoxBridge(QObject):
         if remember:
             self._recent_queries = [entry for entry in self._recent_queries if entry.casefold() != query.casefold()]
             self._recent_queries.insert(0, query)
+            activity = getattr(self, "_activity", {})
+            self._apply_account_activity(dict(activity, queries={**activity.get("queries", {}), query: int(time.time() * 1000)}))
             self._recent_queries = self._recent_queries[:8]
             self._settings.setValue("recentQueries", self._recent_queries)
             self.discoveryChanged.emit()

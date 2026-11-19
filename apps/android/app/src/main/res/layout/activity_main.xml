@@ -460,6 +460,8 @@
                         android:contentDescription="@string/nueva_playlist" android:visibility="gone"
                         android:background="?attr/selectableItemBackgroundBorderless"/>
                 </LinearLayout>
+                <LinearLayout android:id="@+id/collectionControls" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:orientation="vertical">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="44dp"
                     android:layout_marginTop="16dp" android:background="@drawable/bg_search_field"
                     android:gravity="center_vertical" android:paddingStart="14dp" android:paddingEnd="14dp">
@@ -558,6 +560,7 @@
                 <cl.arichard.descargador.util.PlaylistSuggestionsView android:id="@+id/playlistSuggestions"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="6dp" android:visibility="gone"/>
+                </LinearLayout>
             </LinearLayout>
 
             <cl.arichard.descargador.util.CollectionSwipeLayout android:id="@+id/libraryContentSwipe"

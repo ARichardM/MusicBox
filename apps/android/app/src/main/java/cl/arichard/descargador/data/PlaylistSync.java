@@ -62,7 +62,12 @@ public final class PlaylistSync {
             Set<String> mine = entries((JSONArray) local), theirs = entries((JSONArray) remote);
             Set<String> removed = new LinkedHashSet<>();
             for (String entry : before) if (!mine.contains(entry) || !theirs.contains(entry)) removed.add(entry);
-            Set<String> result = new LinkedHashSet<>(mine); result.addAll(theirs); result.removeAll(removed);
+            java.util.List<String> a = new java.util.ArrayList<>(mine), b = new java.util.ArrayList<>(theirs);
+            int comparison = 0;
+            for (int i = 0; i < Math.min(a.size(), b.size()) && comparison == 0; i++) comparison = a.get(i).compareTo(b.get(i));
+            if (comparison == 0) comparison = Integer.compare(a.size(), b.size());
+            Set<String> result = new LinkedHashSet<>(comparison <= 0 ? mine : theirs);
+            result.addAll(comparison <= 0 ? theirs : mine); result.removeAll(removed);
             return new JSONArray(result);
         }
         return local;
@@ -71,7 +76,25 @@ public final class PlaylistSync {
     public static JSONObject merge(JSONObject base, JSONObject local, JSONObject remote) throws Exception {
         Object result = mergeValue(base == null ? new JSONObject() : base,
                 local == null ? new JSONObject() : local, remote == null ? new JSONObject() : remote);
-        return new JSONObject(result.toString());
+        JSONObject merged = new JSONObject(result.toString());
+        if ((base != null && base.has("entryAddedAt")) || (local != null && local.has("entryAddedAt")) || (remote != null && remote.has("entryAddedAt"))) {
+            JSONObject dates = new JSONObject(), lists = merged.optJSONObject("playlists");
+            for (String name : keys(lists)) {
+                JSONObject memberships = new JSONObject();
+                for (String entry : entries(lists.optJSONArray(name))) {
+                    long newest = 0;
+                    for (JSONObject source : new JSONObject[]{base, local, remote}) {
+                        JSONObject map = source == null ? null : source.optJSONObject("entryAddedAt");
+                        JSONObject perList = map == null ? null : map.optJSONObject(name);
+                        newest = Math.max(newest, perList == null ? 0 : perList.optLong(entry));
+                    }
+                    memberships.put(entry, newest);
+                }
+                dates.put(name, memberships);
+            }
+            merged.put("entryAddedAt", dates);
+        }
+        return merged;
     }
 
     public static void appendAudit(JSONObject root, JSONObject previous, JSONObject current,

@@ -50,6 +50,10 @@ public class SearchHistoryManager {
         JSONArray arr = new JSONArray();
         for (String q : list) arr.put(q);
         prefs.edit().putString(KEY_RECENT_QUERIES, arr.toString()).apply();
+        JSONObject activity = exportActivity();
+        try { JSONObject queries = activity.optJSONObject("queries"); if (queries == null) queries = new JSONObject();
+            queries.put(query, System.currentTimeMillis()); activity.put("queries", queries); } catch (Exception ignored) {}
+        importActivity(activity);
         changed();
     }
 
@@ -67,6 +71,9 @@ public class SearchHistoryManager {
 
     public void clearRecentQueries() {
         prefs.edit().remove(KEY_RECENT_QUERIES).apply();
+        JSONObject activity = exportActivity();
+        try { activity.put("queriesClearedAt", System.currentTimeMillis()); } catch (Exception ignored) {}
+        importActivity(activity);
         changed();
     }
 
@@ -87,6 +94,15 @@ public class SearchHistoryManager {
         for (Song s : recents) arr.put(s.toJson());
         prefs.edit().putString(KEY_RECENT_SONGS, arr.toString()).apply();
 
+        String id = PlaylistManager.getInstance(appContext).videoIdFor(song.getPath());
+        if (song.isOnline()) id = song.getPath().substring(8);
+        if (id != null) try {
+            JSONObject activity = exportActivity(), played = activity.optJSONObject("played");
+            if (played == null) played = new JSONObject();
+            played.put(id, new JSONObject().put("id", id).put("title", song.getTitle()).put("artist", song.getArtist())
+                    .put("duration", song.getDuration() / 1000).put("at", System.currentTimeMillis()));
+            activity.put("played", played); importActivity(activity);
+        } catch (Exception ignored) {}
         ClickStats.getInstance(appContext).record(song);
         changed();
     }
@@ -129,6 +145,45 @@ public class SearchHistoryManager {
 
     public void setChangeListener(Runnable listener) { changeListener = listener; }
     private void changed() { if (changeListener != null) changeListener.run(); }
+
+    public JSONObject exportActivity() {
+        try {
+            if (prefs.contains("account_activity")) return new JSONObject(prefs.getString("account_activity", "{}"));
+            JSONObject migrated=new JSONObject(),queries=new JSONObject(),played=new JSONObject();
+            List<String> recent=getRecentQueries();
+            for(int i=0;i<recent.size();i++)queries.put(recent.get(i),recent.size()-i);
+            List<Song> songs=getRecentPlayedSongs();
+            for(int i=0;i<songs.size();i++){
+                Song song=songs.get(i);String id=song.isOnline()?song.getPath().substring(8):PlaylistManager.getInstance(appContext).videoIdFor(song.getPath());
+                if(id!=null)played.put(id,new JSONObject().put("id",id).put("at",songs.size()-i).put("title",song.getTitle()).put("artist",song.getArtist()).put("duration",song.getDuration()/1000));
+            }
+            return migrated.put("queries",queries).put("played",played);
+        }
+        catch (Exception ignored) { return new JSONObject(); }
+    }
+    public void importActivity(JSONObject incoming) {
+        JSONObject activity = AccountActivity.merge(exportActivity(), incoming);
+        SharedPreferences.Editor edit = prefs.edit().putString("account_activity", activity.toString());
+        JSONObject queries = activity.optJSONObject("queries"), played = activity.optJSONObject("played");
+        List<String> names = new ArrayList<>();
+        if (queries != null) {
+            queries.keys().forEachRemaining(names::add);
+            names.sort((a,b) -> { int order = Long.compare(queries.optLong(b), queries.optLong(a)); return order != 0 ? order : a.compareTo(b); });
+            edit.putString(KEY_RECENT_QUERIES, new JSONArray(names).toString());
+        }
+        if (played != null) {
+            List<String> ids = new ArrayList<>(); played.keys().forEachRemaining(ids::add);
+            ids.sort((a,b) -> Long.compare(played.optJSONObject(b).optLong("at"), played.optJSONObject(a).optLong("at")));
+            JSONArray songs = new JSONArray();
+            for (String id : ids) { JSONObject row = played.optJSONObject(id);
+                songs.put(new Song(0, row.optString("title"), row.optString("artist"), "YouTube", row.optLong("duration") * 1000,
+                        "youtube:" + id, "YouTube", 0).toJson()); }
+            for (Song local : getRecentPlayedSongs()) if (!local.isOnline() && PlaylistManager.getInstance(appContext).videoIdFor(local.getPath()) == null)
+                songs.put(local.toJson());
+            edit.putString(KEY_RECENT_SONGS, songs.toString());
+        }
+        edit.apply();
+    }
 
     public JSONObject exportJson() {
         JSONObject root = new JSONObject();

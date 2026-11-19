@@ -17,6 +17,6 @@ Rectangle {
         anchors.centerIn: parent
         size: 19
         name: root.fromFolder ? "folder" : "downloaded"
-        tint: Qt.lighter(Theme.accent, 2.0)
+        tint: root.fromFolder ? Theme.muted : Theme.accent
     }
 }

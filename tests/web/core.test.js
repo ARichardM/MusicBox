@@ -3,6 +3,31 @@ const assert = require('node:assert/strict');
 const { merge, section, track, escape } = require('../../apps/web/frontend/core.js');
 const {mergeStats} = require('../../apps/web/frontend/core.js');
 const {ListeningClock} = require('../../apps/web/frontend/core.js');
+const {mergeActivity} = require('../../apps/web/frontend/core.js');
+
+test('conflicting playlist orders converge from both devices', () => {
+  const base={playlists:{mix:['a']}},phone={playlists:{mix:['a','c']}},pc={playlists:{mix:['a','b']}};
+  assert.deepEqual(merge(base,phone,pc),merge(base,pc,phone));
+});
+
+test('saving a mixed playlist preserves unavailable slots and membership dates', () => {
+  const keys=['youtube:aaaaaaa0001','C:/music/local.mp3','youtube:bbbbbbb0002'];
+  const base={playlists:{mix:keys},entryAddedAt:{mix:{[keys[0]]:10,[keys[1]]:20,[keys[2]]:30}}};
+  const playlist={name:'mix',tracks:keys.map(key=>track(key)).filter(Boolean),unavailableEntries:[keys[1]],cloudEntries:keys};
+  const result=section([playlist],[],base);
+  assert.deepEqual(result.playlists.mix,keys);
+  assert.deepEqual(result.entryAddedAt.mix,base.entryAddedAt.mix);
+});
+
+test('activity merges portable recents and honors history clear marks', () => {
+  const phone={queries:{old:10,new:50},played:{a:{id:'a',at:30}}};
+  const pc={queries:{other:40},queriesClearedAt:20,played:{b:{id:'b',at:60}}};
+  const result=mergeActivity(phone,pc);
+  assert.deepEqual(Object.keys(result.queries),['new','other']);
+  assert.deepEqual(Object.keys(result.played),['b','a']);
+  assert.deepEqual(result,mergeActivity(pc,phone));
+  assert.deepEqual(result,mergeActivity(result,phone));
+});
 
 test('qualified plays need 30 real seconds and exclude pauses, stalls and seeks', () => {
   const clock=new ListeningClock();

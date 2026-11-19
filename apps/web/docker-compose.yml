@@ -1,6 +1,6 @@
 services:
   musicbox_web:
-    image: musicbox-web:experience-20261116
+    image: musicbox-web:2.4.8
     build:
       context: ./backend
       dockerfile: Dockerfile

@@ -1,5 +1,29 @@
 # Historial de versiones
 
+## 2.4.8 — 18 de noviembre de 2026
+
+### Android, Windows y Web
+
+- Las playlists comparten sus fechas de incorporación y aplican el mismo orden al elegir «Más recientes». Los conflictos de orden tienen un resultado común.
+- Se sincronizan las búsquedas y reproducciones recientes con identificadores compartidos, así como las preferencias de reproducción y de orden de biblioteca. Windows recibe cambios de cuenta durante la sesión.
+- Configuración organiza cuenta, apariencia, reproducción y descargas en secciones que se ajustan a su contenido.
+- En playlists y carpetas, la búsqueda, los filtros, el orden y las recomendaciones se ocultan al bajar y reaparecen al subir.
+
+### Windows y Web
+
+- Portadas con esquinas suavemente redondeadas y un indicador de descarga del color del tema.
+- El vídeo MP4 recupera el fundido hacia los controles y se ajusta al abrir la letra o cambiar el zoom sin reiniciar la reproducción.
+
+### Web
+
+- Avisos de error con el estilo de escritorio y un botón de reintento cuando procede.
+- La barra conserva el minuto guardado al restaurar la sesión.
+
+### Android
+
+- La cola se abre con un toque en la cabecera y se cierra con un arrastre algo más corto. El icono de descarga resalta el color del tema.
+- Versión de aplicación `2.4.8` (`versionCode 26`).
+
 ## 2.4.7 — 17 de noviembre de 2026
 
 ### Windows y Web

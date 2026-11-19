@@ -1,6 +1,6 @@
 """Regresiones de sincronización: copias antiguas, borrados explícitos y escrituras simultáneas."""
 import unittest
-from playlist_sync import merge_playlists, append_audit
+from playlist_sync import merge_playlists, append_audit, entry_dates, merge_activity
 
 
 def section(**lists):
@@ -8,6 +8,26 @@ def section(**lists):
 
 
 class PlaylistMergeTests(unittest.TestCase):
+    def test_conflicting_orders_converge_with_either_device_as_local(self):
+        base, phone, pc = section(mix=["a"]), section(mix=["a", "c"]), section(mix=["a", "b"])
+        self.assertEqual(merge_playlists(base, phone, pc), merge_playlists(base, pc, phone))
+
+    def test_membership_dates_survive_reordering_and_only_new_entries_get_now(self):
+        old = {"mix": ["a", "b"]}
+        dates = entry_dates(old)
+        self.assertEqual(dates, {"mix": {"a": 1, "b": 2}})
+        self.assertEqual(entry_dates({"mix": ["b", "a", "c"]}, dates, old, 1000),
+                         {"mix": {"b": 2, "a": 1, "c": 1000}})
+
+    def test_history_merges_devices_and_clear_marks_stop_old_queries_returning(self):
+        left = {"queries": {"old": 10, "new": 50}, "played": {"a": {"at": 30, "id": "a"}}}
+        right = {"queries": {"other": 40}, "queriesClearedAt": 20, "played": {"b": {"at": 60, "id": "b"}}}
+        result = merge_activity(left, right)
+        self.assertEqual(list(result["queries"]), ["new", "other"])
+        self.assertEqual(list(result["played"]), ["b", "a"])
+        self.assertEqual(result, merge_activity(right, left))
+        self.assertEqual(result, merge_activity(result, left))
+
     def test_an_unchanged_empty_copy_does_not_clear_remote_songs(self):
         self.assertEqual(merge_playlists(section(driving=[]), section(driving=[]), section(driving=["yt:a"])),
                          section(driving=["yt:a"]))

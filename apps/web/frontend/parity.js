@@ -470,6 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateMobile();
   let touchStart = null;
   const cover = document.querySelector('.now-playing-cover-wrap');
+  document.querySelector('.player-center').before(document.getElementById('lyrics-drawer'));
   const slot = document.createElement('div'); slot.style.display = 'contents'; cover.before(slot); slot.append(cover);
   let coverRest = null, coverAnimation = null, zoomed = false;
   const coverFrame = () => {
@@ -497,15 +498,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // porque el título seguía a la altura de la portada pequeña.
   const fillFreeHeight = () => {
     if (!coverRest) return;
-    const restHeight = parseFloat(coverRest.height);
-    slot.style.height = restHeight + 'px';
-    const info = document.querySelector('.now-playing-info'), center = document.querySelector('.player-center');
-    // Varias pasadas: al crecer la portada la fila de controles también puede moverse.
-    for (let pass = 0; pass < 4; pass++) {
-      const gap = center.getBoundingClientRect().top - info.getBoundingClientRect().bottom - 24;
-      if (Math.abs(gap) < 2) break;
-      slot.style.height = Math.max(restHeight, parseFloat(slot.style.height) + gap) + 'px';
-    }
+    const info=document.querySelector('.now-playing-info'),center=document.querySelector('.player-center');
+    const compact=matchMedia('(max-width:680px)').matches&&state.lyricsOpen;
+    const end=compact?document.getElementById('lyrics-drawer').getBoundingClientRect().top:center.getBoundingClientRect().top;
+    const available=end-slot.getBoundingClientRect().top-info.getBoundingClientRect().height-44;
+    const height=Math.max(1,compact?Math.min(innerHeight*.24,available):available);
+    slot.style.height=height+'px';slot.style.width='100%';
   };
   const expandedFrame = () => ({
     left:'0px', top:'0px', width:zoomWidth()+'px',
@@ -513,7 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
     borderRadius:'0px'
   });
   const restoreCover = (animate = true) => {
-    if (animate) localStorage.setItem(zoomKey(), '0');
+    if (animate) {localStorage.setItem(zoomKey(), '0');if(zoomKey()==='musicbox_zoom_mp3')accountPreference('zoomMp3',false);}
     zoomed = false;
     const finish = () => {
       coverAnimation?.cancel();
@@ -531,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   const toggleCover = (remember = true) => {
     if (zoomed) { restoreCover(); return; }
-    if (remember) localStorage.setItem(zoomKey(), '1');
+    if (remember) {localStorage.setItem(zoomKey(), '1');if(zoomKey()==='musicbox_zoom_mp3')accountPreference('zoomMp3',true);}
     const before = coverFrame();
     if (!coverRest) {
       coverRest = before;
@@ -556,16 +554,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if(coverRest&&!expanded)restoreCover(false);
     else if(expanded&&!coverRest&&localStorage.getItem(zoomKey())==='1')requestAnimationFrame(()=>requestAnimationFrame(()=>{if(document.body.classList.contains('player-expanded')&&!coverRest)toggleCover(false);}));
   }).observe(document.body,{attributes:true,attributeFilter:['class']});
+  let zoomLayoutFrame=0;
   const fitZoom = () => {
-    if (zoomed && !coverAnimation) { fillFreeHeight(); Object.assign(cover.style, expandedFrame()); }
+    if(zoomLayoutFrame)return;
+    zoomLayoutFrame=requestAnimationFrame(()=>{
+      zoomLayoutFrame=0;
+      if(zoomed){fillFreeHeight();Object.assign(cover.style,expandedFrame());}
+    });
   };
-  window.addEventListener('resize', fitZoom);
-  document.getElementById('lyrics-drawer').addEventListener('transitionend', fitZoom);
-  new MutationObserver(() => {
-    if (!document.body.classList.contains('player-expanded')) return;
-    if (coverRest) restoreCover(false);
-    if (localStorage.getItem(zoomKey()) === '1') toggleCover(false);
-  }).observe(document.getElementById('video-dock'), {attributes:true,attributeFilter:['class']});
+  window.addEventListener('resize',fitZoom);
+  const zoomObserver=new ResizeObserver(fitZoom);
+  for(const selector of ['.player-left','.player-center','.now-playing-info','#lyrics-drawer']){
+    const element=document.querySelector(selector);if(element)zoomObserver.observe(element);
+  }
+  document.getElementById('lyrics-drawer').addEventListener('transitionend',fitZoom);
+  new MutationObserver(fitZoom).observe(document.getElementById('video-dock'),{attributes:true,attributeFilter:['class']});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&coverRest){event.stopImmediatePropagation();restoreCover();}},true);
   document.querySelector('.now-playing-cover-wrap').addEventListener('pointerdown', e => { touchStart = {x:e.clientX,y:e.clientY}; });
   document.querySelector('.now-playing-cover-wrap').addEventListener('pointerup', e => {
@@ -583,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
   links.append(actionButton('Descargas', 'download', () => { document.getElementById('settings-modal').style.display = 'none'; loadDownloadsView(); }, 'pill-btn'),
     actionButton('Historial', 'history', () => { document.getElementById('settings-modal').style.display = 'none'; loadHistoryView(); }, 'pill-btn'));
   links.append(actionButton('Dispositivos', 'info', showDevices, 'pill-btn'));
-  settingsBody.prepend(links);
+  settingsBody.querySelector('.settings-user-card').after(links);
   setupAccessibility();
   // Keep the iframe visible only after a song has actually been selected.
   document.getElementById('video-dock').classList.add('dock-hidden');

@@ -37,56 +37,6 @@
             </LinearLayout>
         </LinearLayout>
 
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
-            android:layout_marginStart="6dp" android:text="@string/calidad_descarga" android:textColor="@color/text_secondary"
-            android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
-        <LinearLayout android:id="@+id/cardDownloadQuality" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="10dp" android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_settings_card">
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/auto_format" android:textColor="@color/text_primary"/>
-            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/autoFormat" android:layout_width="match_parent" android:layout_height="wrap_content" app:singleSelection="true" app:selectionRequired="true">
-                <com.google.android.material.button.MaterialButton android:id="@+id/formatMp3" style="?attr/materialButtonOutlinedStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="MP3"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/formatMp4" style="?attr/materialButtonOutlinedStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="MP4"/>
-            </com.google.android.material.button.MaterialButtonToggleGroup>
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/formato_mp3"
-                android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"/>
-            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/qualityMp3" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:layout_marginTop="8dp" app:singleSelection="true" app:selectionRequired="true">
-                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp3Low" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_baja" android:textAllCaps="false" android:textSize="12sp"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp3Normal" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_normal" android:textAllCaps="false" android:textSize="12sp"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp3High" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_alta" android:textAllCaps="false" android:textSize="12sp"/>
-            </com.google.android.material.button.MaterialButtonToggleGroup>
-            <TextView android:id="@+id/txtQualityMp3Detail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:textColor="@color/text_muted" android:textSize="11sp" android:gravity="center"/>
-            <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="12dp" android:layout_marginBottom="12dp" android:background="@color/divider"/>
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/formato_mp4"
-                android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"/>
-            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/qualityMp4" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:layout_marginTop="8dp" app:singleSelection="true" app:selectionRequired="true">
-                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp4Low" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_baja" android:textAllCaps="false" android:textSize="12sp"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp4Normal" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_normal" android:textAllCaps="false" android:textSize="12sp"/>
-                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp4High" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_alta" android:textAllCaps="false" android:textSize="12sp"/>
-            </com.google.android.material.button.MaterialButtonToggleGroup>
-            <TextView android:id="@+id/txtQualityMp4Detail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:textColor="@color/text_muted" android:textSize="11sp" android:gravity="center"/>
-        </LinearLayout>
-
-        <!-- Descargador -->
-        <LinearLayout android:id="@+id/rowDownloader" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal"
-            android:padding="18dp" android:background="@drawable/bg_settings_card">
-            <ImageView android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp"
-                android:src="@drawable/ic_download" android:background="@drawable/bg_settings_icon_button"
-                android:importantForAccessibility="no"/>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:layout_marginStart="14dp" android:orientation="vertical">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/descargador" android:textColor="@color/text_primary"
-                    android:textSize="16sp" android:textStyle="bold"/>
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp"
-                    android:text="@string/descargador_subtitulo" android:textColor="@color/text_secondary" android:textSize="13sp"/>
-            </LinearLayout>
-            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:rotation="180"
-                android:src="@drawable/ic_arrow_back" android:alpha=".5" android:importantForAccessibility="no"/>
-        </LinearLayout>
-
         <!-- Apariencia -->
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
             android:layout_marginStart="6dp" android:text="@string/apariencia" android:textColor="@color/text_secondary"
@@ -136,6 +86,56 @@
                     android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
                     android:text="English" android:textAllCaps="false" android:textSize="12sp" android:letterSpacing="0" android:paddingStart="4dp" android:paddingEnd="4dp"/>
             </com.google.android.material.button.MaterialButtonToggleGroup>
+        </LinearLayout>
+
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp"
+            android:layout_marginStart="6dp" android:text="@string/calidad_descarga" android:textColor="@color/text_secondary"
+            android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"/>
+        <LinearLayout android:id="@+id/cardDownloadQuality" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="10dp" android:orientation="vertical" android:padding="18dp" android:background="@drawable/bg_settings_card">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/auto_format" android:textColor="@color/text_primary"/>
+            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/autoFormat" android:layout_width="match_parent" android:layout_height="wrap_content" app:singleSelection="true" app:selectionRequired="true">
+                <com.google.android.material.button.MaterialButton android:id="@+id/formatMp3" style="?attr/materialButtonOutlinedStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="MP3"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/formatMp4" style="?attr/materialButtonOutlinedStyle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="MP4"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/formato_mp3"
+                android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"/>
+            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/qualityMp3" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="8dp" app:singleSelection="true" app:selectionRequired="true">
+                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp3Low" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_baja" android:textAllCaps="false" android:textSize="12sp"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp3Normal" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_normal" android:textAllCaps="false" android:textSize="12sp"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp3High" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_alta" android:textAllCaps="false" android:textSize="12sp"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+            <TextView android:id="@+id/txtQualityMp3Detail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:textColor="@color/text_muted" android:textSize="11sp" android:gravity="center"/>
+            <View android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginTop="12dp" android:layout_marginBottom="12dp" android:background="@color/divider"/>
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/formato_mp4"
+                android:textColor="@color/text_primary" android:textSize="15sp" android:textStyle="bold"/>
+            <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/qualityMp4" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="8dp" app:singleSelection="true" app:selectionRequired="true">
+                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp4Low" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_baja" android:textAllCaps="false" android:textSize="12sp"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp4Normal" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_normal" android:textAllCaps="false" android:textSize="12sp"/>
+                <com.google.android.material.button.MaterialButton android:id="@+id/qualityMp4High" style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_height="42dp" android:layout_weight="1" android:text="@string/calidad_alta" android:textAllCaps="false" android:textSize="12sp"/>
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+            <TextView android:id="@+id/txtQualityMp4Detail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:textColor="@color/text_muted" android:textSize="11sp" android:gravity="center"/>
+        </LinearLayout>
+
+        <!-- Descargador -->
+        <LinearLayout android:id="@+id/rowDownloader" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal"
+            android:padding="18dp" android:background="@drawable/bg_settings_card">
+            <ImageView android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp"
+                android:src="@drawable/ic_download" android:background="@drawable/bg_settings_icon_button"
+                android:importantForAccessibility="no"/>
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginStart="14dp" android:orientation="vertical">
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:text="@string/descargador" android:textColor="@color/text_primary"
+                    android:textSize="16sp" android:textStyle="bold"/>
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp"
+                    android:text="@string/descargador_subtitulo" android:textColor="@color/text_secondary" android:textSize="13sp"/>
+            </LinearLayout>
+            <ImageView android:layout_width="20dp" android:layout_height="20dp" android:rotation="180"
+                android:src="@drawable/ic_arrow_back" android:alpha=".5" android:importantForAccessibility="no"/>
         </LinearLayout>
 
         <!-- Carpetas de música -->

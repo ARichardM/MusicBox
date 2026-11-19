@@ -150,7 +150,7 @@
 /* La marca de "descargada" se lee con claridad: acento aclarado y opacidad completa (el acento puro se pierde sobre el fondo oscuro). */
 .row-actions .download-btn { opacity: 1; }
 .row-actions .download-btn:has(img[src$="downloaded.svg"]) img { display: none; }
-.row-actions .download-btn:has(img[src$="downloaded.svg"])::after { content: ""; width: 20px; height: 20px; background: color-mix(in srgb, var(--accent) 50%, white); -webkit-mask: url(icons/downloaded.svg) center / contain no-repeat; mask: url(icons/downloaded.svg) center / contain no-repeat; }
+.row-actions .download-btn:has(img[src$="downloaded.svg"])::after { content: ""; width: 20px; height: 20px; background: var(--accent); -webkit-mask: url(icons/downloaded.svg) center / contain no-repeat; mask: url(icons/downloaded.svg) center / contain no-repeat; }
 @media (max-width: 680px) {
   .history-toolbar, .history-foot { flex-wrap: wrap; }
   .history-search { flex: 1 1 100%; }

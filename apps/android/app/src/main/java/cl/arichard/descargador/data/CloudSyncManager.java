@@ -36,6 +36,21 @@ public final class CloudSyncManager {
     private JSONObject playlistBase;
     private JSONObject lastUiState;
     private final Runnable pendingUpload = this::uploadNow;
+    private final SharedPreferences.OnSharedPreferenceChangeListener playerPreferences = this::onPlayerPreferenceChanged;
+    private final java.util.Map<String, Object> importedPlayerValues = new java.util.concurrent.ConcurrentHashMap<>();
+    private void onPlayerPreferenceChanged(SharedPreferences prefs, String key) {
+        String shared = null;
+        if ("crossfade_seconds".equals(key)) shared = "crossfadeSeconds";
+        else if ("crossfade_show_zone".equals(key)) shared = "crossfadeBar";
+        else if ("autoplay".equals(key)) shared = "autoplay";
+        else if ("zoom_mp3".equals(key)) shared = "zoomMp3";
+        else if ("lyrics_shown".equals(key)) shared = "lyricsShown";
+        if (shared == null || applying) return;
+        try {
+            if (PlaylistSync.same(localPreferences().opt(shared), importedPlayerValues.get(shared))) return;
+        } catch (Exception ignored) {}
+        preferenceChanged(context, shared);
+    }
 
     public CloudSyncManager(Context context, Runnable uiChanged) {
         this.context = context.getApplicationContext();
@@ -74,6 +89,7 @@ public final class CloudSyncManager {
         document = FirebaseFirestore.getInstance().collection("users").document(user.getUid())
                 .collection("state").document("musicbox");
         active = this;
+        context.getSharedPreferences("player", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(playerPreferences);
         revocationWatch = DeviceSessions.watch(context);
         playlists.setChangeListener(this::scheduleUpload);
         history.setChangeListener(this::scheduleUpload);
@@ -113,7 +129,7 @@ public final class CloudSyncManager {
                     owner.edit().putString("playlists_base", playlistBase.toString()).apply();
                 }
             }
-            if (root.has("history")) history.importJson(root.optJSONObject("history"));
+            history.importActivity(root.optJSONObject("activity"));
             needsUpload |= clicks.merge(root.optJSONObject("clicks"));
             applyPreferences(root, owner);
             owner.edit().putString("devices_json", root.optJSONObject("devices") == null ? "{}" : root.optJSONObject("devices").toString()).apply();
@@ -160,13 +176,19 @@ public final class CloudSyncManager {
     private JSONObject localPreferences() throws org.json.JSONException {
         SharedPreferences p = context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE);
         String language = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales().toLanguageTags();
+        SharedPreferences player = context.getSharedPreferences("player", Context.MODE_PRIVATE);
         return new JSONObject().put("autoFormat", p.getString("autoFormat", "MP3"))
                 .put("darkMode", p.getBoolean("dark_mode", true))
                 .put("accentColor", cl.arichard.descargador.util.AccentColors.selected(context))
                 .put("language", p.getString("language", language.isEmpty() ? "auto" : language))
                 .put("quality_mp3", p.getString("quality_mp3", "192 kbps"))
                 .put("quality_mp4", p.getString("quality_mp4", "1080p"))
-                .put("androidFolders", new org.json.JSONArray(LibraryFolders.get(context)));
+                .put("autoplay", player.getBoolean("autoplay", true))
+                .put("crossfadeSeconds", player.getInt("crossfade_seconds", 0))
+                .put("crossfadeBar", player.getBoolean("crossfade_show_zone", true))
+                .put("zoomMp3", player.getBoolean("zoom_mp3", false))
+                .put("lyricsShown", player.getBoolean("lyrics_shown", true))
+                .put("librarySort", p.getString("library_sort", "DEFAULT:1").toLowerCase(java.util.Locale.ROOT));
     }
 
     private void applyPreferences(JSONObject root, SharedPreferences owner) {
@@ -180,8 +202,22 @@ public final class CloudSyncManager {
         }
         if (!pending.has("darkMode") && (remote.has("darkMode") || root.has("darkMode")))
             edit.putBoolean("dark_mode", remote.optBoolean("darkMode", root.optBoolean("darkMode", true)));
-        if (!pending.has("androidFolders") && remote.optJSONArray("androidFolders") != null)
-            edit.putString("library_roots", remote.optJSONArray("androidFolders").toString());
+        if (!pending.has("librarySort") && remote.optString("librarySort").matches("(default|title|artist|recent|plays|duration):[01]"))
+            edit.putString("library_sort", remote.optString("librarySort").toUpperCase(java.util.Locale.ROOT));
+        SharedPreferences player = context.getSharedPreferences("player", Context.MODE_PRIVATE);
+        SharedPreferences.Editor playback = player.edit();
+        String[][] bools = {{"autoplay","autoplay"},{"crossfadeBar","crossfade_show_zone"},{"zoomMp3","zoom_mp3"},{"lyricsShown","lyrics_shown"}};
+        for (String[] pair : bools) if (!pending.has(pair[0]) && remote.opt(pair[0]) instanceof Boolean) {
+            importedPlayerValues.put(pair[0], remote.optBoolean(pair[0]));
+            playback.putBoolean(pair[1], remote.optBoolean(pair[0]));
+        }
+        if (!pending.has("crossfadeSeconds") && remote.opt("crossfadeSeconds") instanceof Number) {
+            int seconds = remote.optInt("crossfadeSeconds");
+            if (seconds >= 0 && seconds <= 12) {
+                importedPlayerValues.put("crossfadeSeconds", seconds);playback.putInt("crossfade_seconds", seconds);
+            }
+        }
+        playback.apply();
         String accent = remote.optString("accentColor", "");
         if (!pending.has("accentColor") && cl.arichard.descargador.util.AccentColors.isValid(accent))
             edit.putString("accentColor", accent);
@@ -220,7 +256,7 @@ public final class CloudSyncManager {
         try {
             final JSONObject base = playlistBase == null ? new JSONObject() : new JSONObject(playlistBase.toString());
             final JSONObject local = playlists.exportJson();
-            final JSONObject localHistory = history.exportJson();
+            final JSONObject localActivity = history.exportActivity();
             final SharedPreferences owner = context.getSharedPreferences("musicbox_cloud", Context.MODE_PRIVATE);
             final JSONObject changes = pendingPreferences(owner);
             final JSONObject localPrefs = localPreferences();
@@ -236,7 +272,7 @@ public final class CloudSyncManager {
                     JSONObject root = payload == null ? new JSONObject() : new JSONObject(payload);
                     JSONObject previous = root.optJSONObject("playlists");
                     JSONObject merged = PlaylistSync.merge(base, local, previous);
-                    root.put("schema", 1).put("playlists", merged).put("history", localHistory);
+                    root.put("schema", 2).put("playlists", merged).put("activity", AccountActivity.merge(root.optJSONObject("activity"), localActivity));
                     JSONObject lists = merged.optJSONObject("playlists");
                     if (lists != null && lists.has("Favoritos")) root.put("favorites", lists.getJSONArray("Favoritos"));
                     clicks.merge(root.optJSONObject("clicks"));
@@ -281,6 +317,7 @@ public final class CloudSyncManager {
 
     public void stop() {
         handler.removeCallbacks(pendingUpload);
+        context.getSharedPreferences("player", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(playerPreferences);
         playlists.setChangeListener(null); history.setChangeListener(null); clicks.setChangeListener(null);
         if (registration != null) registration.remove();
         if (revocationWatch != null) revocationWatch.remove();

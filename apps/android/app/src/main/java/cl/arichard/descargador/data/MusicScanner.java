@@ -73,7 +73,7 @@ public class MusicScanner {
                         String artist = artistCol >= 0 ? cursor.getString(artistCol) : cl.arichard.descargador.util.Tr.t("Artista desconocido");
                         String album = albumCol >= 0 ? cursor.getString(albumCol) : "";
                         long duration = durCol >= 0 ? cursor.getLong(durCol) : 0;
-                        long dateAdded = dateCol >= 0 ? cursor.getLong(dateCol) : file.lastModified();
+                        long dateAdded = dateCol >= 0 ? cursor.getLong(dateCol) * 1000L : file.lastModified();
                         String folder = file.getParentFile() != null ? file.getParentFile().getName() : "Música";
 
                         seenPaths.add(path);

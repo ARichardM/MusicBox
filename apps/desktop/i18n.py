@@ -7,6 +7,8 @@ from PySide6.QtCore import QLocale, QTranslator
 LANGUAGES = ("auto", "es", "en")
 
 EN = {
+    "REPRODUCCIÓN": "PLAYBACK",
+    "DESCARGAS": "DOWNLOADS",
     "Transiciones suaves": "Smooth transitions",
     "Crossfade": "Crossfade",
     "Crossfade activado · {n} s": "Crossfade on · {n} s",

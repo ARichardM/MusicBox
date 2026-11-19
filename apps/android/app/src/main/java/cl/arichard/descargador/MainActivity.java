@@ -2040,6 +2040,24 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         View btnLibraryMore = findViewById(R.id.btnLibraryMore);
         btnLibraryMore.setOnClickListener(v -> showLibraryMoreMenu(btnLibraryMore));
         recyclerLibrary.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            private int travel;
+            @Override public void onScrolled(RecyclerView view, int dx, int dy) {
+                if (!isViewingSubList) { setCollectionControlsHidden(false); return; }
+                // Resizing the header also moves the list; it is not a new scroll gesture.
+                if (dy == 0 || view.getScrollState() == RecyclerView.SCROLL_STATE_IDLE
+                        || android.os.SystemClock.uptimeMillis() < collectionControlsSettledAt) return;
+                if (dy < 0 && !view.canScrollVertically(-1)) { setCollectionControlsHidden(false); travel=0; return; }
+                androidx.core.view.WindowInsetsCompat insets=androidx.core.view.ViewCompat.getRootWindowInsets(view);
+                if (insets != null && insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())) {
+                    inputSearchLibrary.clearFocus();
+                    androidx.core.view.WindowInsetsControllerCompat keyboard=androidx.core.view.ViewCompat.getWindowInsetsController(view);
+                    if(keyboard!=null)keyboard.hide(androidx.core.view.WindowInsetsCompat.Type.ime());
+                }
+                if (travel * dy < 0) travel=0;travel+=dy;
+                int threshold=Math.round(24*getResources().getDisplayMetrics().density);
+                if (travel>threshold) { setCollectionControlsHidden(true); travel=0; }
+                else if (travel< -threshold) { setCollectionControlsHidden(false); travel=0; }
+            }
             @Override public void onScrollStateChanged(RecyclerView view, int state) {
                 if (state == RecyclerView.SCROLL_STATE_IDLE) saveLibraryPosition();
             }
@@ -2211,6 +2229,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         }
         btnNewPlaylist.setVisibility(currentLibraryMode == 3 && !isViewingSubList ? View.VISIBLE : View.GONE);
         findViewById(R.id.layoutLibraryModeChips).setVisibility(isViewingSubList ? View.GONE : View.VISIBLE);
+        if (!isViewingSubList) setCollectionControlsHidden(false);
         if (layoutLibraryTools != null) layoutLibraryTools.setVisibility(currentLibraryMode == 0 || isViewingSubList ? View.VISIBLE : View.GONE);
         if (switchLibraryAutoDownload != null) {
             boolean canAutoDl = isViewingSubList && currentLibraryMode == 3;
@@ -2241,7 +2260,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         libraryContentDirty = false;
         playlistAdapter.setLibrary(allSongs);
         if (currentLibraryMode == 0 || isViewingSubList) {
-            List<Song> songs = allSongs;
+            List<Song> songs = currentLibraryMode == 0 ? PlaylistManager.getInstance(this).accountSongs(allSongs) : allSongs;
             if (isViewingSubList && currentLibraryMode == 3) {
                 songs = PlaylistManager.getInstance(this).resolveSongs(currentSubListName, allSongs);
                 if (!heldFavorites.isEmpty() && "Favoritos".equals(currentSubListName)) {
@@ -2258,6 +2277,12 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
                 songs = MusicScanner.groupByFolder(allSongs).get(currentSubListName);
                 if (songs == null) songs = Collections.emptyList();
             }
+            String sharedSort = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString("library_sort", "DEFAULT:1");
+            try { String[] parts=sharedSort.split(":");savedSort=SongAdapter.Sort.valueOf(parts[0]);savedAscending=parts.length<2||!"0".equals(parts[1]); }
+            catch (Exception ignored) { savedSort=SongAdapter.Sort.DEFAULT;savedAscending=true; }
+            songAdapter.setSort(savedSort,savedAscending);
+            if (txtLibrarySort != null) txtLibrarySort.setText(sortLabel(savedSort,savedAscending));
+            songAdapter.setPlaylistName(isViewingSubList ? currentSubListName : "");
             songAdapter.updateSongs(songs, isViewingSubList && currentLibraryMode == 3);
             if (recyclerLibrary.getAdapter() != songAdapter) recyclerLibrary.setAdapter(songAdapter);
         } else if (currentLibraryMode == 2) {
@@ -2671,6 +2696,34 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         }
     }
 
+    private boolean collectionControlsHidden;
+    private long collectionControlsSettledAt;
+    private android.animation.ValueAnimator collectionControlsAnimation;
+    private void setCollectionControlsHidden(boolean hidden) {
+        View controls=findViewById(R.id.collectionControls);
+        if (controls == null || hidden == collectionControlsHidden) return;
+        collectionControlsHidden=hidden;
+        collectionControlsSettledAt=android.os.SystemClock.uptimeMillis()+280;
+        if (collectionControlsAnimation != null) collectionControlsAnimation.cancel();
+        int from=controls.getHeight();
+        controls.measure(View.MeasureSpec.makeMeasureSpec(controls.getWidth(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int natural=controls.getMeasuredHeight(), to=hidden?0:natural;
+        collectionControlsAnimation=android.animation.ValueAnimator.ofInt(from,to);
+        collectionControlsAnimation.setDuration(230);
+        collectionControlsAnimation.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        controls.setImportantForAccessibility(hidden?View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        collectionControlsAnimation.addUpdateListener(animation->{
+            int value=(Integer)animation.getAnimatedValue();
+            android.view.ViewGroup.LayoutParams params=controls.getLayoutParams();params.height=value;controls.setLayoutParams(params);
+            controls.setAlpha(natural>0?Math.min(1f,value/(float)natural):1f);
+            controls.setTranslationY(-Math.round(12*getResources().getDisplayMetrics().density)*(1-controls.getAlpha()));
+        });
+        collectionControlsAnimation.addListener(new android.animation.AnimatorListenerAdapter(){
+            @Override public void onAnimationEnd(android.animation.Animator animation){if(!collectionControlsHidden){android.view.ViewGroup.LayoutParams params=controls.getLayoutParams();params.height=-2;controls.setLayoutParams(params);}}
+        });
+        collectionControlsAnimation.start();
+    }
+
     private void setupLibrarySort() {
         layoutLibraryTools = findViewById(R.id.layoutLibraryTools);
         btnLibrarySort = findViewById(R.id.btnLibrarySort);
@@ -2704,6 +2757,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     private void applySort(SongAdapter.Sort mode, boolean ascending) {
         savedSort = mode; savedAscending = ascending;
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putString("library_sort", mode.name() + ":" + (ascending ? "1" : "0")).apply();
+        CloudSyncManager.preferenceChanged(this, "librarySort");
         String label = sortLabel(mode, ascending);
         txtLibrarySort.animate().cancel();
         txtLibrarySort.animate().alpha(0f).setDuration(90).withEndAction(() -> {

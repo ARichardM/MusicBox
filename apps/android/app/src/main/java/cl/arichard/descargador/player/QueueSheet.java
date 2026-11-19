@@ -69,12 +69,22 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         int state = behavior.getState();
         sheet.revealNow(state == BottomSheetBehavior.STATE_EXPANDED || state == BottomSheetBehavior.STATE_HALF_EXPANDED);
         behavior.addBottomSheetCallback(new BottomSheetBehavior.BottomSheetCallback() {
+            private float lastOffset=state==BottomSheetBehavior.STATE_EXPANDED?1f:0f;
+            private boolean dragging,downward;
             @Override public void onStateChanged(android.view.View view, int newState) {
+                if (newState==BottomSheetBehavior.STATE_DRAGGING) dragging=true;
+                else if (dragging && newState==BottomSheetBehavior.STATE_SETTLING) {
+                    dragging=false;
+                    // Modest reduction: release after 42% of the travel rather than halfway.
+                    if(downward && lastOffset<.58f) view.post(()->behavior.setState(BottomSheetBehavior.STATE_COLLAPSED));
+                }
                 if (newState == BottomSheetBehavior.STATE_EXPANDED || newState == BottomSheetBehavior.STATE_HALF_EXPANDED) sheet.reveal(true);
                 else if (newState == BottomSheetBehavior.STATE_COLLAPSED) sheet.reveal(false);
             }
             @Override public void onSlide(android.view.View view, float offset) {
                 // Aparecen completas en cuanto la hoja empieza a abrirse: sin quedar apagadas a medio camino.
+                if(dragging && Math.abs(offset-lastOffset)>.001f)downward=offset<lastOffset;
+                lastOffset=offset;
                 sheet.reveal(offset > .12f);
             }
         });
@@ -165,6 +175,11 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         handleParams.gravity = Gravity.CENTER_HORIZONTAL; handleParams.topMargin = dp(2); root.addView(handle, handleParams);
 
         LinearLayout header = new LinearLayout(activity); header.setGravity(Gravity.CENTER_VERTICAL);
+        if (inline) {
+            View.OnClickListener expand = v -> { if (behavior != null) behavior.setState(BottomSheetBehavior.STATE_EXPANDED); };
+            header.setOnClickListener(expand);handle.setOnClickListener(expand);
+            header.setContentDescription(Tr.t("Abrir cola"));header.setFocusable(true);
+        }
         LinearLayout titles = new LinearLayout(activity); titles.setOrientation(LinearLayout.VERTICAL);
         heading = text(Tr.t("Cola de reproducción"), inline ? 17 : 20); heading.setTypeface(null, Typeface.BOLD);
         titles.addView(heading);

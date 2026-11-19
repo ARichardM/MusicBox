@@ -115,7 +115,7 @@
   setInterval(save, 4000);
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(); });
-  window.musicboxSession = { save, restore };
+  window.musicboxSession = { save, restore, pendingPosition: () => resumePending() ? resume.position : null };
 
   const start = () => setTimeout(restore, 400);
   if (document.readyState === 'complete') start(); else window.addEventListener('load', start);

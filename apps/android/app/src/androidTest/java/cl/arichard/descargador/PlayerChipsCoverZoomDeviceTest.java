@@ -37,15 +37,18 @@ public class PlayerChipsCoverZoomDeviceTest {
         Song song = new Song(0, "Zoom", "Verification", "Synthetic", 30000, audio.getPath(), "", 0);
         PlayerManager player = PlayerManager.getInstance();
         instrumentation.runOnMainSync(() -> { player.init(context); player.playSong(song, Collections.singletonList(song), false); });
-        NowPlayingActivity launched = (NowPlayingActivity) instrumentation.startActivitySync(
-                new Intent(context, NowPlayingActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
-        Thread.sleep(1500);
-        java.util.concurrent.atomic.AtomicReference<NowPlayingActivity> active = new java.util.concurrent.atomic.AtomicReference<>(launched);
-        instrumentation.runOnMainSync(() -> {
-            for (android.app.Activity activity : androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))
-                if (activity instanceof NowPlayingActivity) active.set((NowPlayingActivity) activity);
-        });
+        androidx.test.uiautomator.Configurator.getInstance().setWaitForIdleTimeout(0);
+        java.util.concurrent.atomic.AtomicReference<NowPlayingActivity> active = new java.util.concurrent.atomic.AtomicReference<>();
+        instrumentation.runOnMainSync(()->context.startActivity(new Intent(context, NowPlayingActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK)));
+        long deadline=System.currentTimeMillis()+12000;
+        while(active.get()==null && System.currentTimeMillis()<deadline){
+            instrumentation.runOnMainSync(() -> {
+                for (android.app.Activity activity : androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED))
+                    if (activity instanceof NowPlayingActivity && activity.hasWindowFocus()) active.set((NowPlayingActivity) activity);
+            });Thread.sleep(50);
+        }
+        assertNotNull("Isolated player resumed",active.get());Thread.sleep(600);
         NowPlayingActivity now = active.get();
         try {
             View disc = now.findViewById(R.id.discContainer);
@@ -94,6 +97,23 @@ public class PlayerChipsCoverZoomDeviceTest {
                         .setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
             });
             Thread.sleep(700);
+            com.google.android.material.bottomsheet.BottomSheetBehavior<View> queueBehavior = com.google.android.material.bottomsheet.BottomSheetBehavior.from(now.findViewById(R.id.queueSheet));
+            instrumentation.runOnMainSync(() -> queueBehavior.setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED));
+            Thread.sleep(500);
+            androidx.test.uiautomator.UiObject2 header=device.wait(androidx.test.uiautomator.Until.findObject(
+                    androidx.test.uiautomator.By.desc(cl.arichard.descargador.util.Tr.t("Abrir cola"))),3000);
+            assertNotNull("Queue header supports a tap",header);header.click();Thread.sleep(650);
+            instrumentation.runOnMainSync(() -> assertEquals("Tap opens the queue",com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED,queueBehavior.getState()));
+            android.graphics.Rect headerBounds=header.getVisibleBounds();
+            final int[] travel=new int[1];instrumentation.runOnMainSync(()->{
+                View sheet=now.findViewById(R.id.queueSheet);View parent=(View)sheet.getParent();
+                travel[0]=parent.getHeight()-queueBehavior.getPeekHeight()-sheet.getTop();
+            });
+            device.swipe(headerBounds.centerX(),headerBounds.centerY(),headerBounds.centerX(),headerBounds.centerY()+Math.round(travel[0]*.45f),80);
+            Thread.sleep(900);
+            instrumentation.runOnMainSync(() -> assertEquals("A modestly shorter downward gesture closes the queue",com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_COLLAPSED,queueBehavior.getState()));
+            header=device.wait(androidx.test.uiautomator.Until.findObject(androidx.test.uiautomator.By.desc(cl.arichard.descargador.util.Tr.t("Abrir cola"))),3000);
+            assertNotNull(header);header.click();Thread.sleep(650);
             androidx.recyclerview.widget.RecyclerView rows = findRows(now.findViewById(R.id.queueSheet));
             assertNotNull(rows);
             instrumentation.runOnMainSync(() -> rows.scrollToPosition(rows.getAdapter().getItemCount() - 1));
