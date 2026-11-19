@@ -4662,12 +4662,27 @@ def explicit_app_user_model_id(frozen=None, platform_name=None):
     return "MusicBox.Desktop" if platform_name == "nt" and not frozen else ""
 
 
+UI_SWITCH_INTERVAL = 0.0002
+
+
+def keep_interface_responsive():
+    """Reparte el GIL en turnos cortos para que la interfaz no quede «No responde».
+
+    QML llama a Python en cada propiedad que dibuja (decenas o cientos por fotograma). Si un hilo de fondo
+    está ocupado —yt-dlp resolviendo un vídeo, una descarga o una precarga—, cada una de esas llamadas espera
+    el turno por defecto de 5 ms: con dos o tres hilos así, pulsar el vídeo bloqueaba la ventana más de
+    10 segundos. Con turnos de 0,2 ms la misma situación queda por debajo de un segundo.
+    """
+    sys.setswitchinterval(UI_SWITCH_INTERVAL)
+
+
 def main():
     if "--version" in sys.argv:
         print(f"MusicBox {__version__}")
         return 0
     if any(flag in sys.argv for flag in ("--worker", "--audio-worker", "--player-worker", "--songs-worker", "--classic")):
         return download_backend.run_cli()
+    keep_interface_responsive()
     app_id = explicit_app_user_model_id()
     if app_id:
         import ctypes

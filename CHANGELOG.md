@@ -9,6 +9,10 @@
 - Configuración organiza cuenta, apariencia, reproducción y descargas en secciones que se ajustan a su contenido.
 - En playlists y carpetas, la búsqueda, los filtros, el orden y las recomendaciones se ocultan al bajar y reaparecen al subir.
 
+### Windows
+
+- Pulsar el vídeo ya no deja la ventana en «No responde»: mientras yt-dlp, una descarga o una precarga trabajaban de fondo, la interfaz esperaba turnos largos de Python y podía quedar congelada más de 10 segundos. Ahora reparte el tiempo en turnos cortos y responde en menos de un segundo en la misma situación.
+
 ### Windows y Web
 
 - Portadas con esquinas suavemente redondeadas y un indicador de descarga del color del tema.

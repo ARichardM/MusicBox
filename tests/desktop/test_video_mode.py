@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject, QSettings, QUrl
+from PySide6.QtCore import QMetaObject, QObject, QSettings, Qt, QTimer, QUrl
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
@@ -193,6 +193,79 @@ class UiTests(unittest.TestCase):
             bridge.playerChanged.emit()
             self.assertTrue(wait_for(lambda: not toggle.property("visible")))
             self.assertFalse([e for e in errors if "ideo" in e], errors)
+
+    def test_video_button_stays_responsive_while_background_threads_work(self):
+        """Con yt-dlp u otras tareas de fondo ocupando Python, pulsar el vídeo no puede congelar la ventana."""
+        import shutil
+        import subprocess
+        import sys
+        import threading
+        ffmpeg = shutil.which("ffmpeg") or next((str(p) for p in (Path(module.CODE_DIR).parents[1] / "ffmpeg.exe",) if p.is_file()), None)
+        if not ffmpeg:
+            self.skipTest("Se necesita ffmpeg para crear un vídeo de prueba")
+        QQuickStyle.setStyle("Material")
+        previous_interval = sys.getswitchinterval()
+        stop = threading.Event()
+
+        def busy():
+            while not stop.is_set():
+                sum(i * i for i in range(20000))
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
+            clip = str(Path(directory) / "clip.mp4")
+            subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
+                            "-f", "lavfi", "-i", "sine=frequency=440", "-t", "12", "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-c:a", "aac", "-shortest", clip], check=True, timeout=120)
+            bridge = make_bridge(directory)
+            bridge._user = {"name": "Demostración", "email": "demo@example.invalid"}
+            for video in (False, True):
+                bridge._stream_cache[bridge._stream_key(ONLINE["url"], video)] = (time.monotonic(), clip, {})
+            engine = QQmlApplicationEngine()
+            bridge.attach_engine(engine)
+            engine.rootContext().setContextProperty("musicbox", bridge)
+            downloads = DownloadsController(bridge)
+            bridge.downloads = downloads
+            engine.rootContext().setContextProperty("downloads", downloads)
+            engine.addImageProvider("importer", ImporterImageProvider(downloads.importer))
+            engine.load(QUrl.fromLocalFile(str(module.CODE_DIR / "ui" / "Main.qml")))
+            root = engine.rootObjects()[0]
+            root.setProperty("splashVisible", False)
+            bridge._play_online(dict(ONLINE))
+            toggle = root.findChild(QObject, "videoToggle")
+            self.assertTrue(wait_for(lambda: toggle.property("visible"), 10))
+            gaps, last = [], [time.perf_counter()]
+
+            def beat():
+                now = time.perf_counter()
+                gaps.append(now - last[0])
+                last[0] = now
+            threads = [threading.Thread(target=busy, daemon=True) for _ in range(3)]
+            try:
+                module.keep_interface_responsive()
+                for thread in threads:
+                    thread.start()
+                timer = QTimer()
+                timer.setInterval(20)
+                timer.timeout.connect(beat)
+                timer.start()
+                started = time.perf_counter()
+                QMetaObject.invokeMethod(toggle, "clicked", Qt.DirectConnection)
+                elapsed = time.perf_counter() - started
+                QTest.qWait(4000)
+                timer.stop()
+                self.assertTrue(bridge.videoMode)
+                # Sin el reparto corto del GIL la pulsación tardaba ~10 s y la ventana dejaba de responder ~14 s.
+                self.assertLess(elapsed, 4, f"El botón de vídeo bloqueó la interfaz {elapsed:.1f} s")
+                self.assertLess(max(gaps), 4, f"La interfaz dejó de responder {max(gaps):.1f} s con el vídeo abierto")
+            finally:
+                stop.set()
+                for thread in threads:
+                    thread.join(5)
+                sys.setswitchinterval(previous_interval)
+                bridge._player.stop()
+                bridge._player.setSource(QUrl())
+                QTest.qWait(200)
+                root.setProperty("visible", False)
 
 
 if __name__ == "__main__":
