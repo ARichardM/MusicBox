@@ -6,6 +6,7 @@
 
 - **Las canciones vuelven a sonar aunque YouTube bloquee al servidor:** si el servidor no consigue el audio, la web reintenta una vez y sigue con el reproductor oficial de YouTube desde el mismo segundo, con pausa, salto, siguiente y la barra de progreso. Se recuerda durante 10 minutos para que las siguientes canciones empiecen sin esperar al servidor. En ese modo no hay crossfade.
 - **MP4 funciona en ese mismo modo:** el videoclip se muestra en el marco 16:9 del reproductor ampliado con el reproductor de YouTube, y al cerrarlo la música sigue sin cortes. El chip MP4 sabe si la canción tiene clip aunque el servidor no responda.
+- **Sin esperas con el servidor bloqueado:** cuando YouTube pide al servidor «confirmar que no es un bot», el servidor lo recuerda 10 minutos, responde al instante y lo informa en `/api/health` (`stream_blocked`); la web lo consulta al abrir y la primera canción empieza directamente con el reproductor de YouTube, en lugar de esperar más de 20 segundos.
 - **La auto-descarga ya no falla en silencio:** tras tres rechazos seguidos del servidor se pausa, avisa y se reintenta a los 10 minutos, en lugar de intentar cada canción de la playlist. Un fallo suelto no detiene el resto.
 - El servidor envía `Cache-Control: no-cache` en la interfaz: el navegador revalida sus archivos y ya no puede quedarse con una versión anterior publicada con el mismo número (por eso algunos navegadores no veían los filtros que se ocultan al bajar en playlists).
 

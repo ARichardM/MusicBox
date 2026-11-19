@@ -121,6 +121,26 @@ def store_cached_stream(video_id: str, url: str, headers: dict) -> None:
     STREAM_CACHE[video_id] = (now, url, headers)
 
 
+# YouTube pide «confirmar que no eres un bot» a IPs de centros de datos. Mientras dure, cada intento recorre todos los
+# clientes de yt-dlp (más de 20 s por canción) para fallar igual: se recuerda y se responde 503 de inmediato.
+PROVIDER_BLOCK_SECONDS = 600
+_provider_blocked_until = 0.0
+
+
+def provider_blocked() -> bool:
+    return time.monotonic() < _provider_blocked_until
+
+
+def note_provider_error(exc: BaseException) -> None:
+    global _provider_blocked_until
+    text = str(exc)
+    if "confirm you" in text and "not a bot" in text:
+        _provider_blocked_until = time.monotonic() + PROVIDER_BLOCK_SECONDS
+
+
+BLOCKED_DETAIL = "YouTube no permitió obtener el audio desde el servidor."
+
+
 @app.get("/api/health")
 async def health():
     return {
@@ -129,6 +149,7 @@ async def health():
         "version": "2.4.9",
         "build": "release-v249",
         "has_cookies": COOKIE_PATH.is_file() and COOKIE_PATH.stat().st_size > 0,
+        "stream_blocked": provider_blocked(),
     }
 
 
@@ -141,6 +162,7 @@ async def cookies_status():
 @app.post("/api/cookies/upload")
 async def upload_cookies(request: Request, file: UploadFile = File(...)):
     """Permite subir un cookies.txt para saltar restricciones de YouTube si fuera necesario."""
+    global _provider_blocked_until
     try:
         token = os.environ.get('MUSICBOX_ADMIN_TOKEN', '')
         if not token or not secrets.compare_digest(request.headers.get('authorization', ''), 'Bearer ' + token):
@@ -150,6 +172,7 @@ async def upload_cookies(request: Request, file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail='Archivo de cookies Netscape inválido (máximo 1 MB).')
         COOKIE_PATH.parent.mkdir(parents=True, exist_ok=True)
         COOKIE_PATH.write_bytes(content)
+        _provider_blocked_until = 0.0  # con cookies nuevas se vuelve a intentar enseguida
         return {"status": "ok", "message": "Cookies guardadas correctamente"}
     except HTTPException:
         raise
@@ -419,6 +442,8 @@ async def stream_audio(video_id: VideoId, request: Request, video: bool = False)
         local = FALLBACK_FILES.get(video_id)
         if not video and local and Path(local).is_file():
             return FileResponse(local, media_type=_audio_type(local), headers={"Accept-Ranges": "bytes"})
+        if provider_blocked():
+            raise HTTPException(status_code=503, detail=BLOCKED_DETAIL)
         try:
             url = f"https://www.youtube.com/watch?v={video_id}"
             if video:
@@ -446,6 +471,7 @@ async def stream_audio(video_id: VideoId, request: Request, video: bool = False)
             raise
         except Exception as exc:
             logger.error("Error resolviendo stream para '%s': %s", video_id, exc)
+            note_provider_error(exc)
             if video:
                 raise HTTPException(status_code=503, detail="El vídeo no está disponible desde el servidor.")
             raise HTTPException(status_code=503, detail="YouTube no permitió obtener el audio desde el servidor. Puedes reproducir en línea; la descarga requiere que el administrador revise el acceso del servidor a YouTube.")
@@ -535,6 +561,8 @@ async def stream_audio(video_id: VideoId, request: Request, video: bool = False)
 async def download_file(video_id: VideoId, format: Literal['mp3','mp4'] = 'mp3', quality: int = 192):
     if quality not in ((128,192,256,320) if format == 'mp3' else (360,480,720,1080)):
         raise HTTPException(status_code=422, detail='Calidad no válida para el formato seleccionado.')
+    if provider_blocked():
+        raise HTTPException(status_code=503, detail='YouTube no permitió descargar desde el servidor. Reintenta más tarde; el administrador debe revisar el acceso a YouTube.')
     await DOWNLOAD_SLOTS.acquire()
     task = asyncio.create_task(asyncio.to_thread(prepare_download, video_id, format, quality))
     cancelled = False
@@ -554,6 +582,7 @@ async def download_file(video_id: VideoId, format: Literal['mp3','mp4'] = 'mp3',
         raise
     except Exception as error:
         logger.warning('Download unavailable for %s: %s', video_id, type(error).__name__)
+        note_provider_error(error)
         raise HTTPException(status_code=503, detail='YouTube no permitió descargar desde el servidor. Reintenta más tarde; el administrador debe revisar el acceso a YouTube.')
     finally:
         if not cancelled: DOWNLOAD_SLOTS.release()

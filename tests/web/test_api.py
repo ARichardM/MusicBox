@@ -30,6 +30,23 @@ class ApiTest(unittest.TestCase):
         for path in ['/', '/app.js', '/core.js', '/parity.js', '/stats.js', '/i18n.js', '/style.css', '/sw.js']:
             self.assertEqual(self.client.get(path).status_code, 200, path)
 
+    def test_bot_check_is_remembered_and_later_requests_fail_fast(self):
+        api._provider_blocked_until = 0.0
+        self.addCleanup(setattr, api, '_provider_blocked_until', 0.0)
+        bot = RuntimeError("ERROR: [youtube] abcdefghijk: Sign in to confirm you’re not a bot.")
+        with patch.object(api.youtube_streams, 'resolve_or_cache', side_effect=bot) as resolver:
+            self.assertEqual(self.client.get('/api/stream/abcdefghijk').status_code, 503)
+            self.assertTrue(self.client.get('/api/health').json()['stream_blocked'])
+            self.assertEqual(self.client.get('/api/stream/bcdefghijkl').status_code, 503)
+            self.assertEqual(resolver.call_count, 1, 'Mientras dura el bloqueo no se recorre yt-dlp otra vez')
+        with patch.object(api, 'prepare_download') as download:
+            self.assertEqual(self.client.get('/api/download/abcdefghijk').status_code, 503)
+            download.assert_not_called()
+        api._provider_blocked_until = 0.0
+        with patch.object(api.youtube_streams, 'resolve_or_cache', side_effect=RuntimeError('timeout')):
+            self.client.get('/api/stream/abcdefghijk')
+        self.assertFalse(self.client.get('/api/health').json()['stream_blocked'], 'Otros errores no bloquean')
+
     def test_frontend_is_revalidated_after_each_deploy(self):
         # Sin Cache-Control el navegador podía seguir usando un JS viejo con la misma URL ?build=.
         for path in ['/', '/app.js?build=2.4.9', '/ytmedia.js', '/style.css']:

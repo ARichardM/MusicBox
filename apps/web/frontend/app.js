@@ -395,6 +395,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   setupAudioListeners();
+  // Si el servidor ya sabe que YouTube lo bloquea, la primera canción va directo al reproductor de YouTube.
+  fetch(apiUrl("api/health")).then(response => response.json())
+    .then(health => { if (health.stream_blocked) serverStreamBlockedUntil = Date.now() + SERVER_STREAM_RETRY_MS; })
+    .catch(() => {});
   setupMediaSession();
   setupUIListeners();
   setupVideoDock();
