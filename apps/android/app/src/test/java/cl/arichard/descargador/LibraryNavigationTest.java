@@ -277,9 +277,14 @@ public class LibraryNavigationTest {
             populate.invoke(activity);
             android.widget.LinearLayout cards = activity.findViewById(R.id.layoutTopCollections);
             android.view.View target = null;
-            for (int index = 0; index < cards.getChildCount(); index++) {
-                android.view.View card = cards.getChildAt(index);
-                if (name.equals(((TextView) card.findViewById(R.id.txtFolderName)).getText().toString())) target = card;
+            // El cálculo corre en un hilo de segundo plano: se espera a que publique las tarjetas.
+            for (int attempt = 0; attempt < 100 && target == null; attempt++) {
+                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                for (int index = 0; index < cards.getChildCount(); index++) {
+                    android.view.View card = cards.getChildAt(index);
+                    if (name.equals(((TextView) card.findViewById(R.id.txtFolderName)).getText().toString())) target = card;
+                }
+                if (target == null) Thread.sleep(50);
             }
             assertNotNull("Collection shortcut is visible", target);
             target.performClick();

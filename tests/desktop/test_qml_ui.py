@@ -392,14 +392,21 @@ class QmlUiTests(unittest.TestCase):
             large = root.findChild(QObject, "largePlayer")
             self.assertTrue(large.property("visible"))
             self.assertEqual(large.property("height"), root.property("height"))
+            def wait_for_cover(target):
+                # El tiempo real de la animación varía según el equipo: se espera a que termine en lugar de un plazo fijo.
+                for _ in range(80):
+                    if abs(large.property("coverProgress") - target) < 0.001:
+                        break
+                    QTest.qWait(50)
+                QTest.qWait(30)
             large.setProperty("coverImmersive", True)
-            QTest.qWait(380)
+            wait_for_cover(1)
             immersive_artwork = root.findChild(QObject, "immersiveArtwork")
             self.assertAlmostEqual(immersive_artwork.property("x"), 0, delta=1)
             self.assertAlmostEqual(immersive_artwork.property("y"), 0, delta=1)
             self.assertAlmostEqual(immersive_artwork.property("width"), root.property("width"), delta=1)
             large.setProperty("coverImmersive", False)
-            QTest.qWait(380)
+            wait_for_cover(0)
             if preview_dir:
                 self.assertTrue(root.grabWindow().save(str(Path(preview_dir) / "expanded-player.png")))
             root.setProperty("expanded", False)
