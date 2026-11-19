@@ -1,5 +1,23 @@
 # Historial de versiones
 
+## 2.4.9 — 19 de noviembre de 2026
+
+### Web
+
+- **Las canciones vuelven a sonar aunque YouTube bloquee al servidor:** si el servidor no consigue el audio, la web reintenta una vez y sigue con el reproductor oficial de YouTube desde el mismo segundo, con pausa, salto, siguiente y la barra de progreso. Se recuerda durante 10 minutos para que las siguientes canciones empiecen sin esperar al servidor. En ese modo no hay crossfade.
+- **MP4 funciona en ese mismo modo:** el videoclip se muestra en el marco 16:9 del reproductor ampliado con el reproductor de YouTube, y al cerrarlo la música sigue sin cortes. El chip MP4 sabe si la canción tiene clip aunque el servidor no responda.
+- **La auto-descarga ya no falla en silencio:** tras tres rechazos seguidos del servidor se pausa, avisa y se reintenta a los 10 minutos, en lugar de intentar cada canción de la playlist. Un fallo suelto no detiene el resto.
+- El servidor envía `Cache-Control: no-cache` en la interfaz: el navegador revalida sus archivos y ya no puede quedarse con una versión anterior publicada con el mismo número (por eso algunos navegadores no veían los filtros que se ocultan al bajar en playlists).
+
+### Windows
+
+- **Las portadas vuelven a verse en Música, Buscar y la cola:** la máscara de esquinas redondeadas de la 2.4.8 nunca se dibujaba y dejaba cada portada transparente.
+- **Abrir el MP4 ya no deja la ventana en «No responde»:** con la barra de crossfade activa, la interfaz pasaba cerca del 70 % del tiempo ocupada (medido con vídeo en reproducción); ahora entre 12 % y 18 %. La barra de ondas solo se repinta cuando cambia algo visible (antes, en cada fotograma), el logo de la pantalla de inicio de sesión deja de animarse mientras está oculta y las propiedades de la barra recuerdan unos segundos si el archivo de audio existe en vez de consultar el disco decenas de veces por segundo.
+
+### Android
+
+- Versión de aplicación `2.4.9` (`versionCode 27`).
+
 ## 2.4.8 — 18 de noviembre de 2026
 
 ### Android, Windows y Web

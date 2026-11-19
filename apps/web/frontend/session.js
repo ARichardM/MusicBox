@@ -103,7 +103,7 @@
   // La siguiente canción se resuelve en el servidor mientras suena la actual: al llegar a ella empieza sin esperar.
   const warmed = new Set();
   setInterval(async () => {
-    if (!state.isPlaying || !navigator.onLine || state.queue.length < 2) return;
+    if (!state.isPlaying || !navigator.onLine || state.queue.length < 2 || serverStreamBlocked()) return;
     const index = state.queueIndex + 1 < state.queue.length ? state.queueIndex + 1 : state.repeatMode === 'all' ? 0 : -1;
     const next = state.queue[index];
     if (!next || warmed.has(next.id) || String(next.id).startsWith('local:') || !/^[A-Za-z0-9_-]{11}$/.test(next.id)) return;

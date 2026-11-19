@@ -15,8 +15,8 @@ android {
         applicationId = "cl.arichard.descargador"
         minSdk = 24
         targetSdk = 36
-        versionCode = 26
-        versionName = "2.4.8"
+        versionCode = 27
+        versionName = "2.4.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

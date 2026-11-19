@@ -298,6 +298,53 @@ audio.preload = 'metadata';
 audio.style.display = 'none';
 let streamRetried = false;
 let wantsPlayback = false;
+
+// Si YouTube bloquea al servidor, el audio en línea pasa al reproductor oficial de YouTube en el navegador
+// (<yt-media>, ytmedia.js). Se recuerda un rato para no esperar al servidor en cada canción.
+const SERVER_STREAM_RETRY_MS = 10 * 60 * 1000;
+let serverStreamBlockedUntil = 0;
+let nativeEngine = audio;
+let youtubeEngine = null;
+const serverStreamBlocked = () => Date.now() < serverStreamBlockedUntil;
+
+function useEngine(youtube) {
+  if (!!audio.isYouTube === youtube) return;
+  if (!youtube) nativeEngine = nativeEngine || document.createElement('video');
+  else {
+    nativeEngine = audio;
+    if (!youtubeEngine) youtubeEngine = document.createElement('yt-media');
+  }
+  const next = youtube ? youtubeEngine : nativeEngine;
+  cancelWebFade();
+  audio.pause();
+  audio.removeAttribute('src');
+  audio.load();
+  audio.removeAttribute('id');
+  // El iframe se queda en el DOM (oculto) para no recrear el reproductor de YouTube; el vídeo nativo sí se retira.
+  if (youtube) audio.remove();
+  else audio.classList.add('yt-media-hidden');
+  audio = next;
+  audio.id = 'local-media-player';
+  if (!audio.isConnected) document.getElementById('player-video-surface').append(audio);
+  if (!audio.__musicboxListeners) { audio.__musicboxListeners = true; setupAudioListeners(); }
+  audio.volume = state.isMuted ? 0 : state.volume;
+  paintInlineVideo(state.videoDockOpen);
+}
+
+// Pasa la canción actual al reproductor de YouTube desde el mismo segundo.
+function playWithYouTube(position = 0, playing = true) {
+  const track = state.currentTrack;
+  if (!track || !/^[A-Za-z0-9_-]{11}$/.test(track.id)) return false;
+  serverStreamBlockedUntil = Date.now() + SERVER_STREAM_RETRY_MS;
+  const video = state.videoDockOpen;
+  useEngine(true);
+  audio.setVideoVisible(video);
+  audio.src = 'yt:' + track.id;
+  if (position > 0) audio.currentTime = position;
+  wantsPlayback = playing;
+  if (playing) audio.play();
+  return true;
+}
 let syncInterval = null;
 
 // Helper para URLs de la API relativas
@@ -838,7 +885,8 @@ function paintInlineVideo(open) {
   document.getElementById("video-dock").classList.toggle("dock-hidden", !open);
   document.getElementById("video-toggle-btn").classList.toggle("active", open);
   document.body.classList.toggle("video-open", open);
-  audio.style.display = open ? "block" : "none";
+  if (audio.isYouTube) audio.classList.toggle("yt-media-hidden", !open);
+  else audio.style.display = open ? "block" : "none";
 }
 
 function restoreMediaPosition(position, playing) {
@@ -856,13 +904,17 @@ function probeVideoClip(id) {
   if (!/^[A-Za-z0-9_-]{11}$/.test(id || "") || !navigator.onLine) return Promise.resolve(undefined);
   if (videoClips.has(id)) return Promise.resolve(videoClips.get(id));
   if (probingClips.has(id)) return probingClips.get(id);
+  // Con el servidor bloqueado por YouTube, el clip lo muestra el reproductor de YouTube: basta saber si existe.
+  const askYouTube = () => fetch(apiUrl("api/video-source/" + id)).then(response => response.ok ? response.json() : {})
+    .then(({ id: clip }) => videoClips.set(id, !!clip || (state.currentTrack?.id === id && state.currentTrack.kind === "video")));
   // Pedir 2 bytes comprueba el clip y además deja preparado el flujo en el servidor para cambiar a MP4 sin esperar.
-  const probe = fetch(apiUrl("api/stream/" + id + "?video=1"), { headers: { Range: "bytes=0-1" } })
+  const probe = (serverStreamBlocked() ? askYouTube() : fetch(apiUrl("api/stream/" + id + "?video=1"), { headers: { Range: "bytes=0-1" } })
     .then(async (response) => {
       response.body?.cancel?.().catch(() => {});
       if (response.status === 404) videoClips.set(id, false);
       else if (response.ok) videoClips.set(id, true);
-    })
+      else if (response.status === 503) return askYouTube();
+    }))
     .catch(() => {})
     .then(() => {
       probingClips.delete(id);
@@ -891,6 +943,11 @@ function setInlineVideo(open) {
       paintInlineVideo(true);
       return;
     }
+    if (audio.isYouTube) {
+      paintInlineVideo(true);
+      audio.setVideoVisible(true);
+      return;
+    }
     const id = state.currentTrack.id;
     if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return;
     const position = audio.currentTime || 0;
@@ -915,6 +972,7 @@ function setInlineVideo(open) {
 
   const previous = inlineVideoRestore;
   inlineVideoRestore = null;
+  if (audio.isYouTube) { paintInlineVideo(false); audio.setVideoVisible(false); return; }
   if (!previous) { paintInlineVideo(false); return; }
   const position = previous.videoReady ? audio.currentTime : previous.position;
   const playing = previous.videoReady ? !audio.paused : previous.playing;
@@ -927,6 +985,7 @@ function setInlineVideo(open) {
 }
 
 function setupAudioListeners() {
+  audio.__musicboxListeners = true;
   audio.volume = state.volume;
 
   const setLoading = loading => {
@@ -968,6 +1027,14 @@ function setupAudioListeners() {
   });
   audio.addEventListener('error', event => {
     if (event.currentTarget !== audio) return;
+    if (inlineVideoRestore && !audio.isYouTube && navigator.onLine) {
+      // El servidor no pudo dar el clip: el reproductor de YouTube lo muestra desde el mismo segundo.
+      const previous = inlineVideoRestore;
+      inlineVideoRestore = null;
+      if (playWithYouTube(previous.videoReady ? audio.currentTime : previous.position,
+                          previous.videoReady ? !audio.paused : previous.playing)) return;
+      inlineVideoRestore = previous;
+    }
     if (inlineVideoRestore) {
       const id = state.currentTrack?.id;
       setInlineVideo(false);
@@ -981,7 +1048,7 @@ function setupAudioListeners() {
     state.isPlaying = false;
     updatePlayPauseButton();
     const source = audio.getAttribute("src");
-    if (!streamRetried && !state.isOfflinePlayback && source && navigator.onLine && wantsPlayback) {
+    if (!streamRetried && !audio.isYouTube && !state.isOfflinePlayback && source && navigator.onLine && wantsPlayback) {
       streamRetried = true;
       mediaModeChange.abort();
       mediaModeChange = new AbortController();
@@ -993,6 +1060,9 @@ function setupAudioListeners() {
       audio.load();
       return;
     }
+    // El reintento también falló (p. ej. YouTube bloquea la IP del servidor): se sigue con el reproductor de YouTube.
+    if (!audio.isYouTube && !state.isOfflinePlayback && source && navigator.onLine
+        && playWithYouTube(audio.currentTime || 0, wantsPlayback)) return;
     showToast(navigator.onLine ? "No se pudo abrir el audio. Pulsa Reproducir para reintentar o Siguiente para continuar."
       : "Sin conexión. Las canciones descargadas siguen disponibles.",{kind:'error',retry:()=>playTrack(state.currentTrack,true)});
   });
@@ -1087,7 +1157,9 @@ async function playTrack(track, fromQueue = false) {
   trackHasLocalVideo = blob?.type.startsWith("video/") || false;
   showOfflineIndicator(!!blob);
   currentBlobUrl = blob ? URL.createObjectURL(blob) : null;
-  audio.src = currentBlobUrl || apiUrl("api/stream/" + track.id);
+  useEngine(!blob && serverStreamBlocked());
+  if (audio.isYouTube) audio.setVideoVisible(false);
+  audio.src = currentBlobUrl || (audio.isYouTube ? "yt:" + track.id : apiUrl("api/stream/" + track.id));
   audio.volume = state.isMuted ? 0 : state.volume;
   audio.play().catch(error => {
     if (generation === playbackGeneration && error.name === "NotAllowedError") showToast("Pulsa Reproducir para iniciar el audio.");
@@ -1178,6 +1250,7 @@ async function checkAutoplayQueue(videoId, generation = playbackGeneration) {
 // ==========================================================================
 // Descarga Offline en IndexedDB
 // ==========================================================================
+let lastDownloadFailure = null;
 async function downloadTrackForOffline(track, btnElement, quiet = false) {
   if (!track?.id || track.id.startsWith('local:')) return;
   if (downloadJobs.has(track.id)) { showToast('Esta canción ya se está descargando.'); return; }
@@ -1199,7 +1272,8 @@ async function downloadTrackForOffline(track, btnElement, quiet = false) {
     const streamResp = await fetch(apiUrl(`api/download/${track.id}?format=${state.downloadFormat}&quality=${state.downloadQuality}`), { signal: job.controller.signal });
     if (!streamResp.ok) {
       const error = await streamResp.json().catch(() => ({}));
-      throw new Error(error.detail || 'No se pudo descargar. Revisa tu conexión e inténtalo de nuevo.');
+      throw Object.assign(new Error(error.detail || 'No se pudo descargar. Revisa tu conexión e inténtalo de nuevo.'),
+                          { status: streamResp.status });
     }
     if (!(streamResp.headers.get('content-type') || '').match(/^(audio|video)\//)) throw new Error('El servidor no devolvió un archivo de audio válido.');
     const reader = streamResp.body.getReader();
@@ -1238,6 +1312,7 @@ async function downloadTrackForOffline(track, btnElement, quiet = false) {
     return true;
   } catch (err) {
     console.error("Error al descargar:", err);
+    lastDownloadFailure = { status: err.status || 0, message: err.message };
     recordDownload(job,err.name === 'AbortError' ? 'cancelled' : 'failed',err.message);
     if (!quiet) showToast(err.name === 'AbortError' ? 'Descarga cancelada' : err.message,err.name==='AbortError'?{kind:'info'}:{kind:'error',retry:()=>downloadTrackForOffline(track)});
     if (btnElement) {

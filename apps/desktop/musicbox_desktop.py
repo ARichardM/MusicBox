@@ -430,6 +430,7 @@ class MusicBoxBridge(QObject):
         self._updateEvent.connect(self._handle_update_event)
         self._player.errorOccurred.connect(self._player_error)
         self._waves, self._waves_pending = {}, set()
+        self._file_checks = {}
         self._waveReady.connect(self._apply_wave)
         self._crossfade = Crossfade(self)
         self._authResult.connect(self._apply_auth_result)
@@ -1716,14 +1717,29 @@ class MusicBoxBridge(QObject):
         return outgoing.duration() if outgoing is not None else self._player.duration()
 
     # ---- relieve de volumen y límites audibles (barra del crossfade) ----
+    FILE_CHECK_SECONDS = 5
+
+    def _is_file_cached(self, path) -> bool:
+        """``Path.is_file`` con memoria corta: QML lee las ondas en cada avance y cada consulta al disco pasa por el
+        antivirus; con decenas por segundo el hilo de la interfaz quedaba ocupado y la ventana dejaba de responder."""
+        now = time.monotonic()
+        hit = self._file_checks.get(path)
+        if hit and now - hit[1] < self.FILE_CHECK_SECONDS:
+            return hit[0]
+        if len(self._file_checks) > 512:
+            self._file_checks.clear()
+        exists = Path(path).is_file()
+        self._file_checks[path] = (exists, now)
+        return exists
+
     def _wave_path(self, item) -> str:
         if not item:
             return ""
         path = item.get("path") or ""
-        if path and Path(path).is_file():
+        if path and self._is_file_cached(path):
             return path
         cached = self._prefetched.get(item.get("url", ""), "")
-        return cached if cached and Path(cached).is_file() else ""
+        return cached if cached and self._is_file_cached(cached) else ""
 
     def _wave_of(self, item):
         path = self._wave_path(item)

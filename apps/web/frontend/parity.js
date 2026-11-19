@@ -722,6 +722,8 @@ function runAutoDownloads() {
   reconcileInFlight=reconcileAutoDownloads();
   return reconcileInFlight;
 }
+const AUTO_DOWNLOAD_REFUSALS = 3;
+let autoDownloadPausedNotice = false, autoDownloadRetryTimer = 0;
 async function reconcileAutoDownloads() {
   try {
     for (const playlist of await storage.getAllPlaylists()) {
@@ -734,13 +736,31 @@ async function reconcileAutoDownloads() {
       const batch = { total: tracks.length, done: 0, activeId: '', phase: 'running' };
       autoDownloadBatches.set(playlist.id, batch);
       scheduleDownloadFeedback();
+      let blocked = false, refusals = 0;
       for (const track of tracks) {
         if (!navigator.onLine) break;
         batch.activeId = track.id;
+        lastDownloadFailure = null;
         const saved = await storage.getOfflineTrack(track.id) ||
           (!downloadJobs.has(track.id) && await downloadTrackForOffline(track, null, true));
         if (saved) batch.done++;
         scheduleDownloadFeedback();
+        // Varios 503 seguidos: YouTube no deja descargar al servidor. Seguir solo repetiría el mismo error con cada
+        // canción. Un fallo suelto (un vídeo concreto) no detiene el resto.
+        refusals = saved ? 0 : lastDownloadFailure?.status === 503 ? refusals + 1 : refusals;
+        if (refusals >= AUTO_DOWNLOAD_REFUSALS) { blocked = true; break; }
+      }
+      if (blocked) {
+        batch.activeId = '';
+        batch.phase = 'failed';
+        scheduleDownloadFeedback();
+        if (!autoDownloadPausedNotice) {
+          autoDownloadPausedNotice = true;
+          showToast('Auto-descarga en pausa: el servidor no puede descargar desde YouTube ahora. Se reintentará en unos minutos.', { kind: 'error' });
+        }
+        clearTimeout(autoDownloadRetryTimer);
+        autoDownloadRetryTimer = setTimeout(() => { autoDownloadPausedNotice = false; runAutoDownloads(); }, 10 * 60 * 1000);
+        break;
       }
       batch.activeId = '';
       batch.phase = batch.done === batch.total ? 'complete' : 'failed';

@@ -98,7 +98,7 @@
   async function audioFor(track) {
     const stored = await storage.getOfflineTrack(track.id).catch(() => null);
     if (stored?.audioBlob) return stored.audioBlob.arrayBuffer();
-    if (!navigator.onLine || String(track.id).startsWith('local:')) return null;
+    if (!navigator.onLine || String(track.id).startsWith('local:') || serverStreamBlocked()) return null;
     const response = await fetch(apiUrl(`api/stream/${track.id}`));
     if (!response.ok) return null;
     const size = Number(response.headers.get('content-length')) || 0;

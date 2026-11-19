@@ -126,8 +126,8 @@ async def health():
     return {
         "status": "ok",
         "app": "MusicBox Web",
-        "version": "2.4.8",
-        "build": "release-v248",
+        "version": "2.4.9",
+        "build": "release-v249",
         "has_cookies": COOKIE_PATH.is_file() and COOKIE_PATH.stat().st_size > 0,
     }
 
@@ -577,5 +577,15 @@ FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 if not FRONTEND_DIR.is_dir():
     FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
+class RevalidatedStaticFiles(StaticFiles):
+    """Sin Cache-Control el navegador podía seguir usando un JS viejo con la misma URL tras un despliegue.
+    Con «no-cache» conserva su copia pero la revalida con el ETag (304 si no cambió)."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
 if FRONTEND_DIR.is_dir():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+    app.mount("/", RevalidatedStaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

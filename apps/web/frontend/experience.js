@@ -629,7 +629,8 @@ function cancelWebFade() {
   audio.volume=state.isMuted?0:state.volume;
 }
 async function prepareWebFade() {
-  if(!state.crossfadeSeconds||state.videoDockOpen||!state.isPlaying||outgoingAudio||webFadeStarting)return;
+  // El iframe de YouTube no se puede mezclar: con el servidor bloqueado no hay crossfade.
+  if(!state.crossfadeSeconds||state.videoDockOpen||!state.isPlaying||outgoingAudio||webFadeStarting||audio.isYouTube)return;
   const endAt=window.MixEnv&&state.currentTrack?MixEnv.endSeconds(state.currentTrack.id,audio.duration):audio.duration;
   const remaining=endAt-audio.currentTime;
   if(!Number.isFinite(remaining)||endAt<state.crossfadeSeconds*2||state.repeatMode==='one')return;

@@ -30,6 +30,13 @@ class ApiTest(unittest.TestCase):
         for path in ['/', '/app.js', '/core.js', '/parity.js', '/stats.js', '/i18n.js', '/style.css', '/sw.js']:
             self.assertEqual(self.client.get(path).status_code, 200, path)
 
+    def test_frontend_is_revalidated_after_each_deploy(self):
+        # Sin Cache-Control el navegador podía seguir usando un JS viejo con la misma URL ?build=.
+        for path in ['/', '/app.js?build=2.4.9', '/ytmedia.js', '/style.css']:
+            response = self.client.get(path)
+            self.assertEqual(response.headers.get('cache-control'), 'no-cache', path)
+            self.assertTrue(response.headers.get('etag'), path)
+
     def test_invalid_parameters_never_reach_youtube(self):
         for path in ['/api/stream/not-an-id', '/api/lyrics/bad', '/api/related/abcdefghijk?count=999', '/api/search?q=x&type=invalid']:
             self.assertEqual(self.client.get(path).status_code, 422, path)

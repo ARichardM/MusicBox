@@ -1,10 +1,11 @@
-const CACHE_NAME = "musicbox-cache-v2.4.8";
+const CACHE_NAME = "musicbox-cache-v2.4.9";
 const SHELL_ASSETS = [
   "./",
   "./index.html",
   "./landing.html",
   "./style.css",
   "./app.js",
+  "./ytmedia.js",
   "./core.js",
   "./account.js",
   "./images.js",

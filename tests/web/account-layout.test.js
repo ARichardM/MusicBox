@@ -31,7 +31,7 @@ const server=http.createServer(async(req,res)=>{
   const errors=[];
   try{
     for(let i=0;i<2;i++){
-      const context=await browser.newContext({viewport:{width:1180,height:760},serviceWorkers:'block'}),page=await context.newPage();pages.push(page);
+      const context=await browser.newContext({viewport:{width:1180,height:760},locale:'es-CL',serviceWorkers:'block'}),page=await context.newPage();pages.push(page);
       page.on('pageerror',error=>errors.push(error.message));
       await page.route('https://**/*',route=>route.abort());
       await page.exposeFunction('fakeRead',()=>JSON.stringify(cloud));

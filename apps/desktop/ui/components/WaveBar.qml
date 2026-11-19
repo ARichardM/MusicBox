@@ -89,6 +89,30 @@ Item {
     onZoneMsChanged: zoneShown = duration > 0 ? Math.min(1, zoneMs / duration) : 0
     onDurationChanged: zoneShown = duration > 0 ? Math.min(1, zoneMs / duration) : 0
 
+    function progressFraction() {
+        var dur = Math.max(1, duration), progressMs = position
+        if (playing && !mixing) progressMs = Math.min(dur, anchorPosition + (Date.now() - anchorTime))
+        return Math.max(0, Math.min(1, progressMs / dur))
+    }
+
+    // El Canvas se pinta por software en el hilo de la interfaz: repintar 120 barras en cada fotograma ocupaba la
+    // ventana y, junto al vídeo, la dejaba «No responde». Solo se repinta cuando cambia algo visible.
+    property var painted: ({})
+    // Firma barata del contenido: el binding de `wave` entrega un objeto nuevo en cada avance aunque los datos no cambien.
+    function signature(values) {
+        return values && values.length ? values.length + ":" + values[0] + ":" + values[values.length >> 1] + ":" + values[values.length - 1] : ""
+    }
+    function needsPaint() {
+        var span = Math.max(.0001, viewEnd - viewStart)
+        var state = { col: Math.floor((progressFraction() - viewStart) / span * cols + .5), zoom: zoom, alpha: waveAlpha,
+                      zone: zoneShown, width: width, height: height, mixing: mixing, ink: ink.toString(),
+                      accent: accent.toString(), tail: signature(wave && wave.tail), head: signature(nextWave && nextWave.head) }
+        var last = painted, changed = morph < 1
+        for (var key in state) if (state[key] !== last[key]) changed = true
+        if (changed) painted = state
+        return changed
+    }
+
     FrameAnimation {
         running: root.waveAlpha > .005 || root.active
         onTriggered: {
@@ -103,7 +127,8 @@ Item {
                 }
                 root.display = out
             }
-            canvas.requestPaint()
+            root.updateView()
+            if (root.needsPaint()) canvas.requestPaint()
         }
     }
 
@@ -114,9 +139,8 @@ Item {
             var ctx = getContext("2d")
             ctx.reset()
             if (root.waveAlpha < .005 || width < 2) return
-            var dur = Math.max(1, root.duration), progressMs = root.position
-            if (root.playing && !root.mixing) progressMs = Math.min(dur, root.anchorPosition + (Date.now() - root.anchorTime))
-            var progress = Math.max(0, Math.min(1, progressMs / dur))
+            var dur = Math.max(1, root.duration)
+            var progress = root.progressFraction()
             var endFraction = root.endMs > 0 ? Math.min(1, root.endMs / dur) : 1
             var zone = root.zoneShown, zoneTarget = root.zoneMs > 0 ? Math.min(1, root.zoneMs / dur) : 0
             root.updateView()
