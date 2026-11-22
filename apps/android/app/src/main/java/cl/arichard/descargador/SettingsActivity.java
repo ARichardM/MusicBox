@@ -99,12 +99,16 @@ public final class SettingsActivity extends AppearanceActivity {
         ((TextView) findViewById(R.id.txtSettingsName)).setText(name);
         ((TextView) findViewById(R.id.txtSettingsEmail)).setText(email);
         String initial = (name.isEmpty() ? "U" : name.substring(0, 1)).toUpperCase(java.util.Locale.ROOT);
-        ((TextView) findViewById(R.id.txtSettingsAvatar)).setText(initial);
+        TextView avatarInitial = findViewById(R.id.txtSettingsAvatar);
+        avatarInitial.setText(initial);
         android.widget.ImageView avatar = findViewById(R.id.imgSettingsAvatar);
         if (user != null && user.getPhotoUrl() != null) {
-            cl.arichard.descargador.util.ImageLoader.getInstance().load(user.getPhotoUrl().toString(), avatar);
-            avatar.setVisibility(View.VISIBLE);
-            findViewById(R.id.txtSettingsAvatar).setVisibility(View.GONE);
+            cl.arichard.descargador.util.ImageLoader.getInstance().loadBitmap(user.getPhotoUrl().toString(), photo -> {
+                if (photo == null || isDestroyed()) return;
+                avatar.setImageBitmap(photo);
+                avatar.setVisibility(View.VISIBLE);
+                avatarInitial.setVisibility(View.GONE);
+            });
         }
         setupDownloadQuality();
         getSharedPreferences("musicbox_prefs", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(settingsListener);
@@ -135,6 +139,7 @@ public final class SettingsActivity extends AppearanceActivity {
     private void setupCrossfade() {
         boolean[] binding={false};
         SharedPreferences prefs = getSharedPreferences("player", MODE_PRIVATE);
+        cl.arichard.descargador.player.PlayerManager player = cl.arichard.descargador.player.PlayerManager.getInstance();
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(18), dp(12), dp(18), dp(12));
@@ -176,12 +181,24 @@ public final class SettingsActivity extends AppearanceActivity {
         zone.setOnCheckedChangeListener((button, checked) -> {if(!binding[0])prefs.edit().putBoolean("crossfade_show_zone", checked).apply();});
         SwitchMaterial autoplay=new SwitchMaterial(this);autoplay.setText(Tr.t("Reproducción automática"));
         autoplay.setTextColor(AccentColors.getColor(this,R.color.text_primary));autoplay.setMinHeight(dp(48));
-        autoplay.setChecked(prefs.getBoolean("autoplay",true));
-        autoplay.setOnCheckedChangeListener((button,checked)->{if(binding[0])return;prefs.edit().putBoolean("autoplay",checked).apply();cl.arichard.descargador.player.PlayerManager.getInstance().setAutoplay(checked);});
+        autoplay.setChecked(player.isAutoplay());
+        autoplay.setOnClickListener(view -> player.setAutoplay(autoplay.isChecked()));
         card.addView(autoplay);card.addView(toggle);
         LinearLayout durationRow=new LinearLayout(this);durationRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         durationRow.addView(duration,new LinearLayout.LayoutParams(0,dp(48),1));durationRow.addView(detail,new LinearLayout.LayoutParams(dp(44),-2));
         card.addView(durationRow);zone.setMinHeight(dp(48));zone.setTextColor(AccentColors.getColor(this,R.color.text_primary));card.addView(zone);
+        SwitchMaterial artwork = new SwitchMaterial(this);
+        artwork.setText(Tr.t("Descargar portadas animadas"));
+        artwork.setTextColor(AccentColors.getColor(this, R.color.text_primary));
+        artwork.setMinHeight(dp(48));
+        artwork.setChecked(AnimatedArtwork.downloadsEnabled(this));
+        artwork.setOnClickListener(view -> prefs.edit()
+                .putBoolean(AnimatedArtwork.DOWNLOAD_PREFERENCE, artwork.isChecked()).apply());
+        card.addView(artwork);
+        TextView artworkDetail = new TextView(this);
+        artworkDetail.setText(Tr.t("Guarda portadas de canciones descargadas para verlas sin conexión."));
+        artworkDetail.setTextColor(AccentColors.getColor(this, R.color.text_secondary));
+        card.addView(artworkDetail);
         LinearLayout parent = (LinearLayout)findViewById(R.id.rowDownloader).getParent();
         LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
         layout.topMargin = dp(12);
@@ -190,14 +207,19 @@ public final class SettingsActivity extends AppearanceActivity {
         title.setTextColor(AccentColors.getColor(this,R.color.text_secondary));
         LinearLayout.LayoutParams titleLayout=new LinearLayout.LayoutParams(-1,-2);titleLayout.topMargin=dp(28);titleLayout.leftMargin=dp(6);
         parent.addView(title,index,titleLayout);parent.addView(card,index+1,layout);
-        playbackSettingsListener=(changed,key)->runOnUiThread(()->{
+        playbackSettingsListener=(changed,key)->{
+            if (!"crossfade_seconds".equals(key) && !"crossfade_show_zone".equals(key) && !"autoplay".equals(key)
+                    && !AnimatedArtwork.DOWNLOAD_PREFERENCE.equals(key)) return;
+            runOnUiThread(()->{
             binding[0]=true;
             try{
                 int next=Math.max(0,Math.min(12,prefs.getInt("crossfade_seconds",0)));
                 toggle.setChecked(next>0);duration.setEnabled(next>0);duration.setProgress(Math.max(0,next-1));detail.setText(next+" s");
-                autoplay.setChecked(prefs.getBoolean("autoplay",true));zone.setChecked(prefs.getBoolean("crossfade_show_zone",true));
+                autoplay.setChecked(player.isAutoplay());zone.setChecked(prefs.getBoolean("crossfade_show_zone",true));
+                artwork.setChecked(AnimatedArtwork.downloadsEnabled(this));
             }finally{binding[0]=false;}
-        });
+            });
+        };
         prefs.registerOnSharedPreferenceChangeListener(playbackSettingsListener);
     }
 

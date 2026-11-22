@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.view.View;
+import android.view.ViewGroup;
+import com.google.android.material.switchmaterial.SwitchMaterial;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.uiautomator.UiDevice;
@@ -47,10 +49,68 @@ public class AccountLayoutDeviceTest {
                 assertTrue(account.getBottom()<=appearance.getTop());
                 assertTrue("Playback section and downloads follow appearance",appearance.getBottom()<downloads.getTop());
                 assertTrue("Settings cards measure their contents",account.getHeight()>0&&appearance.getHeight()>0&&downloads.getHeight()>0);
+                assertTrue("Account photos clip to the circular frame",
+                        activity.findViewById(R.id.imgSettingsAvatar).getClipToOutline());
                 return true;
             });
             UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).takeScreenshot(new java.io.File(activity.getExternalFilesDir(null),"settings-account-layout.png"));
         } finally {main(()->{activity.finish();return true;});}
+    }
+
+    @Test public void settingsAndTheQueueShareAutoplayAndShowTheArtworkDownloadSwitch() throws Exception {
+        SettingsActivity activity = launch(SettingsActivity.class);
+        var player = cl.arichard.descargador.player.PlayerManager.getInstance();
+        var preferences = activity.getSharedPreferences("player", Context.MODE_PRIVATE);
+        boolean oldAutoplay = player.isAutoplay();
+        boolean oldArtwork = AnimatedArtwork.downloadsEnabled(activity);
+        var instrumentation = InstrumentationRegistry.getInstrumentation();
+        UiDevice device = UiDevice.getInstance(instrumentation);
+        try {
+            SwitchMaterial artwork = main(() -> findSwitch(activity.findViewById(android.R.id.content),
+                    cl.arichard.descargador.util.Tr.t("Descargar portadas animadas")));
+            SwitchMaterial autoplay = main(() -> findSwitch(activity.findViewById(android.R.id.content),
+                    cl.arichard.descargador.util.Tr.t("Reproducción automática")));
+            assertNotNull(artwork);
+            assertNotNull(autoplay);
+            main(() -> {
+                artwork.requestRectangleOnScreen(new android.graphics.Rect(0, 0, artwork.getWidth(), artwork.getHeight()), true);
+                artwork.performClick();
+                autoplay.performClick();
+                return true;
+            });
+            assertEquals(!oldArtwork, AnimatedArtwork.downloadsEnabled(activity));
+            assertEquals(!oldAutoplay, player.isAutoplay());
+            device.takeScreenshot(new java.io.File(activity.getExternalFilesDir(null), "settings-playback.png"));
+            main(() -> { cl.arichard.descargador.player.QueueSheet.show(activity); return true; });
+            device.waitForIdle(2500);
+            var toggle = device.wait(androidx.test.uiautomator.Until.findObject(androidx.test.uiautomator.By.desc(
+                    cl.arichard.descargador.util.Tr.t("Reproducción automática"))), 6000);
+            assertNotNull(toggle);
+            assertEquals(!oldAutoplay, toggle.isChecked());
+            toggle.click();
+            waitFor(() -> player.isAutoplay() == oldAutoplay);
+            waitFor(() -> main(() -> autoplay.isChecked() == oldAutoplay && player.isAutoplay() == oldAutoplay));
+        } finally {
+            main(() -> {
+                preferences.edit().putBoolean(AnimatedArtwork.DOWNLOAD_PREFERENCE, oldArtwork).apply();
+                player.setAutoplay(oldAutoplay);
+                activity.finish();
+                return true;
+            });
+        }
+    }
+
+    private SwitchMaterial findSwitch(View view, String label) {
+        if (view instanceof SwitchMaterial && label.contentEquals(((SwitchMaterial) view).getText()))
+            return (SwitchMaterial) view;
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                SwitchMaterial match = findSwitch(group.getChildAt(i), label);
+                if (match != null) return match;
+            }
+        }
+        return null;
     }
     @Test public void collectionControlsHideDownAndReturnUp() throws Exception {
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();

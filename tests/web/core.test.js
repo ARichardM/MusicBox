@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { merge, section, track, escape } = require('../../apps/web/frontend/core.js');
+const { merge, section, track, playlistView, sortTracks, escape } = require('../../apps/web/frontend/core.js');
 const {mergeStats} = require('../../apps/web/frontend/core.js');
 const {ListeningClock} = require('../../apps/web/frontend/core.js');
 const {mergeActivity} = require('../../apps/web/frontend/core.js');
@@ -17,6 +17,19 @@ test('saving a mixed playlist preserves unavailable slots and membership dates',
   const result=section([playlist],[],base);
   assert.deepEqual(result.playlists.mix,keys);
   assert.deepEqual(result.entryAddedAt.mix,base.entryAddedAt.mix);
+});
+
+test('newest preserves legacy positions and stable IDs, skipping unavailable files and aliases', () => {
+  const entries = ['youtube:japanese001','C:/music/local.mp3','japanese002','youtube:japanese003','youtube:japanese002'];
+  const metadata = {japanese002:{title:'好敵手'},japanese003:{title:'好敵手'}};
+  const dates = {'japanese002':1000,'youtube:japanese002':2000,'youtube:japanese003':1000};
+  const playlist = playlistView(entries, metadata, dates);
+  assert.deepEqual(playlist.tracks.map(row=>row.id), ['japanese001','japanese002','japanese003']);
+  assert.equal(playlist.entryAddedAt['youtube:japanese002'], 1000);
+  assert.equal(playlist.entryAddedAt['C:/music/local.mp3'], 2);
+  const stamps = new Map(playlist.tracks.map(row=>[row.id,playlist.entryAddedAt['youtube:'+row.id]]));
+  assert.deepEqual(sortTracks(playlist.tracks,'recent',false,stamps).map(row=>row.id), ['japanese002','japanese003','japanese001']);
+  assert.deepEqual(sortTracks(playlist.tracks,'recent',true,stamps).map(row=>row.id), ['japanese001','japanese003','japanese002']);
 });
 
 test('activity merges portable recents and honors history clear marks', () => {

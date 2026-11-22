@@ -58,6 +58,15 @@ public class AutoplayRecoveryTest {
         assertEquals("", player.getAutoplayError());
     }
 
+    @Test public void importingAutoplayUpdatesThePlayerAndDiscardsAnInflightResponse() {
+        RuntimeEnvironment.getApplication().getSharedPreferences("player", 0)
+                .edit().putBoolean("autoplay", false).apply();
+        player.completeAutoplay("abcdefghijk", 0, related());
+        assertFalse(player.isAutoplay());
+        assertFalse(player.isAutoplayLoading());
+        assertEquals(1, player.getQueue().size());
+    }
+
     @Test public void restrictedArtistQueueDoesNotFetchOrAcceptRelatedSongs() throws Exception {
         set("queueAllowsAutoplay", false);
         set("autoplayLoading", false);

@@ -211,16 +211,31 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(response.status_code,502)
         self.assertIsNone(api.get_cached_stream('abcdefghijk'))
 
+    def test_downloads_disabled_by_default_and_enabled_via_env(self):
+        api._provider_blocked_until = 0.0
+        with patch.dict(os.environ, {'MUSICBOX_WEB_DOWNLOADS': ''}):
+            health = self.client.get('/api/health').json()
+            self.assertFalse(health['downloads_enabled'])
+            with patch.object(api, 'prepare_download') as download:
+                response = self.client.get('/api/download/abcdefghijk')
+                self.assertEqual(response.status_code, 503)
+                self.assertIn('Android o Windows', response.json()['detail'])
+                download.assert_not_called()
+        with patch.dict(os.environ, {'MUSICBOX_WEB_DOWNLOADS': '1'}):
+            self.assertTrue(self.client.get('/api/health').json()['downloads_enabled'])
+
     def test_download_format_validation_and_provider_error(self):
         self.assertEqual(self.client.get('/api/download/abcdefghijk?format=mp3&quality=1080').status_code,422)
-        with patch.object(api,'prepare_download',side_effect=RuntimeError('Blocked')):
-            self.assertEqual(self.client.get('/api/download/abcdefghijk').status_code,503)
+        with patch.dict(os.environ, {'MUSICBOX_WEB_DOWNLOADS': '1'}):
+            with patch.object(api,'prepare_download',side_effect=RuntimeError('Blocked')):
+                self.assertEqual(self.client.get('/api/download/abcdefghijk').status_code,503)
 
     def test_completed_download_streams_file_and_cleans_only_its_directory(self):
         directory=Path(tempfile.mkdtemp(prefix='musicbox-download-'))
         output=directory/'abcdefghijk.mp3';output.write_bytes(b'MP3 fixture')
-        with patch.object(api,'prepare_download',return_value=(directory,output)):
-            response=self.client.get('/api/download/abcdefghijk?format=mp3&quality=192')
+        with patch.dict(os.environ, {'MUSICBOX_WEB_DOWNLOADS': '1'}):
+            with patch.object(api,'prepare_download',return_value=(directory,output)):
+                response=self.client.get('/api/download/abcdefghijk?format=mp3&quality=192')
         self.assertEqual(response.content,b'MP3 fixture')
         self.assertEqual(response.headers['content-type'],'audio/mpeg')
         self.assertFalse(directory.exists())

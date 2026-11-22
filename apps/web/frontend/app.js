@@ -213,15 +213,26 @@ class MusicBoxStorage {
   }
 
   async savePlaylist(playlist) {
-    const dates={...playlist.entryAddedAt};
-    for(const track of playlist.tracks||[])if(track.id&&!dates['youtube:'+track.id])dates['youtube:'+track.id]=Date.now();
-    playlist={...playlist,entryAddedAt:dates};
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction("playlists", "readwrite");
       const store = tx.objectStore("playlists");
-      const req = store.put(playlist);
+      const req = store.get(playlist.id);
+      req.onsuccess = () => {
+        const previous = req.result;
+        const dates = {...playlist.entryAddedAt};
+        const positions = new Map((previous?.tracks || []).map((track, index) => [track.id, index + 1]));
+        const now = Date.now();
+        for (const [index, track] of (playlist.tracks || []).entries()) {
+          const key = MusicBoxCore.entryKey(track.id);
+          dates[key] = positions.has(track.id)
+            ? previous.entryAddedAt?.[key] || dates[key] || positions.get(track.id)
+            : (previous ? now + index : dates[key] || now + index);
+        }
+        playlist.entryAddedAt = dates;
+        store.put(playlist);
+      };
       tx.oncomplete = () => { resolve(playlist); scheduleCloudSave(); };
-      req.onerror = (e) => reject(e);
+      tx.onerror = tx.onabort = reject;
     });
   }
 }
@@ -266,6 +277,14 @@ let cloudSaveAgain = false;
 const dirtyPreferences = {};
 state.downloadFormat = localStorage.getItem('musicbox_download_format') || 'mp3';
 state.downloadQuality = Number(localStorage.getItem('musicbox_download_quality') || 192);
+state.webDownloadsEnabled = false;
+const WEB_DOWNLOADS_DISABLED_MSG = "Las descargas no están disponibles en la web. Usa MusicBox en Android o Windows.";
+function setWebDownloadsEnabled(enabled) {
+  const next = Boolean(enabled);
+  if (state.webDownloadsEnabled === next) return;
+  state.webDownloadsEnabled = next;
+  document.dispatchEvent(new Event("musicbox-downloads-availability"));
+}
 let revocationUnsubscribe = null;
 const webDeviceId = localStorage.getItem('musicbox_web_device') || ('web_' + crypto.randomUUID().replaceAll('-', ''));
 localStorage.setItem('musicbox_web_device', webDeviceId);
@@ -397,7 +416,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupAudioListeners();
   // Si el servidor ya sabe que YouTube lo bloquea, la primera canción va directo al reproductor de YouTube.
   fetch(apiUrl("api/health")).then(response => response.json())
-    .then(health => { if (health.stream_blocked) serverStreamBlockedUntil = Date.now() + SERVER_STREAM_RETRY_MS; })
+    .then(health => {
+      if (health.stream_blocked) serverStreamBlockedUntil = Date.now() + SERVER_STREAM_RETRY_MS;
+      setWebDownloadsEnabled(health.downloads_enabled === true && !health.stream_blocked);
+    })
     .catch(() => {});
   setupMediaSession();
   setupUIListeners();
@@ -486,27 +508,36 @@ function setupFirebaseAuthListeners() {
 
 function checkAuthSession() {
   const loginOverlay = document.getElementById("login-overlay");
-  const avatarSpan = document.getElementById("sidebar-account-initial");
-  const avatarModal = document.getElementById("modal-user-initial");
   const nameModal = document.getElementById("modal-user-name");
   const emailModal = document.getElementById("modal-user-email");
   const avatarWrap = document.getElementById("sidebar-account-avatar");
   const modalAvatarWrap = document.getElementById("modal-user-avatar");
 
+  const initial = (state.user?.name || state.user?.email || "U").charAt(0).toUpperCase();
+  for (const wrap of [avatarWrap, modalAvatarWrap]) {
+    if (!wrap) continue;
+    const fallback = wrap.querySelector("span");
+    fallback.textContent = initial;
+    fallback.hidden = false;
+    wrap.querySelector("img")?.remove();
+    if (!state.user?.photo) continue;
+    const photo = new Image();
+    photo.alt = "";
+    photo.hidden = true;
+    photo.onload = () => {
+      if (photo.parentNode !== wrap) return;
+      photo.hidden = false;
+      fallback.hidden = true;
+    };
+    photo.onerror = () => photo.remove();
+    wrap.append(photo);
+    photo.src = state.user.photo;
+  }
+
   if (!state.user) {
     loginOverlay.style.display = "flex";
   } else {
     loginOverlay.style.display = "none";
-    const initial = (state.user.name || state.user.email || "U").charAt(0).toUpperCase();
-
-    if (state.user.photo) {
-      if (avatarWrap) avatarWrap.innerHTML = `<img src="${escapeHTML(state.user.photo)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="" />`;
-      if (modalAvatarWrap) modalAvatarWrap.innerHTML = `<img src="${escapeHTML(state.user.photo)}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;" alt="" />`;
-    } else {
-      if (avatarWrap) avatarWrap.innerHTML = `<span>${escapeHTML(initial)}</span>`;
-      if (modalAvatarWrap) modalAvatarWrap.innerHTML = `<span>${escapeHTML(initial)}</span>`;
-    }
-
     if (nameModal) nameModal.textContent = state.user.name || "Usuario MusicBox";
     if (emailModal) emailModal.textContent = state.user.email || "openmusicbox.duckdns.org";
   }
@@ -636,17 +667,15 @@ async function applyCloudSection(section) {
     const tx = storage.db.transaction(["favorites", "playlists"], "readwrite");
     tx.objectStore("favorites").clear();
     tx.objectStore("playlists").clear();
-    for (const entry of all.Favoritos || []) {
-      const item = MusicBoxCore.track(entry, online);
-      if (item?.id) tx.objectStore("favorites").put({...item,addedAt:section.entryAddedAt?.Favoritos?.[entry]||0});
+    const favorites = MusicBoxCore.playlistView(all.Favoritos || [], online, section.entryAddedAt?.Favoritos);
+    for (const [position, item] of favorites.tracks.entries()) {
+      tx.objectStore("favorites").put({...item, position, addedAt: favorites.entryAddedAt[MusicBoxCore.entryKey(item.id)]});
     }
     const order = section.playlistOrder || Object.keys(all);
     for (const [name, entries] of Object.entries(all)) {
       if (name === "Favoritos" || !Array.isArray(entries)) continue;
-      const tracks = entries.map(e => MusicBoxCore.track(e, online)).filter(Boolean);
-      tx.objectStore("playlists").put({ id: name, name, tracks,
-        cloudEntries:[...entries], entryAddedAt:section.entryAddedAt?.[name]||{},
-        unavailableEntries: entries.filter(e => !MusicBoxCore.track(e, online)),
+      const view = MusicBoxCore.playlistView(entries, online, section.entryAddedAt?.[name]);
+      tx.objectStore("playlists").put({ id: name, name, ...view, cloudEntries:[...entries],
         description: section.descriptions?.[name] || '', pinned: (section.pinnedPlaylists || []).includes(name),
         autoDownload: (section.autoDownload || []).includes(name),
         order: order.indexOf(name) });
@@ -1257,6 +1286,10 @@ async function checkAutoplayQueue(videoId, generation = playbackGeneration) {
 let lastDownloadFailure = null;
 async function downloadTrackForOffline(track, btnElement, quiet = false) {
   if (!track?.id || track.id.startsWith('local:')) return;
+  if (!state.webDownloadsEnabled) {
+    if (!quiet) showToast(WEB_DOWNLOADS_DISABLED_MSG, { kind: 'info' });
+    return false;
+  }
   if (downloadJobs.has(track.id)) { showToast('Esta canción ya se está descargando.'); return; }
   if (!navigator.onLine) {
     showToast("Necesitas conexión para descargar");
@@ -2545,6 +2578,12 @@ function openTrackContextMenu(e, track, removeFromPlaylist = null) {
   }
   const download = document.getElementById("ctx-download");
   download.hidden = !/^[A-Za-z0-9_-]{11}$/.test(track.id);
+  const downloadDisabled = !state.webDownloadsEnabled;
+  download.classList.toggle("disabled", downloadDisabled);
+  download.setAttribute("aria-disabled", String(downloadDisabled));
+  download.title = downloadDisabled ? WEB_DOWNLOADS_DISABLED_MSG : "Descargar canción";
+  const downloadBadge = document.getElementById("ctx-download-badge");
+  if (downloadBadge) downloadBadge.hidden = !downloadDisabled;
   const deleteFromDevice = document.getElementById("ctx-delete-device");
   if (deleteFromDevice) {
     deleteFromDevice.hidden = true;
@@ -2835,6 +2874,11 @@ function setupContextMenuActions() {
   });
 
   document.getElementById("ctx-download").addEventListener("click", () => {
+    if (!state.webDownloadsEnabled) {
+      showToast(WEB_DOWNLOADS_DISABLED_MSG, { kind: "info" });
+      closeTrackContextMenu();
+      return;
+    }
     if (state.contextMenuTrack) {
       downloadTrackForOffline(state.contextMenuTrack);
     }

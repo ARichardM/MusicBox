@@ -25,4 +25,10 @@ public class CloudUiStateTest {
         lists.put("Favoritos", "después");
         assertFalse(PlaylistSync.same(before, CloudSyncManager.libraryUiState(lists, new JSONObject(), new JSONObject())));
     }
+    @Test public void receivingOnlyTheSortPreferenceStillInvalidatesTheLibrary() {
+        JSONObject empty = new JSONObject();
+        assertFalse(PlaylistSync.same(
+                CloudSyncManager.libraryUiState(empty, empty, empty, "DEFAULT:1"),
+                CloudSyncManager.libraryUiState(empty, empty, empty, "RECENT:1")));
+    }
 }

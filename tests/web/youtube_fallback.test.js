@@ -65,6 +65,8 @@ const server=http.createServer(async(req,res)=>{
     assert.equal(hits.stream,streamRequests,'Con el servidor bloqueado, la siguiente canción no lo vuelve a esperar');
 
     await page.evaluate(async tracks=>{await storage.savePlaylist({id:'bloqueada',name:'Bloqueada',autoDownload:true,tracks});await runAutoDownloads();},[...songs,...blocked]);
+    assert.equal(hits.download,0,'Sin descargas web habilitadas la auto-descarga no consulta al servidor');
+    await page.evaluate(async()=>{setWebDownloadsEnabled(true);await runAutoDownloads();});
     assert.equal(hits.download,3,'La auto-descarga se pausa tras tres rechazos seguidos');
     assert(/Auto-descarga en pausa/.test(await page.evaluate(()=>[...document.querySelectorAll('.toast')].map(t=>t.textContent).join(' '))),'Avisa de la pausa');
     assert.deepEqual(errors,[]);

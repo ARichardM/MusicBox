@@ -9,11 +9,13 @@ import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
 import cl.arichard.descargador.model.SearchResult;
+import cl.arichard.descargador.model.Song;
 
 public class PlaylistManager {
     private static PlaylistManager instance;
@@ -87,7 +89,10 @@ public class PlaylistManager {
             for (Map.Entry<String, List<String>> list : playlists.entrySet()) {
                 JSONObject dates = entryAddedAt.optJSONObject(list.getKey());
                 if (dates == null) dates = new JSONObject();
-                for (int i = 0; i < list.getValue().size(); i++) if (!dates.has(list.getValue().get(i))) dates.put(list.getValue().get(i), i + 1);
+                for (int i = 0; i < list.getValue().size(); i++) {
+                    String entry = list.getValue().get(i);
+                    if (dates.optLong(entry) <= 0) dates.put(entry, i + 1);
+                }
                 entryAddedAt.put(list.getKey(), dates);
             }
             JSONObject tracks = root.optJSONObject("onlineTracks");
@@ -96,6 +101,7 @@ public class PlaylistManager {
                 if (ids != null) for (int i = 0; i < ids.length(); i++) {
                     String id = ids.getString(i);
                     JSONObject item = tracks.getJSONObject(id);
+                    if (id.startsWith("youtube:")) id = id.substring(8);
                     onlineTracks.put(id, new SearchResult(id, item.optString("title"),
                             item.optString("channel"), item.optLong("duration"),
                             item.optString("thumbnail"), item.optString("url")));
@@ -326,6 +332,25 @@ public class PlaylistManager {
         return added;
     }
 
+    public synchronized boolean addSongToPlaylist(String name, Song song) {
+        if (isInPlaylist(name, song)) return false;
+        String key = songIdentity(song);
+        if (!key.startsWith("youtube:")) return addSongToPlaylist(name, key);
+        String id = key.substring(8);
+        SearchResult metadata = onlineTracks.get(id);
+        if (!song.isOnline()) {
+            if (metadata == null) onlineTracks.put(id, trackMetadata(id, song));
+            return addSongToPlaylist(name, key);
+        }
+        return addOnlineTrack(name, metadata == null ? trackMetadata(id, song) : metadata);
+    }
+
+    private static SearchResult trackMetadata(String id, Song song) {
+        return new SearchResult(id, song.getTitle(), song.getArtist(), Math.max(0, song.getDuration() / 1000),
+                song.isOnline() ? song.getCoverPath() : "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg",
+                "https://www.youtube.com/watch?v=" + id);
+    }
+
     public synchronized String videoIdFor(String path) { return path == null ? null : pathToId.get(path); }
 
     public synchronized String localVideoFor(String videoId) {
@@ -366,9 +391,46 @@ public class PlaylistManager {
         return id != null && onlineTracks.containsKey(id) ? "youtube:" + id : song.getPath();
     }
 
+    private String portableVideoId(String entry) {
+        if (entry.startsWith("youtube:")) return entry.length() == 8 ? null : entry.substring(8);
+        return onlineTracks.containsKey(entry) ? entry : null;
+    }
+
+    private String entryVideoId(String entry) {
+        String id = portableVideoId(entry);
+        return id != null ? id : pathToId.get(entry);
+    }
+
+    public synchronized String songIdentity(Song song) {
+        String id = song.isOnline() ? song.getVideoId() : pathToId.get(song.getPath());
+        return id == null ? song.getPath() : "youtube:" + id;
+    }
+
+    public synchronized boolean hasLegacyFileEntries() {
+        for (List<String> entries : playlists.values()) {
+            for (String entry : entries) if (portableVideoId(entry) == null) return true;
+        }
+        return false;
+    }
+
+    public synchronized List<Song> preferLocalCopies(List<Song> queue, List<Song> library) {
+        Map<String, Song> byVideoId = new HashMap<>();
+        for (Song candidate : library) {
+            String id = pathToId.get(candidate.getPath());
+            if (id != null && new File(candidate.getPath()).isFile()) byVideoId.putIfAbsent(id, candidate);
+        }
+        List<Song> result = new ArrayList<>(queue.size());
+        for (Song entry : queue) {
+            Song local = entry.isOnline() ? byVideoId.get(entry.getVideoId()) : null;
+            result.add(local == null ? entry : new Song(local.getId(), entry.getTitle(), entry.getArtist(),
+                    local.getAlbum(), local.getDuration(), local.getPath(), local.getFolder(), local.getDateAdded()));
+        }
+        return result;
+    }
+
     public synchronized boolean isInPlaylist(String playlistName, cl.arichard.descargador.model.Song song) {
         List<String> list = playlists.get(playlistName);
-        return list != null && song != null && (list.contains(canonicalKey(song)) || list.contains(song.getPath()));
+        return list != null && song != null && list.stream().anyMatch(entry -> matchesPath(entry, song.getPath()));
     }
 
     /**
@@ -376,19 +438,24 @@ public class PlaylistManager {
      * pointed to both the file and the online track, so a song can no longer be in a playlist twice.
      */
     public synchronized void linkLocalSongs(List<cl.arichard.descargador.model.Song> library) {
-        Map<String, String> byTitle = new HashMap<>();
+        Map<String, Song> byPath = new HashMap<>();
+        Map<String, Set<String>> byTitle = new HashMap<>();
         for (Map.Entry<String, SearchResult> track : onlineTracks.entrySet()) {
-            byTitle.putIfAbsent(ClickStats.normalize(track.getValue().getTitle()), track.getKey());
-            byTitle.putIfAbsent(ClickStats.normalizeLoose(track.getValue().getTitle()), track.getKey());
+            for (String title : new String[]{ClickStats.normalize(track.getValue().getTitle()),
+                    ClickStats.normalizeLoose(track.getValue().getTitle())}) {
+                if (!title.isEmpty()) byTitle.computeIfAbsent(title, ignored -> new HashSet<>()).add(track.getKey());
+            }
         }
         android.content.SharedPreferences.Editor editor = localIds.edit();
         boolean linked = false;
         for (cl.arichard.descargador.model.Song song : library) {
             String path = song.getPath();
+            if (!song.isOnline() && path != null) byPath.put(path, song);
             if (song.isOnline() || path == null || pathToId.containsKey(path)) continue;
-            String id = byTitle.get(ClickStats.normalize(song.getTitle()));
-            if (id == null) id = byTitle.get(ClickStats.normalizeLoose(song.getTitle()));
-            if (id == null) continue;
+            Set<String> matches = byTitle.get(ClickStats.normalizeLoose(song.getTitle()));
+            if (matches == null) matches = byTitle.get(ClickStats.normalize(song.getTitle()));
+            if (matches == null || matches.size() != 1) continue;
+            String id = matches.iterator().next();
             pathToId.put(path, id); editor.putString(path, id); linked = true;
         }
         if (linked) editor.apply();
@@ -396,9 +463,21 @@ public class PlaylistManager {
         for (Map.Entry<String, List<String>> playlist : playlists.entrySet()) {
             List<String> cleaned = new ArrayList<>();
             java.util.Set<String> seen = new java.util.HashSet<>();
+            JSONObject dates = entryAddedAt.optJSONObject(playlist.getKey());
             for (String entry : playlist.getValue()) {
-                String id = entry.startsWith("youtube:") ? entry.substring(8) : pathToId.get(entry);
+                String id = entryVideoId(entry);
+                Song file = byPath.get(entry);
+                if (id != null && file != null && !onlineTracks.containsKey(id)) {
+                    onlineTracks.put(id, trackMetadata(id, file));
+                    changed = true;
+                }
                 String key = id != null && onlineTracks.containsKey(id) ? "youtube:" + id : entry;
+                if (!key.equals(entry) && dates != null) {
+                    long old = dates.optLong(entry), canonical = dates.optLong(key);
+                    if (old > 0 && (canonical <= 0 || old < canonical)) {
+                        try { dates.put(key, old); } catch (org.json.JSONException impossible) { throw new IllegalStateException(impossible); }
+                    }
+                }
                 if (!seen.add(key)) { changed = true; continue; }
                 if (!key.equals(entry)) changed = true;
                 cleaned.add(key);
@@ -409,8 +488,7 @@ public class PlaylistManager {
     }
 
     public synchronized SearchResult getOnlineTrack(String entry) {
-        if (entry == null || !entry.startsWith("youtube:")) return null;
-        return onlineTracks.get(entry.substring("youtube:".length()));
+        return entry == null ? null : onlineTracks.get(entryVideoId(entry));
     }
 
     public synchronized boolean isOnlineTrackInPlaylist(String playlistName, String videoId) {
@@ -483,10 +561,7 @@ public class PlaylistManager {
     public synchronized boolean removeSongFromPlaylist(String playlistName, String songPath) {
         List<String> list = playlists.get(playlistName);
         if (list == null) return false;
-        boolean removed = list.remove(songPath);
-        // Un archivo unido a su canción de YouTube se guarda en las playlists como «youtube:<id>».
-        String id = pathToId.get(songPath);
-        if (id != null) removed |= list.remove("youtube:" + id);
+        boolean removed = list.removeIf(entry -> matchesPath(entry, songPath));
         if (removed) save();
         return removed;
     }
@@ -545,8 +620,8 @@ public class PlaylistManager {
     /** ¿La entrada de la playlist corresponde a esta ruta, directamente o por su ID de YouTube? */
     private boolean matchesPath(String entry, String path) {
         if (entry.equals(path)) return true;
-        String id = pathToId.get(path);
-        return id != null && entry.equals("youtube:" + id);
+        String id = path == null ? null : entryVideoId(path);
+        return id != null && id.equals(entryVideoId(entry));
     }
 
     public synchronized boolean isFavorite(String songPath) {
@@ -566,31 +641,53 @@ public class PlaylistManager {
         save();
     }
 
-    public synchronized List<cl.arichard.descargador.model.Song> accountSongs(List<cl.arichard.descargador.model.Song> local) {
-        java.util.LinkedHashMap<String, cl.arichard.descargador.model.Song> rows=new java.util.LinkedHashMap<>();
-        for(cl.arichard.descargador.model.Song song:local)rows.put(canonicalKey(song),song);
-        for(String name:getPlaylistNames())for(cl.arichard.descargador.model.Song song:resolveSongs(name,local))rows.putIfAbsent(canonicalKey(song),song);
+    public synchronized List<Song> accountSongs(List<Song> local, boolean signedIn) {
+        Map<String, Song> rows = new LinkedHashMap<>();
+        if (!signedIn) for (Song song : local) rows.putIfAbsent(songIdentity(song), song);
+        List<String> names = new ArrayList<>(playlists.keySet());
+        java.util.Collections.sort(names);
+        List<String> entries = new ArrayList<>();
+        for (String name : names) for (String entry : playlists.get(name)) {
+            if (!signedIn || portableVideoId(entry) != null) entries.add(entry);
+        }
+        for (Song song : resolveEntries(entries, local)) rows.putIfAbsent(songIdentity(song), song);
         return new ArrayList<>(rows.values());
     }
 
     public synchronized Map<String, Long> libraryDates() {
         Map<String, Long> result=new HashMap<>();
-        java.util.Iterator<String> names=entryAddedAt.keys();
-        while(names.hasNext()){
-            JSONObject dates=entryAddedAt.optJSONObject(names.next());if(dates==null)continue;
-            java.util.Iterator<String> keys=dates.keys();
-            while(keys.hasNext()){String key=keys.next();long at=dates.optLong(key);if(at>0)result.put(key,Math.min(result.getOrDefault(key,at),at));}
+        for (Map.Entry<String, List<String>> playlist : playlists.entrySet()) {
+            for (Map.Entry<String, Long> entry : membershipDates(playlist.getKey(), false).entrySet()) {
+                result.merge(entry.getKey(), entry.getValue(), Math::min);
+            }
         }
         return result;
     }
 
-    public synchronized long addedAt(String playlist, cl.arichard.descargador.model.Song song) {
+    public synchronized Map<String, Long> membershipDates(String playlist) {
+        return membershipDates(playlist, true);
+    }
+
+    private Map<String, Long> membershipDates(String playlist, boolean includeFileLinks) {
+        Map<String, Long> result = new HashMap<>();
         JSONObject dates = entryAddedAt.optJSONObject(playlist);
-        return dates == null ? 0 : dates.optLong(canonicalKey(song));
+        List<String> entries = playlists.get(playlist);
+        if (entries == null) return result;
+        for (int i = 0; i < entries.size(); i++) {
+            String entry = entries.get(i);
+            String id = includeFileLinks ? entryVideoId(entry) : portableVideoId(entry);
+            long date = dates == null ? 0 : dates.optLong(entry);
+            result.merge(id == null ? entry : "youtube:" + id, date > 0 ? date : i + 1L, Math::min);
+        }
+        return result;
     }
 
     public synchronized List<cl.arichard.descargador.model.Song> resolveSongs(String name,
             List<cl.arichard.descargador.model.Song> library) {
+        return resolveEntries(getSongPaths(name), library);
+    }
+
+    private List<Song> resolveEntries(List<String> entries, List<Song> library) {
         List<cl.arichard.descargador.model.Song> songs = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         Map<String, cl.arichard.descargador.model.Song> localById = new HashMap<>();
@@ -600,17 +697,25 @@ public class PlaylistManager {
             String id = pathToId.get(song.getPath());
             if (id != null) localById.putIfAbsent(id, song);
         }
-        for (String entry : getSongPaths(name)) {
-            String id = entry.startsWith("youtube:") ? entry.substring(8) : pathToId.get(entry);
+        for (String entry : entries) {
+            String id = entryVideoId(entry);
             if (!seen.add(id != null ? id : entry)) continue;
             // A track already downloaded on this device plays from its file; otherwise it streams.
             cl.arichard.descargador.model.Song resolved = id != null ? localById.get(id) : null;
             if (resolved == null) resolved = localByPath.get(entry);
-            if (resolved == null) {
-                SearchResult result = getOnlineTrack(entry);
-                if (result != null) cl.arichard.descargador.model.Song.rememberArt(result.getId(), result.getThumbnailUrl());
-                if (result != null) resolved = new cl.arichard.descargador.model.Song(0, result.getTitle(), result.getChannel(),
-                        "YouTube", result.getDurationSeconds() * 1000L, "youtube:" + result.getId(), "YouTube", 0);
+            if (id != null && (entry.startsWith("youtube:") || onlineTracks.containsKey(id))) {
+                SearchResult metadata = onlineTracks.get(id);
+                if (metadata != null) Song.rememberArt(id, metadata.getThumbnailUrl());
+                String title = metadata == null || metadata.getTitle().isEmpty() ? id : metadata.getTitle();
+                String artist = metadata == null || metadata.getChannel().isEmpty()
+                        ? "YouTube" : metadata.getChannel().split(" · ", 2)[0].trim();
+                long duration = metadata == null ? 0 : metadata.getDurationSeconds() * 1000L;
+                if (resolved != null) {
+                    resolved = new Song(resolved.getId(), title, artist, resolved.getAlbum(), duration,
+                            resolved.getPath(), resolved.getFolder(), resolved.getDateAdded());
+                } else if (entry.startsWith("youtube:") || metadata != null) {
+                    resolved = new Song(0, title, artist, "YouTube", duration, "youtube:" + id, "YouTube", 0);
+                }
             }
             if (resolved != null) songs.add(resolved);
         }
@@ -625,35 +730,11 @@ public class PlaylistManager {
     /** Adds or removes a song, local or from YouTube, to Favoritos. Returns the new state. */
     public synchronized boolean toggleFavoriteSong(cl.arichard.descargador.model.Song song) {
         if (song == null) return false;
-        String videoId = song.getVideoId();
         if (isFavoriteSong(song)) {
-            removeSongFromPlaylist("Favoritos", canonicalKey(song));
             removeSongFromPlaylist("Favoritos", song.getPath());
-            removeEquivalentFavorites(song);
             return false;
         }
-        if (!song.isOnline()) {
-            String key = canonicalKey(song);
-            if (key.startsWith("youtube:") && !onlineTracks.containsKey(key.substring(8))) key = song.getPath();
-            addSongToPlaylist("Favoritos", key);
-            return true;
-        }
-        addOnlineTrack("Favoritos", new SearchResult(videoId, song.getTitle(), song.getArtist(),
-                Math.max(0, song.getDuration() / 1000), song.getCoverPath(), "https://www.youtube.com/watch?v=" + videoId));
-        return true;
-    }
-
-    /** Removes the other copies of the same song (e.g. its YouTube entry) so an empty heart really means "not a favorite". */
-    private void removeEquivalentFavorites(cl.arichard.descargador.model.Song song) {
-        List<String> favorites = playlists.get("Favoritos");
-        if (favorites == null) return;
-        String wanted = ClickStats.normalize(song.getTitle());
-        boolean changed = false;
-        for (java.util.Iterator<String> it = favorites.iterator(); it.hasNext(); ) {
-            SearchResult track = getOnlineTrack(it.next());
-            if (track != null && wanted.equals(ClickStats.normalize(track.getTitle()))) { it.remove(); changed = true; }
-        }
-        if (changed) save();
+        return addSongToPlaylist("Favoritos", song);
     }
 
     public synchronized boolean toggleFavorite(String songPath) {

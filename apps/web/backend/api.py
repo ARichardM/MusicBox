@@ -139,6 +139,15 @@ def note_provider_error(exc: BaseException) -> None:
 
 
 BLOCKED_DETAIL = "YouTube no permitió obtener el audio desde el servidor."
+DOWNLOADS_DISABLED_DETAIL = "Las descargas no están disponibles en la versión web. Usa MusicBox en Android o Windows."
+
+
+def web_downloads_configured() -> bool:
+    return os.environ.get("MUSICBOX_WEB_DOWNLOADS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def web_downloads_enabled() -> bool:
+    return web_downloads_configured() and not provider_blocked()
 
 
 @app.get("/api/health")
@@ -146,10 +155,11 @@ async def health():
     return {
         "status": "ok",
         "app": "MusicBox Web",
-        "version": "2.4.9",
-        "build": "release-v249",
+        "version": "2.4.10",
+        "build": "release-v2410",
         "has_cookies": COOKIE_PATH.is_file() and COOKIE_PATH.stat().st_size > 0,
         "stream_blocked": provider_blocked(),
+        "downloads_enabled": web_downloads_enabled(),
     }
 
 
@@ -561,6 +571,8 @@ async def stream_audio(video_id: VideoId, request: Request, video: bool = False)
 async def download_file(video_id: VideoId, format: Literal['mp3','mp4'] = 'mp3', quality: int = 192):
     if quality not in ((128,192,256,320) if format == 'mp3' else (360,480,720,1080)):
         raise HTTPException(status_code=422, detail='Calidad no válida para el formato seleccionado.')
+    if not web_downloads_configured():
+        raise HTTPException(status_code=503, detail=DOWNLOADS_DISABLED_DETAIL)
     if provider_blocked():
         raise HTTPException(status_code=503, detail='YouTube no permitió descargar desde el servidor. Reintenta más tarde; el administrador debe revisar el acceso a YouTube.')
     await DOWNLOAD_SLOTS.acquire()

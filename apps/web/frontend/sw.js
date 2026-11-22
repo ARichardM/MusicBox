@@ -1,4 +1,4 @@
-const CACHE_NAME = "musicbox-cache-v2.4.9";
+const CACHE_NAME = "musicbox-cache-v2.4.10";
 const SHELL_ASSETS = [
   "./",
   "./index.html",

@@ -1,13 +1,15 @@
 package cl.arichard.descargador.player;
 
 import android.app.Application;
-import android.media.MediaPlayer;
+import android.media.AudioDeviceInfo;
+import android.view.SurfaceHolder;
 import cl.arichard.descargador.data.ClickStats;
 import cl.arichard.descargador.model.Song;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Map;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -19,11 +21,22 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28,application=Application.class)
 public class QualifiedPlaybackTest {
-    private static class Audio extends MediaPlayer {
+    private static class Audio implements PlaybackEngine {
         int position;
+        @Override public void prepare(String source, Map<String, String> headers, boolean videoMode, boolean allowOffload, SurfaceHolder display, Callback callback) {}
+        @Override public void play() {}
+        @Override public void pause() {}
+        @Override public void seekTo(int positionMs) { position = positionMs; }
+        @Override public boolean isPlaying(){return true;}
         @Override public int getCurrentPosition(){return position;}
         @Override public int getDuration(){return 120000;}
-        @Override public boolean isPlaying(){return true;}
+        @Override public int getVideoWidth(){return 0;}
+        @Override public int getVideoHeight(){return 0;}
+        @Override public void setVolume(float volume){}
+        @Override public void setDisplay(SurfaceHolder holder){}
+        @Override public AudioDeviceInfo getRoutedDevice(){return null;}
+        @Override public boolean isSleepingForOffload(){return false;}
+        @Override public void release(){}
     }
     private static class Player extends PlayerManager {@Override protected void startCurrent(){}}
     private static void set(Object target,String name,Object value)throws Exception {
@@ -42,7 +55,7 @@ public class QualifiedPlaybackTest {
         Song song=new Song(0,"Qualified test","Artist","Album",120000,"youtube:qualify1234","",0);
         Audio audio=new Audio();
         player.playSong(song,Collections.singletonList(song),false);
-        set(player,"mediaPlayer",audio);set(player,"prepared",true);call(player,"startListening");
+        set(player,"activePlayer",audio);set(player,"prepared",true);call(player,"startListening");
         int baseline=ClickStats.getInstance(context).count(song);
         listen(player,audio,29);assertEquals(baseline,ClickStats.getInstance(context).count(song));
         listen(player,audio,1);assertEquals(baseline+1,ClickStats.getInstance(context).count(song));

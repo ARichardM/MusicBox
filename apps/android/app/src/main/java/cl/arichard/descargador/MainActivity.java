@@ -1939,7 +1939,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
             public void onSongClick(Song song, List<Song> queue, int position) {
                 saveLibraryNavigation();
                 rememberPlaybackSource();
-                List<Song> local = preferLocalCopies(queue);
+                List<Song> local = PlaylistManager.getInstance(MainActivity.this).preferLocalCopies(queue, allSongs);
                 int index = queue.indexOf(song);
                 PlayerManager.getInstance().playSong(index >= 0 ? local.get(index) : song, local, false);
                 Intent intent = new Intent(MainActivity.this, NowPlayingActivity.class);
@@ -2070,7 +2070,7 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
                 List<Song> shuffled = new ArrayList<>(collection);
                 Collections.shuffle(shuffled);
                 rememberPlaybackSource();
-                List<Song> local = preferLocalCopies(shuffled);
+                List<Song> local = PlaylistManager.getInstance(this).preferLocalCopies(shuffled, allSongs);
                 PlayerManager.getInstance().playSong(local.get(0), local, false);
             } else {
                 Toast.makeText(this, cl.arichard.descargador.util.Tr.t("No hay canciones para reproducir"), Toast.LENGTH_SHORT).show();
@@ -2260,7 +2260,8 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         libraryContentDirty = false;
         playlistAdapter.setLibrary(allSongs);
         if (currentLibraryMode == 0 || isViewingSubList) {
-            List<Song> songs = currentLibraryMode == 0 ? PlaylistManager.getInstance(this).accountSongs(allSongs) : allSongs;
+            List<Song> songs = currentLibraryMode == 0
+                    ? PlaylistManager.getInstance(this).accountSongs(allSongs, cloudSync != null) : allSongs;
             if (isViewingSubList && currentLibraryMode == 3) {
                 songs = PlaylistManager.getInstance(this).resolveSongs(currentSubListName, allSongs);
                 if (!heldFavorites.isEmpty() && "Favoritos".equals(currentSubListName)) {
@@ -2975,6 +2976,11 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     /** Cloud metadata changed, but the files on disk did not: update only visible models. */
     private void refreshCloudLibraryState() {
         if (isFinishing() || isDestroyed() || !libraryReady) return;
+        PlaylistManager playlists = PlaylistManager.getInstance(this);
+        if (playlists.hasLegacyFileEntries()) {
+            List<Song> snapshot = new ArrayList<>(allSongs);
+            LIBRARY_IO.execute(() -> playlists.linkLocalSongs(snapshot));
+        }
         saveLibraryPosition();
         rebuildLibraryContent();
         restoreLibraryPosition();
@@ -2982,24 +2988,6 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
         reconcileAutoDownloads();
         // Tras iniciar sesión, la primera sincronización trae playlists e historial: las recomendaciones se calculan con eso.
         if (uiState != null && uiState.forYouStarted && !uiState.forYouAfterSync) { uiState.forYouAfterSync = true; refreshForYou(true); }
-    }
-
-    /** YouTube entries that are already saved on this device play from the file: instant, and no streaming needed. */
-    private List<Song> preferLocalCopies(List<Song> queue) {
-        java.util.Map<String, Song> byTitle = new java.util.HashMap<>();
-        PlaylistManager playlistManager = PlaylistManager.getInstance(this);
-        for (Song candidate : allSongs)
-            if (!candidate.isOnline() && candidate.getPath() != null && new File(candidate.getPath()).exists()) {
-                byTitle.putIfAbsent(titleKey(candidate.getTitle()), candidate);
-                String id = playlistManager.videoIdFor(candidate.getPath());
-                if (id != null) byTitle.putIfAbsent("id:" + id, candidate);
-            }
-        List<Song> result = new ArrayList<>(queue.size());
-        for (Song entry : queue) {
-            Song local = entry.isOnline() ? byTitle.getOrDefault("id:" + entry.getVideoId(), byTitle.get(titleKey(entry.getTitle()))) : null;
-            result.add(local != null ? local : entry);
-        }
-        return result;
     }
 
     private static String titleKey(String title) {
@@ -3011,7 +2999,10 @@ public class MainActivity extends AppearanceActivity implements PlayerManager.Pl
     private List<SearchResult> missingDownloads(Iterable<SearchResult> candidates) {
         SharedPreferences saved = getSharedPreferences("downloaded_videos", MODE_PRIVATE);
         Set<String> localTitles = new HashSet<>();
-        for (Song song : allSongs) localTitles.add(titleKey(song.getTitle()));
+        for (Song song : allSongs) {
+            String key = titleKey(song.getTitle());
+            if (!key.isEmpty()) localTitles.add(key);
+        }
         List<SearchResult> missing = new ArrayList<>();
         for (SearchResult track : candidates) {
             if (saved.getBoolean(track.getId(), false) || PlaylistManager.getInstance(this).hasLocalCopy(track.getId())) continue;

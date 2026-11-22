@@ -2,12 +2,9 @@ package cl.arichard.descargador.player;
 
 import android.content.Context;
 import android.media.AudioAttributes;
-import android.media.MediaPlayer;
-import android.media.MediaDataSource;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.PowerManager;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -41,8 +38,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.io.IOException;
-import java.io.InputStream;
 import cl.arichard.descargador.util.Tr;
 
 /** Single native player shared by the full screen and mini player. */
@@ -66,14 +61,25 @@ public class PlayerManager {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final List<PlaybackListener> listeners = new ArrayList<>();
     private Context context;
-    private MediaPlayer mediaPlayer;
-    private MediaPlayer fadingPlayer;
+    private PlaybackEngine activePlayer;
+    private PlaybackEngine fadingPlayer;
     private static final int CROSSFADE_STREAM_LEAD_MS = 4000;
     private boolean crossfadeAdvance;
     private long fadeStarted;
     private boolean fadeLive;
     private int fadeEndAtMs;
     private int fadeDuration;
+
+    private PlaybackEngine createEngine() {
+        if ("robolectric".equals(Build.FINGERPRINT)) return new MediaPlayerPlaybackEngine(context, handler);
+        return new ExoPlaybackEngine(context, handler);
+    }
+
+    public boolean isUsingExoPlayer() { return activePlayer instanceof ExoPlaybackEngine; }
+    public boolean isSleepingForOffload() { return prepared && activePlayer != null && activePlayer.isSleepingForOffload(); }
+    public AudioDeviceInfo getRoutedAudioDevice() { return prepared && activePlayer != null ? activePlayer.getRoutedDevice() : null; }
+    public boolean shouldKeepServiceForeground() { return isPlaying() || (playWhenReady && (loading || advanceWhenReady)); }
+
     public int getCrossfadeSeconds() {
         return context == null ? 0 : Math.max(0, Math.min(12, context.getSharedPreferences("player", 0).getInt("crossfade_seconds", 0)));
     }
@@ -82,6 +88,7 @@ public class PlayerManager {
         if (context != null && seconds > 0) context.getSharedPreferences("player", 0).edit()
                 .putInt("crossfade_last_seconds", Math.max(1, Math.min(12, seconds))).apply();
         if (context != null) context.getSharedPreferences("player", 0).edit().putInt("crossfade_seconds", Math.max(0, Math.min(12, seconds))).apply();
+        if (shouldPollProgress()) scheduleProgress();
     }
     public void setCrossfadeEnabled(boolean enabled) {
         setCrossfadeSeconds(enabled && context != null
@@ -91,17 +98,17 @@ public class PlayerManager {
         handler.removeCallbacks(fadeTick);
         fadeLive = false;
         if (fadingPlayer != null) { fadingPlayer.release(); fadingPlayer = null; }
-        if (mediaPlayer != null && prepared) mediaPlayer.setVolume(1f, 1f);
+        if (activePlayer != null && prepared) activePlayer.setVolume(1f);
     }
     private final Runnable fadeTick = new Runnable() {
         @Override public void run() {
-            if (fadingPlayer == null || mediaPlayer == null || !prepared) return;
+            if (fadingPlayer == null || activePlayer == null || !prepared) return;
             if (!isPlaying()) { stopCrossfade(); return; }
             float progress = Math.min(1f, (android.os.SystemClock.elapsedRealtime() - fadeStarted) / (float)Math.max(1, fadeDuration));
             // Potencia constante: la que sale sigue el coseno y la que entra el seno, sin bajón de volumen a mitad.
             float out = (float) Math.cos(progress * Math.PI / 2), in = (float) Math.sin(progress * Math.PI / 2);
-            fadingPlayer.setVolume(out, out);
-            mediaPlayer.setVolume(in, in);
+            fadingPlayer.setVolume(out);
+            activePlayer.setVolume(in);
             if (progress >= 1f) stopCrossfade(); else handler.postDelayed(this, 25);
         }
     };
@@ -123,10 +130,10 @@ public class PlayerManager {
     public boolean isCrossfading() { return fadingPlayer != null; }
     /** Posición y duración de la canción que sale, o -1 si no hay mezcla: la barra la sigue hasta que termina. */
     public int getOutgoingPosition() {
-        try { return fadingPlayer == null ? -1 : fadingPlayer.getCurrentPosition(); } catch (IllegalStateException e) { return -1; }
+        return fadingPlayer == null ? -1 : fadingPlayer.getCurrentPosition();
     }
     public int getOutgoingDuration() {
-        try { return fadingPlayer == null ? -1 : fadingPlayer.getDuration(); } catch (IllegalStateException e) { return -1; }
+        return fadingPlayer == null ? -1 : fadingPlayer.getDuration();
     }
     /** Milisegundos que le quedan a la mezcla en curso, o 0 si no hay una sonando. */
     public long crossfadeRemainingMs() {
@@ -151,22 +158,30 @@ public class PlayerManager {
         if (currentIndex + 1 >= queue.size() && repeatMode != REPEAT_ALL) return 0;
         return crossfadeEndMs() >= seconds * 2000 ? seconds * 1000 : 0;
     }
-    /** Mide (en segundo plano) dónde suena de verdad la canción actual y la siguiente, para mezclar sobre sonido y no sobre silencio. */
+    /**
+     * Mide dónde suena de verdad la canción actual y la siguiente para el crossfade.
+     * Con pantalla apagada solo carga relieves ya en caché en disco (cero decodificación CPU/red).
+     */
     private void warmWaveforms() {
-        if (context == null || getCrossfadeSeconds() == 0) return;
+        if (context == null || videoMode || getCrossfadeSeconds() == 0) return;
         cl.arichard.descargador.util.WaveformStore store = cl.arichard.descargador.util.WaveformStore.get(context);
-        store.request(currentSong, null);
+        boolean screenVisible = !listeners.isEmpty();
+        if (screenVisible) store.request(currentSong, null);
+        else store.warmFromCache(currentSong);
         int next = currentIndex + 1;
         if (next >= queue.size()) next = repeatMode == REPEAT_ALL ? 0 : -1;
-        if (next >= 0 && next < queue.size()) store.request(queue.get(next), null);
+        if (next >= 0 && next < queue.size()) {
+            if (screenVisible) store.request(queue.get(next), null);
+            else store.warmFromCache(queue.get(next));
+        }
     }
     private boolean maybeCrossfade() {
         int seconds = getCrossfadeSeconds();
+        if (seconds == 0 || videoMode || fadingPlayer != null || repeatMode == REPEAT_ONE
+                || currentIndex < 0 || queue.size() < 2) return false;
         int endAt = crossfadeEndMs();
         int remaining = endAt - getCurrentPosition();
-        if (seconds == 0 || videoMode || fadingPlayer != null || !isPlaying() || repeatMode == REPEAT_ONE
-                || remaining <= 0 || endAt < seconds * 2000
-                || currentIndex < 0 || queue.size() < 2) return false;
+        if (remaining <= 0 || endAt < seconds * 2000) return false;
         int nextIndex = currentIndex + 1;
         if (nextIndex >= queue.size()) {
             if (repeatMode != REPEAT_ALL) return false;
@@ -181,8 +196,8 @@ public class PlayerManager {
             if (cached == null || !cached.isFresh()) return false;
         } else if (!new java.io.File(next.getPath()).isFile()) return false;
         sampleListening();
-        fadingPlayer = mediaPlayer;
-        mediaPlayer = null;
+        fadingPlayer = activePlayer;
+        activePlayer = null;
         fadeDuration = seconds * 1000;
         fadeEndAtMs = endAt;
         crossfadeAdvance = true;
@@ -243,261 +258,6 @@ public class PlayerManager {
         boolean isFresh() { return System.currentTimeMillis() - createdAt < STREAM_CACHE_MS; }
     }
 
-    /** Supplies MediaPlayer with ranged HTTP reads while preserving yt-dlp's headers. */
-    private static final class HeaderHttpDataSource extends MediaDataSource {
-        private final String source;
-        private final Map<String, String> headers;
-        private final long contentLength;
-        private HttpURLConnection connection;
-        private InputStream input;
-        private long currentPosition = -1;
-        private long rangeEnd = -1;
-        private static final long READ_BLOCK_BYTES = 512L * 1024L;
-        private static final int CHUNK_BYTES = 512 * 1024;
-        private static final int AHEAD_CHUNKS = 8;
-        private static final int MAX_CHUNKS = 48;   // 24 MB of audio/video kept in memory at most
-        private final Object lock = new Object();
-        private final Map<Integer, byte[]> chunks = new HashMap<>();
-        private Thread fetcher;
-        private final List<Integer> heads = new ArrayList<>();
-        private final Map<Integer, Long> lastUse = new HashMap<>();
-        private long clock;
-        private IOException fetchError;
-        private boolean closed;
-        private long lastReadEnd = -1;
-
-        HeaderHttpDataSource(String source, Map<String, String> headers) {
-            this.source = source;
-            this.headers = new HashMap<>(headers);
-            long parsedLength = -1;
-            String probed = this.headers.remove(LENGTH_KEY);
-            if (probed != null) {
-                try { parsedLength = Long.parseLong(probed); } catch (NumberFormatException ignored) {}
-            }
-            if (parsedLength < 0) try {
-                String value = Uri.parse(source).getQueryParameter("clen");
-                if (value != null) parsedLength = Long.parseLong(value);
-            } catch (Exception ignored) {}
-            contentLength = parsedLength;
-        }
-
-        @Override public int readAt(long position, byte[] buffer, int offset, int size)
-                throws IOException {
-            if (position < 0 || size <= 0 || (contentLength >= 0 && position >= contentLength)) return -1;
-            if (contentLength < 0) return readDirect(position, buffer, offset, size);
-            if (lastReadEnd >= 0 && Math.abs(position - lastReadEnd) > 1024)
-                Log.i("MusicBoxPlayer", "Player seeks: read at " + position + " after " + lastReadEnd);
-            lastReadEnd = position + size;
-            int total = 0;
-            while (total < size && position + total < contentLength) {
-                long absolute = position + total;
-                int index = (int) (absolute / CHUNK_BYTES);
-                byte[] chunk = awaitChunk(index);
-                int inChunk = (int) (absolute - (long) index * CHUNK_BYTES);
-                int count = Math.min(size - total, chunk.length - inChunk);
-                if (count <= 0) break;
-                System.arraycopy(chunk, inChunk, buffer, offset + total, count);
-                total += count;
-            }
-            return total == 0 ? -1 : total;
-        }
-
-        /**
-         * Blocks until the chunk is downloaded. MP4 files keep audio and video in far apart regions, so the
-         * player alternates between several read positions; every recent position is a "head" that the
-         * fetcher keeps filling, and nothing already downloaded is dropped until the memory budget is hit.
-         */
-        private byte[] awaitChunk(int index) throws IOException {
-            synchronized (lock) {
-                touch(index);
-                if (fetcher == null) {
-                    fetcher = new Thread(this::fetchLoop, "stream-prefetch");
-                    fetcher.setDaemon(true);
-                    fetcher.start();
-                }
-                lock.notifyAll();
-                long waitStart = System.currentTimeMillis();
-                long deadline = waitStart + 30000;
-                while (true) {
-                    if (closed) throw new IOException("Fuente cerrada");
-                    byte[] chunk = chunks.get(index);
-                    if (chunk != null) {
-                        long waited = System.currentTimeMillis() - waitStart;
-                        if (waited > 150) Log.w("MusicBoxPlayer", "Reader waited " + waited + " ms for chunk " + index + " (buffered " + chunks.size() + ")");
-                        lastUse.put(index, ++clock);
-                        return chunk;
-                    }
-                    if (fetchError != null) {
-                        IOException error = fetchError;
-                        fetchError = null;
-                        throw error;
-                    }
-                    long left = deadline - System.currentTimeMillis();
-                    if (left <= 0) throw new IOException("Tiempo agotado descargando el audio");
-                    try { lock.wait(Math.min(left, 1000)); }
-                    catch (InterruptedException e) { throw new IOException("Descarga interrumpida"); }
-                }
-            }
-        }
-
-        /** Remembers the newest read positions (at most three distinct chunks, most recent first). */
-        private void touch(int index) {
-            heads.remove(Integer.valueOf(index));
-            heads.add(0, index);
-            while (heads.size() > 3) heads.remove(heads.size() - 1);
-        }
-
-        /** Next chunk to download: the heads first, then what lies ahead of them, then the rest of the file. */
-        private int nextWanted(int totalChunks) {
-            for (int head : heads) if (head < totalChunks && !chunks.containsKey(head)) return head;
-            for (int head : heads)
-                for (int i = head + 1; i <= head + AHEAD_CHUNKS && i < totalChunks; i++)
-                    if (!chunks.containsKey(i)) return i;
-            if (totalChunks <= MAX_CHUNKS)
-                for (int i = 0; i < totalChunks; i++) if (!chunks.containsKey(i)) return i;
-            return -1;
-        }
-
-        private void evictIfNeeded() {
-            while (chunks.size() > MAX_CHUNKS) {
-                Integer oldest = null;
-                long oldestUse = Long.MAX_VALUE;
-                for (Integer key : chunks.keySet()) {
-                    if (heads.contains(key)) continue;
-                    long use = lastUse.containsKey(key) ? lastUse.get(key) : 0;
-                    if (use < oldestUse) { oldestUse = use; oldest = key; }
-                }
-                if (oldest == null) return;
-                chunks.remove(oldest);
-                lastUse.remove(oldest);
-            }
-        }
-
-        private void fetchLoop() {
-            int totalChunks = (int) ((contentLength + CHUNK_BYTES - 1) / CHUNK_BYTES);
-            while (true) {
-                int next;
-                synchronized (lock) {
-                    while (true) {
-                        if (closed) return;
-                        next = nextWanted(totalChunks);
-                        if (next >= 0) break;
-                        try { lock.wait(); } catch (InterruptedException e) { return; }
-                    }
-                }
-                try {
-                    byte[] data = downloadChunk(next);
-                    synchronized (lock) {
-                        chunks.put(next, data);
-                        lastUse.put(next, ++clock);
-                        evictIfNeeded();
-                        lock.notifyAll();
-                    }
-                } catch (IOException e) {
-                    Log.w("MusicBoxPlayer", "Chunk " + next + " of " + totalChunks + " failed (length " + contentLength + ")", e);
-                    synchronized (lock) { fetchError = e; lock.notifyAll(); }
-                    try { Thread.sleep(500); } catch (InterruptedException ie) { return; }
-                }
-            }
-        }
-
-        private byte[] downloadChunk(int index) throws IOException {
-            long start = (long) index * CHUNK_BYTES;
-            long end = Math.min(start + CHUNK_BYTES, contentLength) - 1;
-            long began = System.currentTimeMillis();
-            IOException last = null;
-            for (int attempt = 0; attempt < 3; attempt++) {
-                HttpURLConnection conn = null;
-                if (attempt > 0) {
-                    try { Thread.sleep(400L * attempt); } catch (InterruptedException ie) { throw new IOException("Descarga interrumpida"); }
-                    synchronized (lock) { if (closed) throw new IOException("Fuente cerrada"); }
-                }
-                try {
-                    conn = (HttpURLConnection) new URL(source).openConnection();
-                    conn.setConnectTimeout(12000);
-                    conn.setReadTimeout(15000);
-                    for (Map.Entry<String, String> header : headers.entrySet())
-                        conn.setRequestProperty(header.getKey(), header.getValue());
-                    conn.setRequestProperty("Range", "bytes=" + start + "-" + end);
-                    int status = conn.getResponseCode();
-                    if (status != HttpURLConnection.HTTP_PARTIAL && !(status == HttpURLConnection.HTTP_OK && start == 0))
-                        throw new IOException("YouTube respondió HTTP " + status);
-                    byte[] data = new byte[(int) (end - start + 1)];
-                    try (InputStream in = conn.getInputStream()) {
-                        int filled = 0;
-                        while (filled < data.length) {
-                            int read = in.read(data, filled, data.length - filled);
-                            if (read < 0) throw new IOException("Descarga incompleta");
-                            filled += read;
-                        }
-                    }
-                    Log.i("MusicBoxPlayer", "Chunk " + index + " downloaded in " + (System.currentTimeMillis() - began) + " ms");
-                    return data; // not disconnected: the keep-alive connection is reused by the next chunk
-                } catch (IOException e) {
-                    last = e;
-                    if (conn != null) conn.disconnect();
-                }
-            }
-            throw last;
-        }
-
-        private synchronized int readDirect(long position, byte[] buffer, int offset, int size)
-                throws IOException {
-            if (input == null || currentPosition != position || position > rangeEnd) openAt(position);
-            int total = 0;
-            while (total < size) {
-                int read = input.read(buffer, offset + total, size - total);
-                if (read < 0) break;
-                total += read;
-                currentPosition += read;
-            }
-            return total == 0 ? -1 : total;
-        }
-
-        private void openAt(long position) throws IOException {
-            closeConnection();
-            connection = (HttpURLConnection) new URL(source).openConnection();
-            connection.setConnectTimeout(12000);
-            connection.setReadTimeout(15000);
-            connection.setInstanceFollowRedirects(true);
-            for (Map.Entry<String, String> header : headers.entrySet())
-                connection.setRequestProperty(header.getKey(), header.getValue());
-            long requestedEnd = position + READ_BLOCK_BYTES - 1;
-            if (contentLength >= 0) requestedEnd = Math.min(requestedEnd, contentLength - 1);
-            connection.setRequestProperty("Range", "bytes=" + position + "-" + requestedEnd);
-            int status = connection.getResponseCode();
-            if (status != HttpURLConnection.HTTP_OK && status != HttpURLConnection.HTTP_PARTIAL)
-                throw new IOException("YouTube respondió HTTP " + status);
-            input = connection.getInputStream();
-            if (status == HttpURLConnection.HTTP_OK && position > 0) {
-                long remaining = position;
-                while (remaining > 0) {
-                    long skipped = input.skip(remaining);
-                    if (skipped <= 0) throw new IOException("No se pudo posicionar el audio");
-                    remaining -= skipped;
-                }
-            }
-            currentPosition = position;
-            rangeEnd = requestedEnd;
-        }
-
-        @Override public long getSize() { return contentLength; }
-
-        @Override public void close() {
-            synchronized (lock) { closed = true; chunks.clear(); lastUse.clear(); lock.notifyAll(); }
-            synchronized (this) { closeConnection(); }
-        }
-
-        private void closeConnection() {
-            if (input != null) try { input.close(); } catch (IOException ignored) {}
-            if (connection != null) connection.disconnect();
-            input = null;
-            connection = null;
-            currentPosition = -1;
-            rangeEnd = -1;
-        }
-    }
-
     public interface PlaybackListener {
         void onTrackChanged(Song song);
         void onPlaybackStateChanged(boolean playing);
@@ -510,18 +270,63 @@ public class PlayerManager {
 
     private final Runnable progressUpdater = new Runnable() {
         @Override public void run() {
-            if (!prepared || mediaPlayer == null) return;
+            if (!shouldPollProgress()) return;
             sampleListening();
-            if (maybeCrossfade()) return;
-            if (playbackRecoveryAttempts > 0 && mediaPlayer.isPlaying()
-                    && getCurrentPosition() - recoveryStartPosition > RECOVERY_RESET_MS) playbackRecoveryAttempts = 0;
-            int second = getCurrentPosition() / 1000;
-            if (second % 5 == 0 && second != lastSavedSecond) { savePosition(); lastSavedSecond = second; }
-            for (PlaybackListener l : new ArrayList<>(listeners))
-                l.onProgressUpdate(getCurrentPosition(), getDuration());
-            handler.postDelayed(this, 350);
+            if (isPlaying() && maybeCrossfade()) return;
+            int position = getCurrentPosition();
+            if (playbackRecoveryAttempts > 0 && position - recoveryStartPosition > RECOVERY_RESET_MS)
+                playbackRecoveryAttempts = 0;
+            if (!listeners.isEmpty()) {
+                int second = position / 1000;
+                if (second % 15 == 0 && second != lastSavedSecond) { savePosition(); lastSavedSecond = second; }
+                int duration = getDuration();
+                for (PlaybackListener l : new ArrayList<>(listeners)) l.onProgressUpdate(position, duration);
+            }
+            scheduleProgress();
         }
     };
+
+    private boolean shouldPollProgress() {
+        return prepared && activePlayer != null && playWhenReady && !resumeOnFocusGain;
+    }
+
+    private void scheduleProgress() {
+        handler.removeCallbacks(progressUpdater);
+        if (!shouldPollProgress()) return;
+        long delay = nextProgressDelayMs();
+        if (delay >= 0) handler.postDelayed(progressUpdater, delay);
+    }
+
+    /**
+     * Con pantalla abierta actualiza la barra cada 350 ms. Con pantalla apagada (sin listeners)
+     * elimina el sondeo periódico para dejar dormir la CPU y aprovechar Audio Offload: programa a lo
+     * sumo un aviso para contar la reproducción a los 30 s y, si hay crossfade, uno cerca del final.
+     */
+    long nextProgressDelayMs() {
+        if (!listeners.isEmpty()) return 350;
+        long delay = Long.MAX_VALUE;
+        if (listeningSong != null && !listeningPlayCounted) {
+            long leftToQualify = 30_000L - listeningQualifiedMillis;
+            delay = Math.min(delay, Math.max(250L, leftToQualify + 150L));
+        }
+        int seconds = getCrossfadeSeconds();
+        if (seconds > 0 && !videoMode && fadingPlayer == null && repeatMode != REPEAT_ONE
+                && currentIndex >= 0 && queue.size() >= 2) {
+            int nextIndex = currentIndex + 1;
+            if (nextIndex >= queue.size()) nextIndex = repeatMode == REPEAT_ALL ? 0 : -1;
+            if (nextIndex >= 0) {
+                int endAt = crossfadeEndMs();
+                if (endAt >= seconds * 2000) {
+                    int lead = queue.get(nextIndex).isOnline() ? CROSSFADE_STREAM_LEAD_MS : 0;
+                    int triggerAt = endAt - (seconds * 1000 + lead);
+                    int remainingToTrigger = triggerAt - getCurrentPosition();
+                    long crossfadeDelay = remainingToTrigger > 500 ? remainingToTrigger - 300L : 350L;
+                    delay = Math.min(delay, Math.max(250L, crossfadeDelay));
+                }
+            }
+        }
+        return delay == Long.MAX_VALUE ? -1L : delay;
+    }
 
     private Song listeningSong;
     private String listeningPlaylist = "";
@@ -548,14 +353,16 @@ public class PlayerManager {
     }
 
     private void sampleListening() {
-        if (listeningSong == null || context == null || !prepared || mediaPlayer == null) return;
+        if (listeningSong == null || context == null || !prepared || activePlayer == null) return;
         long now = android.os.SystemClock.elapsedRealtime();
         int position = getCurrentPosition();
         long wall = now - listeningClock, delta = (long) position - listeningPosition;
-        // Position jumps are seeks, while a stalled position is buffering. Neither is listening time.
-        if (listeningPlaying && wall > 0 && delta > 0 && Math.abs(delta - wall) < 1200) {
-            listeningQualifiedMillis += Math.min(delta, wall);
-            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, Math.min(delta, wall), false);
+        // Forward jumps beyond wall time are seeks; zero progress is buffering. Brief rebuffering
+        // during a long sleep still preserves the actual played delta <= wall.
+        if (listeningPlaying && wall > 0 && delta > 0 && delta <= wall + 1200) {
+            long played = Math.min(delta, wall);
+            listeningQualifiedMillis += played;
+            cl.arichard.descargador.data.ClickStats.getInstance(context).recordListening(listeningSong, listeningPlaylist, played, false);
             if (!listeningPlayCounted && listeningQualifiedMillis >= 30_000) {
                 SearchHistoryManager.getInstance(context).recordPlayedSong(listeningSong);
                 cl.arichard.descargador.data.ClickStats.getInstance(context).recordQualifiedPlay(listeningSong, listeningPlaylist);
@@ -592,11 +399,17 @@ public class PlayerManager {
     public String getSourceType() { return sourceType; }
     public String getSourceName() { return sourceName; }
 
+    private android.content.SharedPreferences playbackPreferences;
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener autoplayPreferenceListener =
+            (prefs, key) -> { if ("autoplay".equals(key)) onAutoplayPreferenceChanged(); };
+
     private final Runnable notificationObserver = this::refreshNotification;
 
     /** Rebuilds the media notification (shuffle, repeat and favorite state follow the app). */
     private void refreshNotification() {
-        if (currentSong != null && context != null) MusicService.updateNotification(context, currentSong, isPlaying());
+        if (currentSong != null && context != null) {
+            MusicService.updateNotification(context, currentSong, isPlaying(), shouldKeepServiceForeground());
+        }
     }
 
     public void init(Context ctx) {
@@ -604,20 +417,30 @@ public class PlayerManager {
         cl.arichard.descargador.data.PlaylistManager.getInstance(context).addObserver(notificationObserver);
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         android.content.SharedPreferences prefs = context.getSharedPreferences("player", 0);
+        if (prefs != playbackPreferences) {
+            if (playbackPreferences != null)
+                playbackPreferences.unregisterOnSharedPreferenceChangeListener(autoplayPreferenceListener);
+            playbackPreferences = prefs;
+            prefs.registerOnSharedPreferenceChangeListener(autoplayPreferenceListener);
+        }
         repeatMode = prefs.getInt("repeat", REPEAT_ALL);
         queueAllowsAutoplay = prefs.getBoolean("queue_allows_autoplay", true);
         sourceType = prefs.getString("source_type", "songs");
         sourceName = prefs.getString("source_name", "");
         try {
             org.json.JSONArray songs = new org.json.JSONArray(prefs.getString("queue", "[]"));
-            queue.clear();
+            List<Song> restored = new ArrayList<>();
+            String path = prefs.getString("current", "");
+            currentSong = null;
             for (int i = 0; i < songs.length(); i++) {
                 Song song = Song.fromJson(songs.getJSONObject(i));
-                if (song.isOnline() || new java.io.File(song.getPath()).isFile()) queue.add(song);
+                if (song.isOnline() || new java.io.File(song.getPath()).isFile()) {
+                    restored.add(song);
+                    if (path.equals(song.getPath())) currentSong = song;
+                }
             }
+            queue = uniqueQueue(restored, currentSong);
             originalQueue = new ArrayList<>(queue);
-            String path = prefs.getString("current", "");
-            for (Song song : queue) if (path.equals(song.getPath())) { currentSong = song; break; }
             currentIndex = indexOf(currentSong);
             online = currentSong != null && currentSong.isOnline();
             if (online) {
@@ -652,13 +475,13 @@ public class PlayerManager {
         host.addView(videoView, new FrameLayout.LayoutParams(-1, -1));
         videoView.getHolder().addCallback(new SurfaceHolder.Callback() {
             @Override public void surfaceCreated(SurfaceHolder holder) {
-                if (mediaPlayer != null) mediaPlayer.setDisplay(holder);
+                if (activePlayer != null) activePlayer.setDisplay(holder);
             }
             @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-                if (mediaPlayer != null) mediaPlayer.setDisplay(holder);
+                if (activePlayer != null) activePlayer.setDisplay(holder);
             }
             @Override public void surfaceDestroyed(SurfaceHolder holder) {
-                if (mediaPlayer != null) mediaPlayer.setDisplay(null);
+                if (activePlayer != null) activePlayer.setDisplay(null);
             }
         });
         // El recuadro del video cambia de tamaño (pantalla completa, rotación): la imagen se vuelve a ajustar cada vez.
@@ -671,7 +494,7 @@ public class PlayerManager {
         videoView.post(this::fitVideo);
     }
     public void detachOnlineWebView() {
-        if (mediaPlayer != null) mediaPlayer.setDisplay(null);
+        if (activePlayer != null) activePlayer.setDisplay(null);
         if (videoView != null && videoView.getParent() instanceof ViewGroup)
             ((ViewGroup) videoView.getParent()).removeView(videoView);
         if (videoHost != null && videoHostListener != null) videoHost.removeOnLayoutChangeListener(videoHostListener);
@@ -693,15 +516,15 @@ public class PlayerManager {
 
     /** Proporción ancho/alto del video que suena; 16:9 mientras no se sepa. */
     public float getVideoAspect() {
-        if (prepared && mediaPlayer != null && mediaPlayer.getVideoWidth() > 0 && mediaPlayer.getVideoHeight() > 0)
-            return (float) mediaPlayer.getVideoWidth() / mediaPlayer.getVideoHeight();
+        if (prepared && activePlayer != null && activePlayer.getVideoWidth() > 0 && activePlayer.getVideoHeight() > 0)
+            return (float) activePlayer.getVideoWidth() / activePlayer.getVideoHeight();
         return 16f / 9f;
     }
 
     private void fitVideo() {
-        if (videoView == null || !prepared || mediaPlayer == null) return;
+        if (videoView == null || !prepared || activePlayer == null) return;
         ViewGroup host = (ViewGroup) videoView.getParent();
-        int width = mediaPlayer.getVideoWidth(), height = mediaPlayer.getVideoHeight();
+        int width = activePlayer.getVideoWidth(), height = activePlayer.getVideoHeight();
         if (host == null || width <= 0 || height <= 0 || host.getWidth() <= 0 || host.getHeight() <= 0) return;
         float fit = (float) host.getWidth() / width, fitHeight = (float) host.getHeight() / height;
         float scale = videoFill ? Math.max(fit, fitHeight) : Math.min(fit, fitHeight);
@@ -728,22 +551,41 @@ public class PlayerManager {
             autoplayLoading = advanceWhenReady = false;
             autoplayTriedFor = "";
             autoplayError = "";
-            originalQueue = new ArrayList<>(newQueue);
-            queue = new ArrayList<>(newQueue);
+            originalQueue = uniqueQueue(newQueue, song);
+            queue = new ArrayList<>(originalQueue);
             if (shuffle) Collections.shuffle(queue);
         }
         resumePosition = 0; savedDuration = 0;
         currentSong = song;
         currentIndex = indexOf(song);
-        if (currentIndex < 0 && song != null) { queue.add(0, song); currentIndex = 0; }
+        if (currentIndex < 0) { queue.add(0, song); originalQueue.add(0, song); currentIndex = 0; }
+        else queue.set(currentIndex, song);
         startCurrent();
         notifyQueue();
     }
 
     private int indexOf(Song song) {
+        if (song == null) return -1;
+        String key = queueIdentity(song);
         for (int i = 0; i < queue.size(); i++)
-            if (song != null && song.getPath().equals(queue.get(i).getPath())) return i;
+            if (key.equals(queueIdentity(queue.get(i)))) return i;
         return -1;
+    }
+
+    private String queueIdentity(Song song) {
+        return context == null ? song.getPath()
+                : cl.arichard.descargador.data.PlaylistManager.getInstance(context).songIdentity(song);
+    }
+
+    private List<Song> uniqueQueue(List<Song> songs, Song preferred) {
+        String active = preferred == null ? null : queueIdentity(preferred);
+        Set<String> seen = new HashSet<>();
+        List<Song> result = new ArrayList<>();
+        for (Song song : songs) {
+            String key = queueIdentity(song);
+            if (seen.add(key)) result.add(key.equals(active) ? preferred : song);
+        }
+        return result;
     }
 
     protected void startCurrent() {
@@ -827,16 +669,16 @@ public class PlayerManager {
      */
     public final class Preview {
         private final PreviewListener listener;
-        private MediaPlayer media;
+        private PlaybackEngine media;
         private String videoId = "";
         private int token;
         private boolean prepared, pausedMain;
         private final Runnable tick = new Runnable() {
             @Override public void run() {
                 if (media == null || !prepared) return;
-                try { listener.onPreview(videoId, media.isPlaying() ? PREVIEW_PLAYING : PREVIEW_PAUSED, media.getCurrentPosition(), media.getDuration()); }
-                catch (IllegalStateException ignored) { return; }
-                handler.postDelayed(this, 250);
+                boolean playing = media.isPlaying();
+                listener.onPreview(videoId, playing ? PREVIEW_PLAYING : PREVIEW_PAUSED, media.getCurrentPosition(), media.getDuration());
+                if (playing) handler.postDelayed(this, 250);
             }
         };
 
@@ -848,10 +690,15 @@ public class PlayerManager {
         public void toggle(String id) {
             if (id.equals(videoId) && media != null) {
                 if (!prepared) return;
-                try {
-                    if (media.isPlaying()) { media.pause(); listener.onPreview(id, PREVIEW_PAUSED, media.getCurrentPosition(), media.getDuration()); }
-                    else { media.start(); handler.removeCallbacks(tick); handler.post(tick); }
-                } catch (IllegalStateException ignored) {}
+                if (media.isPlaying()) {
+                    media.pause();
+                    handler.removeCallbacks(tick);
+                    listener.onPreview(id, PREVIEW_PAUSED, media.getCurrentPosition(), media.getDuration());
+                } else {
+                    media.play();
+                    handler.removeCallbacks(tick);
+                    handler.post(tick);
+                }
                 return;
             }
             start(id);
@@ -881,21 +728,30 @@ public class PlayerManager {
 
         private void open(CachedStream stream, String id, int mine) {
             try {
-                MediaPlayer player = new MediaPlayer();
+                PlaybackEngine player = createEngine();
                 media = player;
-                player.setAudioAttributes(new AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA).build());
-                player.setOnPreparedListener(mp -> {
-                    if (mine != token) return;
-                    prepared = true;
-                    mp.start();
-                    handler.removeCallbacks(tick);
-                    handler.post(tick);
+                player.prepare(stream.url, stream.headers, false, false, null, new PlaybackEngine.Callback() {
+                    @Override public void onPrepared() {
+                        if (mine != token || media != player) return;
+                        prepared = true;
+                        player.play();
+                        handler.removeCallbacks(tick);
+                        handler.post(tick);
+                    }
+                    @Override public void onCompletion() {
+                        if (mine == token && media == player) {
+                            closeMedia();
+                            videoId = "";
+                            listener.onPreview(id, PREVIEW_ENDED, 0, 0);
+                        }
+                    }
+                    @Override public void onSeekComplete() {}
+                    @Override public void onVideoSizeChanged(int width, int height) {}
+                    @Override public void onError(Exception error) {
+                        if (mine == token && media == player) fail(id);
+                    }
+                    @Override public void onRoutingChanged() {}
                 });
-                player.setOnCompletionListener(mp -> { if (mine == token) { closeMedia(); videoId = ""; listener.onPreview(id, PREVIEW_ENDED, 0, 0); } });
-                player.setOnErrorListener((mp, what, extra) -> { if (mine == token) fail(id); return true; });
-                player.setDataSource(new HeaderHttpDataSource(stream.url, stream.headers));
-                player.prepareAsync();
             } catch (Exception e) {
                 fail(id);
             }
@@ -1184,98 +1040,105 @@ public class PlayerManager {
     }
 
     private void prepareSource(String source, Map<String, String> headers) throws Exception {
-        MediaPlayer player = new MediaPlayer();
-        mediaPlayer = player;
-        player.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK);
-        player.setAudioAttributes(new AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .setUsage(AudioAttributes.USAGE_MEDIA).build());
-        // Let Android route media to the output selected by the user (Bluetooth, USB,
-        // wired headphones or speaker), including switches during playback.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) player.setPreferredDevice(null);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) player.addOnRoutingChangedListener(
-                routing -> { if (routing == mediaPlayer && prepared) rememberRoutedOutput(); }, handler);
+        PlaybackEngine engine = createEngine();
+        activePlayer = engine;
         registerNoisyReceiver();
-        player.setOnPreparedListener(mp -> {
-            if (mp != mediaPlayer) return;
-            prepared = true;
-            fitVideo();
-            notifyVideo();
-            if (resumePosition > 0) { mp.seekTo(Math.min(resumePosition, Math.max(0, mp.getDuration() - 1))); resumePosition = 0; }
-            loading(false);
-            if (playWhenReady && !audioRouteChangePending) {
-                if (requestAudioFocus()) {
-                    if (fadingPlayer != null) {
-                        mp.setVolume(0f, 0f);
-                        // La siguiente entra donde empieza a sonar, no en su silencio inicial.
-                        cl.arichard.descargador.util.WaveformStore.Envelope entering = envelopeOf(currentSong);
-                        if (entering != null && entering.audibleStartMs > 300 && resumePosition == 0) mp.seekTo(entering.audibleStartMs);
-                    }
-                    mp.start();
-                    if (fadingPlayer != null) {
-                        try {
+        SurfaceHolder display = videoView != null && videoView.getHolder().getSurface().isValid()
+                ? videoView.getHolder() : null;
+        loading(true);
+        engine.prepare(source, headers, videoMode, !videoMode, display, new PlaybackEngine.Callback() {
+            @Override public void onPrepared() {
+                if (engine != activePlayer) return;
+                prepared = true;
+                fitVideo();
+                notifyVideo();
+                int resumed = resumePosition;
+                if (resumePosition > 0) {
+                    int duration = engine.getDuration();
+                    engine.seekTo(duration > 0 ? Math.min(resumePosition, Math.max(0, duration - 1)) : resumePosition);
+                    resumePosition = 0;
+                }
+                loading(false);
+                if (playWhenReady && !audioRouteChangePending) {
+                    if (requestAudioFocus()) {
+                        if (fadingPlayer != null) {
+                            engine.setVolume(0f);
+                            // La siguiente entra donde empieza a sonar, no en su silencio inicial.
+                            cl.arichard.descargador.util.WaveformStore.Envelope entering = envelopeOf(currentSong);
+                            if (entering != null && entering.audibleStartMs > 300 && resumed == 0) engine.seekTo(entering.audibleStartMs);
+                        }
+                        engine.play();
+                        if (fadingPlayer != null) {
                             int left = fadeEndAtMs - fadingPlayer.getCurrentPosition();
                             fadeDuration = Math.max(300, Math.min(fadeDuration, left));
-                        } catch (IllegalStateException ignored) {}
-                        fadeStarted = android.os.SystemClock.elapsedRealtime();
-                        fadeLive = true;
-                        handler.post(fadeTick);
+                            fadeStarted = android.os.SystemClock.elapsedRealtime();
+                            fadeLive = true;
+                            handler.post(fadeTick);
+                        }
+                        registerNoisyReceiver();
+                    } else {
+                        playWhenReady = false;
                     }
-                    registerNoisyReceiver();
+                }
+                startListening();
+                notifyState();
+                prefetchNextStream();
+                warmWaveforms();
+                autoplayNeeded(false);
+                recoveryStartPosition = engine.getCurrentPosition();
+                Log.i("MusicBoxPlayer", "Prepared (" + (engine instanceof ExoPlaybackEngine ? "ExoPlayer" : "MediaPlayer")
+                        + "): duration=" + engine.getDuration() + " video=" + engine.getVideoWidth() + "x" + engine.getVideoHeight());
+            }
+
+            @Override public void onError(Exception error) {
+                if (engine == activePlayer) fail(error);
+            }
+
+            @Override public void onSeekComplete() {
+                if (engine != activePlayer || !prepared) return;
+                int position = engine.getCurrentPosition();
+                int duration = engine.getDuration();
+                for (PlaybackListener listener : new ArrayList<>(listeners)) listener.onProgressUpdate(position, duration);
+                savePosition();
+                scheduleProgress();
+            }
+
+            @Override public void onVideoSizeChanged(int width, int height) {
+                if (engine != activePlayer) return;
+                fitVideo();
+                notifyVideo();
+            }
+
+            @Override public void onCompletion() {
+                if (engine != activePlayer || !prepared) return;
+                if (repeatMode == REPEAT_ONE) {
+                    sampleListening();
+                    engine.seekTo(0);
+                    engine.play();
+                    listeningTrackPath = "";
+                    startListening();
+                    scheduleProgress();
                 } else {
-                    playWhenReady = false;
+                    playNext();
                 }
             }
-            startListening();
-            notifyState();
-            handler.post(progressUpdater);
-            prefetchNextStream();
-            warmWaveforms();
-            autoplayNeeded(false);
-            recoveryStartPosition = mp.getCurrentPosition();
-            Log.i("MusicBoxPlayer", "Prepared: duration=" + mp.getDuration() + " video=" + mp.getVideoWidth() + "x" + mp.getVideoHeight());
-        });
-        player.setOnErrorListener((mp, what, extra) -> {
-            if (mp == mediaPlayer) fail(new IllegalStateException("Error del reproductor " + what + "/" + extra));
-            return true;
-        });
-        player.setOnSeekCompleteListener(mp -> {
-            if (mp != mediaPlayer || !prepared) return;
-            int position = mp.getCurrentPosition();
-            int duration = mp.getDuration();
-            for (PlaybackListener listener : new ArrayList<>(listeners)) listener.onProgressUpdate(position, duration);
-            savePosition();
-        });
-        player.setOnVideoSizeChangedListener((mp, width, height) -> { fitVideo(); notifyVideo(); });
-        player.setOnCompletionListener(mp -> {
-            if (mp != mediaPlayer || !prepared) return;
-            if (repeatMode == REPEAT_ONE) {
-                mp.seekTo(0); mp.start();
-                listeningTrackPath = "";
-                startListening();
+
+            @Override public void onRoutingChanged() {
+                if (engine == activePlayer && prepared) rememberRoutedOutput();
             }
-            else playNext();
         });
-        if (videoView != null && videoView.getHolder().getSurface().isValid()) player.setDisplay(videoView.getHolder());
-        // Samsung's MediaPlayer drops request headers from the Context/Uri overload and gets HTTP 403.
-        if (headers.containsKey("X-MusicBox-HLS")) {
-            Map<String, String> http = new HashMap<>(headers);
-            http.remove("X-MusicBox-HLS");
-            http.remove(LENGTH_KEY);
-            player.setDataSource(context, Uri.parse(source), http);
-        } else if (source.startsWith("http")) player.setDataSource(new HeaderHttpDataSource(source, headers));
-        else player.setDataSource(source);
-        loading(true);
-        player.prepareAsync();
     }
 
     void fail(Exception error) {
         stopCrossfade();
         Log.e("MusicBoxPlayer", "Playback failed", error);
         int position = resumePosition;
-        if (prepared && mediaPlayer != null) {
-            try { position = mediaPlayer.getCurrentPosition(); } catch (IllegalStateException ignored) {}
+        if (prepared && activePlayer != null) {
+            position = activePlayer.getCurrentPosition();
         }
-        // MediaPlayer is now in Error state: no transport/state queries are legal.
+        if (playbackRecoveryAttempts > 0 && position - recoveryStartPosition > RECOVERY_RESET_MS) {
+            playbackRecoveryAttempts = 0;
+        }
         prepared = false;
         releasePlayer();
         boolean offline = online && context instanceof DescargadorApp && !((DescargadorApp) context).hasNetwork();
@@ -1345,23 +1208,24 @@ public class PlayerManager {
         if (focusChange != AudioManager.AUDIOFOCUS_GAIN) stopCrossfade();
         switch (focusChange) {
             case AudioManager.AUDIOFOCUS_GAIN:
-                if (mediaPlayer != null) mediaPlayer.setVolume(1f, 1f);
-                if (resumeOnFocusGain && playWhenReady && prepared && mediaPlayer != null && !mediaPlayer.isPlaying()) {
-                    mediaPlayer.start();
+                if (activePlayer != null) activePlayer.setVolume(1f);
+                if (resumeOnFocusGain && playWhenReady && prepared && activePlayer != null && !activePlayer.isPlaying()) {
+                    resumeOnFocusGain = false;
+                    activePlayer.play();
                     notifyState();
                 }
                 resumeOnFocusGain = false;
                 break;
             case AudioManager.AUDIOFOCUS_LOSS:
                 resumeOnFocusGain = false;
-                if (isPlaying()) { playWhenReady = false; mediaPlayer.pause(); notifyState(); }
+                if (isPlaying()) { playWhenReady = false; activePlayer.pause(); notifyState(); }
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
                 resumeOnFocusGain = isPlaying();
-                if (isPlaying()) { mediaPlayer.pause(); notifyState(); }
+                if (isPlaying()) { activePlayer.pause(); notifyState(); }
                 break;
             case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                if (mediaPlayer != null) mediaPlayer.setVolume(0.2f, 0.2f);
+                if (activePlayer != null) activePlayer.setVolume(0.2f);
                 break;
         }
     };
@@ -1451,8 +1315,8 @@ public class PlayerManager {
     }
 
     private boolean hasPersonalOutputAfterRouteChange() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && prepared && mediaPlayer != null) {
-            AudioDeviceInfo device = mediaPlayer.getRoutedDevice();
+        if (prepared && activePlayer != null) {
+            AudioDeviceInfo device = activePlayer.getRoutedDevice();
             if (device != null) {
                 if (!isPersonalOutput(device.getType())) return false;
                 return isAudioOutputConnected(device.getId());
@@ -1473,9 +1337,9 @@ public class PlayerManager {
     }
 
     private void resumePlaybackAfterRouteChange() {
-        if (!playWhenReady || !prepared || mediaPlayer == null || mediaPlayer.isPlaying()) return;
+        if (!playWhenReady || !prepared || activePlayer == null || activePlayer.isPlaying()) return;
         if (requestAudioFocus()) {
-            mediaPlayer.start();
+            activePlayer.play();
             registerNoisyReceiver();
         } else {
             playWhenReady = false;
@@ -1484,8 +1348,8 @@ public class PlayerManager {
     }
 
     private void rememberRoutedOutput() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || !prepared || mediaPlayer == null) return;
-        AudioDeviceInfo device = mediaPlayer.getRoutedDevice();
+        if (!prepared || activePlayer == null) return;
+        AudioDeviceInfo device = activePlayer.getRoutedDevice();
         if (device == null) return;
         if (routedOutputId >= 0 && routedPersonalOutput && routedOutputId != device.getId() && audioManager != null) {
             boolean stillConnected = false;
@@ -1530,10 +1394,10 @@ public class PlayerManager {
     /** Llamado por MediaSessionCompat.Callback desde MusicService (audífonos, asistente, etc.) */
     public void play() {
         if (currentSong == null) return;
-        if (!prepared) { recoveryPath = ""; playbackFailures.clear(); playWhenReady = true; startCurrent(); return; }
-        if (!mediaPlayer.isPlaying() && requestAudioFocus()) {
+        if (!prepared || activePlayer == null) { recoveryPath = ""; playbackFailures.clear(); playWhenReady = true; startCurrent(); return; }
+        if (!activePlayer.isPlaying() && requestAudioFocus()) {
             playWhenReady = true;
-            mediaPlayer.start();
+            activePlayer.play();
             registerNoisyReceiver();
             notifyState();
         }
@@ -1561,7 +1425,7 @@ public class PlayerManager {
         playWhenReady = false;
         advanceWhenReady = false;
         resumeOnFocusGain = false;
-        if (isPlaying()) mediaPlayer.pause();
+        if (isPlaying()) activePlayer.pause();
         abandonAudioFocus();
         unregisterNoisyReceiver();
         notifyState();
@@ -1569,18 +1433,18 @@ public class PlayerManager {
 
     public void togglePlayPause() {
         if (currentSong == null) return;
-        if (!prepared) {
+        if (!prepared || activePlayer == null) {
             if (loading) playWhenReady = !playWhenReady;
             else { recoveryPath = ""; playbackFailures.clear(); startCurrent(); }
             return;
         }
-        if (mediaPlayer.isPlaying()) {
+        if (activePlayer.isPlaying()) {
             pause();
             return;
         } else {
             if (requestAudioFocus()) {
                 playWhenReady = true;
-                mediaPlayer.start();
+                activePlayer.play();
                 registerNoisyReceiver();
             }
         }
@@ -1609,15 +1473,19 @@ public class PlayerManager {
     }
 
     public void setAutoplay(boolean enabled) {
-        if (context != null) context.getSharedPreferences("player", 0).edit().putBoolean("autoplay", enabled).apply();
-        if (enabled) retryAutoplay();
-        else {
+        if (playbackPreferences != null) playbackPreferences.edit().putBoolean("autoplay", enabled).apply();
+    }
+
+    private void onAutoplayPreferenceChanged() {
+        if (isAutoplay()) {
+            if (isPlaying()) retryAutoplay();
+        } else {
             autoplayGeneration++;
             autoplayLoading = advanceWhenReady = false;
             autoplayTriedFor = "";
             autoplayError = "";
-            notifyQueue();
         }
+        for (PlaybackListener listener : new ArrayList<>(listeners)) listener.onQueueChanged();
     }
 
     /** Hay que buscar canciones relacionadas: sonando una de YouTube, al final de la cola y sin haberlo intentado ya. */
@@ -1683,7 +1551,7 @@ public class PlayerManager {
             return;
         }
         List<String> paths = new ArrayList<>();
-        for (Song queued : queue) paths.add(queued.getPath());
+        for (Song queued : queue) paths.add(queueIdentity(queued));
         List<Song> more = isAutoplay() ? Autoplay.pick(found, paths) : new ArrayList<>();
         if (!more.isEmpty()) {
             queue.addAll(more); originalQueue.addAll(more);
@@ -1718,15 +1586,19 @@ public class PlayerManager {
     public void seekTo(int ms) {
         stopCrossfade();
         sampleListening();
-        listeningPlaying = false;
-        if (prepared && mediaPlayer != null) {
+        if (prepared && activePlayer != null) {
             int duration = getDuration();
             int target = Math.max(0, duration > 0 ? Math.min(ms, duration) : ms);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mediaPlayer.seekTo(target, MediaPlayer.SEEK_CLOSEST);
-            else mediaPlayer.seekTo(target);
+            activePlayer.seekTo(target);
+            listeningClock = android.os.SystemClock.elapsedRealtime();
+            listeningPosition = target;
+            listeningPlaying = isPlaying();
+        } else {
+            listeningPlaying = false;
+            resumePosition = Math.max(0, ms);
         }
-        else resumePosition = Math.max(0, ms);
         savePosition();
+        if (shouldPollProgress()) scheduleProgress();
     }
     public boolean toggleShuffle() {
         shuffle = !shuffle;
@@ -1817,7 +1689,7 @@ public class PlayerManager {
         notifyQueue();
     }
     private void notifyQueue() { saveSession(); for (PlaybackListener l : new ArrayList<>(listeners)) l.onQueueChanged(); }
-    public boolean isPlaying() { return prepared && mediaPlayer != null && mediaPlayer.isPlaying(); }
+    public boolean isPlaying() { return prepared && activePlayer != null && activePlayer.isPlaying(); }
     public boolean isLoading() { return loading; }
     /** El selector se habilita cuando la canción tiene video local o un flujo verificado. */
     public boolean canShowVideo() {
@@ -1916,30 +1788,50 @@ public class PlayerManager {
     }
 
     public boolean hasVideo() {
-        return prepared && mediaPlayer != null && mediaPlayer.getVideoWidth() > 0 && mediaPlayer.getVideoHeight() > 0;
+        return prepared && activePlayer != null && activePlayer.getVideoWidth() > 0 && activePlayer.getVideoHeight() > 0;
     }
     private void notifyVideo() {
         boolean available = canShowVideo();
         for (PlaybackListener listener : new ArrayList<>(listeners)) listener.onVideoAvailabilityChanged(available);
     }
-    public int getCurrentPosition() { return prepared && mediaPlayer != null ? mediaPlayer.getCurrentPosition() : resumePosition; }
-    public int getDuration() { return prepared && mediaPlayer != null ? mediaPlayer.getDuration() : savedDuration; }
+    public int getCurrentPosition() { return prepared && activePlayer != null ? activePlayer.getCurrentPosition() : resumePosition; }
+    public int getDuration() { return prepared && activePlayer != null ? activePlayer.getDuration() : savedDuration; }
     public Song getCurrentSong() { return currentSong; }
     public boolean isOnlineTrack() { return online; }
     public String getCurrentOnlineVideoId() { return currentOnlineVideoId; }
     public String getCurrentOnlineUrl() { return currentOnlineUrl; }
     public boolean isShuffle() { return shuffle; }
     public int getRepeatMode() { return repeatMode; }
-    public void addListener(PlaybackListener l) { if (l != null && !listeners.contains(l)) listeners.add(l); }
-    public void removeListener(PlaybackListener l) { listeners.remove(l); }
+    public void addListener(PlaybackListener l) {
+        if (l == null || listeners.contains(l)) return;
+        boolean wasEmpty = listeners.isEmpty();
+        listeners.add(l);
+        if (wasEmpty && shouldPollProgress()) {
+            handler.removeCallbacks(progressUpdater);
+            handler.post(progressUpdater);
+            if (isPlaying()) warmWaveforms();
+        }
+    }
+    public void removeListener(PlaybackListener l) {
+        boolean wasEmpty = listeners.isEmpty();
+        listeners.remove(l);
+        if (!wasEmpty && listeners.isEmpty() && shouldPollProgress()) scheduleProgress();
+    }
     private void notifyTrack() { saveSession(); for (PlaybackListener l : new ArrayList<>(listeners)) l.onTrackChanged(currentSong); }
     private void notifyState() {
         sampleListening();
         if (context != null && listeningSong != null) cl.arichard.descargador.data.ClickStats.getInstance(context).flushListening();
         savePosition();
         boolean playing = isPlaying();
+        handler.removeCallbacks(progressUpdater);
+        if (shouldPollProgress()) {
+            if (!listeners.isEmpty()) handler.post(progressUpdater);
+            else scheduleProgress();
+        }
         for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackStateChanged(playing);
-        if (currentSong != null) MusicService.updateNotification(context, currentSong, playing);
+        if (currentSong != null && context != null) {
+            MusicService.updateNotification(context, currentSong, playing, shouldKeepServiceForeground());
+        }
     }
     private void loading(boolean value) { loading = value; for (PlaybackListener l : new ArrayList<>(listeners)) l.onPlaybackLoading(value); }
     private void releasePlayer() {
@@ -1948,9 +1840,10 @@ public class PlayerManager {
         listeningSong = null;
         generation++;
         prepared = false;
+        resumeOnFocusGain = false;
         handler.removeCallbacks(progressUpdater);
         abandonAudioFocus();
         unregisterNoisyReceiver();
-        if (mediaPlayer != null) { mediaPlayer.release(); mediaPlayer = null; }
+        if (activePlayer != null) { activePlayer.release(); activePlayer = null; }
     }
 }

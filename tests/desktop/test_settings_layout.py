@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, QSettings, QUrl, QMetaObject, Qt
+from PySide6.QtGui import QImage, QColor
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtTest import QTest
@@ -32,7 +33,12 @@ class SettingsLayoutTests(unittest.TestCase):
             settings.setValue("language","es")
             with patch.object(module,"FirebaseDesktopClient",return_value=SimpleNamespace(refresh_token="",configured=False)):
                 bridge=module.MusicBoxBridge(settings=settings,load_startup=False)
-            bridge._user={"name":"Cuenta de demostración","email":"demo@example.invalid"}
+            photo = Path(directory) / "avatar.png"
+            portrait = QImage(120, 80, QImage.Format_RGB32)
+            portrait.fill(QColor("#b05278"))
+            self.assertTrue(portrait.save(str(photo)))
+            bridge._user={"uid":"synthetic-account","name":"Cuenta de demostración","email":"demo@example.invalid",
+                          "photo":QUrl.fromLocalFile(str(photo)).toString()}
             bridge._schedule_cloud_save=lambda:None
             engine=QQmlApplicationEngine();errors=[]
             engine.warnings.connect(lambda rows:errors.extend(row.toString() for row in rows))
@@ -54,6 +60,12 @@ class SettingsLayoutTests(unittest.TestCase):
                         content=dialog.property("contentItem");column=child(content,"settingsColumn")
                         account=child(content,"accountSettingsCard");playback=child(content,"playbackSettingsCard");downloads_card=child(content,"downloadSettingsCard")
                         self.assertIsNotNone(column);self.assertIsNotNone(account);self.assertIsNotNone(playback)
+                        side_avatar = child(window.contentItem(), "sidebarAccountAvatar")
+                        settings_avatar = child(account, "settingsAccountAvatar")
+                        self.assertTrue(side_avatar.property("photoReady"))
+                        self.assertTrue(settings_avatar.property("photoReady"))
+                        self.assertEqual((side_avatar.width(), side_avatar.property("radius")), (32, 16))
+                        self.assertEqual((settings_avatar.width(), settings_avatar.property("radius")), (60, 30))
                         self.assertLess(account.y()+account.height(),playback.y())
                         self.assertLess(playback.y()+playback.height(),downloads_card.y())
                         visible=[item for item in column.childItems() if item.isVisible() and item.height()>1 and item.width()>20]

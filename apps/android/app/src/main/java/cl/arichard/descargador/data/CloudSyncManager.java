@@ -2,6 +2,7 @@ package cl.arichard.descargador.data;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import cl.arichard.descargador.AnimatedArtwork;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Build;
@@ -43,11 +44,12 @@ public final class CloudSyncManager {
         if ("crossfade_seconds".equals(key)) shared = "crossfadeSeconds";
         else if ("crossfade_show_zone".equals(key)) shared = "crossfadeBar";
         else if ("autoplay".equals(key)) shared = "autoplay";
+        else if (AnimatedArtwork.DOWNLOAD_PREFERENCE.equals(key)) shared = "downloadAnimatedArtwork";
         else if ("zoom_mp3".equals(key)) shared = "zoomMp3";
         else if ("lyrics_shown".equals(key)) shared = "lyricsShown";
-        if (shared == null || applying) return;
+        if (shared == null) return;
         try {
-            if (PlaylistSync.same(localPreferences().opt(shared), importedPlayerValues.get(shared))) return;
+            if (PlaylistSync.same(localPreferences().opt(shared), importedPlayerValues.remove(shared))) return;
         } catch (Exception ignored) {}
         preferenceChanged(context, shared);
     }
@@ -58,18 +60,28 @@ public final class CloudSyncManager {
         playlists = PlaylistManager.getInstance(context);
         history = SearchHistoryManager.getInstance(context);
         clicks = ClickStats.getInstance(context);
-        lastUiState = libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson());
+        lastUiState = currentLibraryUiState();
     }
 
     /** Listening milliseconds and device heartbeats have their own live views, not a library rescan. */
     static JSONObject libraryUiState(JSONObject playlists, JSONObject history, JSONObject clicks) {
+        return libraryUiState(playlists, history, clicks, "DEFAULT:1");
+    }
+
+    static JSONObject libraryUiState(JSONObject playlists, JSONObject history, JSONObject clicks, String sort) {
         JSONObject state = new JSONObject();
         try {
             state.put("playlists", playlists).put("history", history)
                     .put("plays", clicks.optJSONObject("devices"))
-                    .put("titles", clicks.optJSONObject("titles"));
+                    .put("titles", clicks.optJSONObject("titles")).put("librarySort", sort);
             return new JSONObject(state.toString());
         } catch (Exception exception) { return state; }
+    }
+
+    private JSONObject currentLibraryUiState() {
+        String sort = context.getSharedPreferences("musicbox_prefs", Context.MODE_PRIVATE)
+                .getString("library_sort", "DEFAULT:1");
+        return libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson(), sort);
     }
 
     public void start() {
@@ -90,12 +102,41 @@ public final class CloudSyncManager {
                 .collection("state").document("musicbox");
         active = this;
         context.getSharedPreferences("player", Context.MODE_PRIVATE).registerOnSharedPreferenceChangeListener(playerPreferences);
-        revocationWatch = DeviceSessions.watch(context);
         playlists.setChangeListener(this::scheduleUpload);
         history.setChangeListener(this::scheduleUpload);
         clicks.setChangeListener(this::scheduleUpload);
+        if (appForeground) attachListeners();
+    }
+
+    private static volatile boolean appForeground = true;
+
+    public static void setAppForeground(boolean foreground) {
+        if (appForeground == foreground) return;
+        appForeground = foreground;
+        CloudSyncManager current = active;
+        if (current != null) current.onForegroundChanged(foreground);
+    }
+
+    private void onForegroundChanged(boolean foreground) {
+        handler.post(() -> {
+            if (document == null) return;
+            if (foreground) {
+                attachListeners();
+                SharedPreferences owner = context.getSharedPreferences("musicbox_cloud", Context.MODE_PRIVATE);
+                if (needsUpload || pendingPreferences(owner).length() > 0) scheduleUpload();
+            } else {
+                handler.removeCallbacks(pendingUpload);
+                detachListeners();
+            }
+        });
+    }
+
+    private void attachListeners() {
         final DocumentReference watched = document;
-        registration = document.addSnapshotListener((snapshot, error) -> {
+        if (watched == null || registration != null) return;
+        final SharedPreferences owner = context.getSharedPreferences("musicbox_cloud", Context.MODE_PRIVATE);
+        if (revocationWatch == null) revocationWatch = DeviceSessions.watch(context);
+        registration = watched.addSnapshotListener((snapshot, error) -> {
             if (error != null || snapshot == null) return;
             if (!snapshot.exists()) {
                 stateExecutor.execute(() -> {
@@ -111,6 +152,11 @@ public final class CloudSyncManager {
         });
     }
 
+    private void detachListeners() {
+        if (registration != null) { registration.remove(); registration = null; }
+        if (revocationWatch != null) { revocationWatch.remove(); revocationWatch = null; }
+    }
+
     /** JSON parsing and merging can be large; never make a Firestore callback block animation frames. */
     private void applySnapshot(DocumentReference watched, SharedPreferences owner, String payload, boolean pendingWrites) {
         if (document != watched) return;
@@ -119,10 +165,12 @@ public final class CloudSyncManager {
             applying = true;
             JSONObject incoming = root.optJSONObject("playlists");
             if (incoming != null) {
-                JSONObject local = playlists.exportJson();
-                JSONObject merged = PlaylistSync.merge(playlistBase == null ? local : playlistBase, local, incoming);
-                if (!PlaylistSync.same(local, merged)) playlists.importJson(merged);
-                needsUpload |= !PlaylistSync.same(merged, incoming);
+                synchronized (playlists) {
+                    JSONObject local = playlists.exportJson();
+                    JSONObject merged = PlaylistSync.merge(playlistBase == null ? local : playlistBase, local, incoming);
+                    if (!PlaylistSync.same(local, merged)) playlists.importJson(merged);
+                    needsUpload |= !PlaylistSync.same(merged, incoming);
+                }
                 // Una escritura pendiente todavía puede fallar: la base persistida solo avanza tras confirmación.
                 if (!pendingWrites) {
                     playlistBase = new JSONObject(incoming.toString());
@@ -137,7 +185,7 @@ public final class CloudSyncManager {
             boolean first = !stateLoaded;
             stateLoaded = true;
             if (needsUpload || first) scheduleUpload();
-            JSONObject visible = libraryUiState(playlists.exportJson(), history.exportJson(), clicks.exportJson());
+            JSONObject visible = currentLibraryUiState();
             if (!PlaylistSync.same(lastUiState, visible)) {
                 lastUiState = visible;
                 if (uiChanged != null) handler.post(uiChanged);
@@ -184,6 +232,7 @@ public final class CloudSyncManager {
                 .put("quality_mp3", p.getString("quality_mp3", "192 kbps"))
                 .put("quality_mp4", p.getString("quality_mp4", "1080p"))
                 .put("autoplay", player.getBoolean("autoplay", true))
+                .put("downloadAnimatedArtwork", AnimatedArtwork.downloadsEnabled(context))
                 .put("crossfadeSeconds", player.getInt("crossfade_seconds", 0))
                 .put("crossfadeBar", player.getBoolean("crossfade_show_zone", true))
                 .put("zoomMp3", player.getBoolean("zoom_mp3", false))
@@ -206,14 +255,17 @@ public final class CloudSyncManager {
             edit.putString("library_sort", remote.optString("librarySort").toUpperCase(java.util.Locale.ROOT));
         SharedPreferences player = context.getSharedPreferences("player", Context.MODE_PRIVATE);
         SharedPreferences.Editor playback = player.edit();
-        String[][] bools = {{"autoplay","autoplay"},{"crossfadeBar","crossfade_show_zone"},{"zoomMp3","zoom_mp3"},{"lyricsShown","lyrics_shown"}};
-        for (String[] pair : bools) if (!pending.has(pair[0]) && remote.opt(pair[0]) instanceof Boolean) {
+        String[][] bools = {{"autoplay","autoplay"},{"crossfadeBar","crossfade_show_zone"},{"zoomMp3","zoom_mp3"},
+                {"lyricsShown","lyrics_shown"},{"downloadAnimatedArtwork",AnimatedArtwork.DOWNLOAD_PREFERENCE}};
+        for (String[] pair : bools) if (!pending.has(pair[0]) && remote.opt(pair[0]) instanceof Boolean
+                && player.getBoolean(pair[1], !"zoom_mp3".equals(pair[1])
+                        && !AnimatedArtwork.DOWNLOAD_PREFERENCE.equals(pair[1])) != remote.optBoolean(pair[0])) {
             importedPlayerValues.put(pair[0], remote.optBoolean(pair[0]));
             playback.putBoolean(pair[1], remote.optBoolean(pair[0]));
         }
         if (!pending.has("crossfadeSeconds") && remote.opt("crossfadeSeconds") instanceof Number) {
             int seconds = remote.optInt("crossfadeSeconds");
-            if (seconds >= 0 && seconds <= 12) {
+            if (seconds >= 0 && seconds <= 12 && player.getInt("crossfade_seconds", 0) != seconds) {
                 importedPlayerValues.put("crossfadeSeconds", seconds);playback.putInt("crossfade_seconds", seconds);
             }
         }
@@ -242,6 +294,7 @@ public final class CloudSyncManager {
     public void scheduleUpload() {
         if (applying || document == null) return;
         needsUpload = true;
+        if (!appForeground) return;
         handler.removeCallbacks(pendingUpload);
         handler.postDelayed(pendingUpload, 650);
     }
@@ -306,7 +359,7 @@ public final class CloudSyncManager {
                 }
             }).addOnFailureListener(error -> {
                 uploading = false; needsUpload = true;
-                if (document == target) handler.postDelayed(pendingUpload, 5000);
+                if (document == target && appForeground) handler.postDelayed(pendingUpload, 5000);
                 android.util.Log.w("MusicBoxSync", "Se conservan los cambios locales para reintentar", error);
             });
         } catch (Exception error) {
@@ -319,8 +372,7 @@ public final class CloudSyncManager {
         handler.removeCallbacks(pendingUpload);
         context.getSharedPreferences("player", Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(playerPreferences);
         playlists.setChangeListener(null); history.setChangeListener(null); clicks.setChangeListener(null);
-        if (registration != null) registration.remove();
-        if (revocationWatch != null) revocationWatch.remove();
+        detachListeners();
         document = null;
         stateExecutor.shutdownNow();
         if (active == this) active = null;

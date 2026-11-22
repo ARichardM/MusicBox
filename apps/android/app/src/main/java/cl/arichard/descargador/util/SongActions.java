@@ -8,7 +8,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import cl.arichard.descargador.download.DownloadManager;
 import cl.arichard.descargador.download.DownloadOptions;
 import cl.arichard.descargador.data.PlaylistManager;
-import cl.arichard.descargador.model.SearchResult;
 import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.player.PlayerManager;
 import java.io.File;
@@ -68,13 +67,7 @@ public final class SongActions {
     private static void addBulk(Activity activity, PlaylistManager manager, String name, List<Song> songs, Runnable changed) {
         int added = 0;
         for (Song song : songs) {
-            boolean ok;
-            if (song.isOnline()) {
-                ok = manager.addOnlineTrack(name, new SearchResult(song.getVideoId(), song.getTitle(),
-                        song.getArtist(), song.getDuration() / 1000, song.getCoverPath(),
-                        "https://www.youtube.com/watch?v=" + song.getVideoId()));
-            } else ok = manager.addSongToPlaylist(name, manager.canonicalKey(song));
-            if (ok) added++;
+            if (manager.addSongToPlaylist(name, song)) added++;
         }
         int finalAdded = added;
         activity.runOnUiThread(() -> {
@@ -87,12 +80,7 @@ public final class SongActions {
     }
 
     private static void add(Activity activity, PlaylistManager manager, String name, Song song, Runnable changed) {
-        boolean added;
-        if (song.isOnline()) {
-            added = manager.addOnlineTrack(name, new SearchResult(song.getVideoId(), song.getTitle(),
-                    song.getArtist(), song.getDuration() / 1000, song.getCoverPath(),
-                    "https://www.youtube.com/watch?v=" + song.getVideoId()));
-        } else added = manager.addSongToPlaylist(name, manager.canonicalKey(song));
+        boolean added = manager.addSongToPlaylist(name, song);
         message(activity, added ? Tr.t("Agregada a ") + name : Tr.t("La canción ya está en ") + name);
         changed.run();
         if (added && song.isOnline() && manager.isAutoDownloadEnabled(name))

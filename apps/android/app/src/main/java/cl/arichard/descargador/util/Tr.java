@@ -482,6 +482,8 @@ public final class Tr {
         m.put("M\u00e1s cortas", "Shortest");
         m.put("M\u00e1s largas", "Longest");
         m.put("Orden original", "Original order");
+        m.put("Descargar portadas animadas", "Download animated artwork");
+        m.put("Guarda portadas de canciones descargadas para verlas sin conexión.", "Saves artwork for downloaded songs to use offline.");
         m.put("Orden inverso", "Reverse order");
         m.put("Las canciones online no ocupan espacio en el dispositivo.", "Online songs don't take up space on the device.");
         m.put("Eliminar %d canciones", "Delete %d songs");

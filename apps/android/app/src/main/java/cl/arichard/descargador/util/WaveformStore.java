@@ -93,6 +93,19 @@ public final class WaveformStore {
         worker.execute(() -> compute(song, key, 0));
     }
 
+    /** Carga en memoria el relieve solo si ya existe en caché en disco (cero decodificación ni red en segundo plano). */
+    public void warmFromCache(Song song) {
+        if (song == null) return;
+        String key = key(song);
+        synchronized (this) {
+            if (memory.containsKey(key) || waiting.containsKey(key)) return;
+        }
+        worker.execute(() -> {
+            Envelope cached = readDisk(key);
+            if (cached != null) synchronized (WaveformStore.this) { memory.put(key, cached); }
+        });
+    }
+
     /** [last] false = entrega parcial (sin el relieve completo): quien espera sigue en la lista para recibir el definitivo. */
     private void deliver(String key, Envelope envelope, boolean last) {
         List<Callback> list;

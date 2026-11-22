@@ -36,7 +36,7 @@ El reproductor del navegador usa /api/stream para audio en línea y los archivos
 
 Las cookies del servidor se administran fuera de la interfaz pública. El endpoint de carga exige `MUSICBOX_ADMIN_TOKEN` por cabecera Bearer; por defecto está deshabilitado. `MUSICBOX_COOKIE_PATH` permite usar un archivo privado persistente. No compartir cookies personales a través de una web pública.
 
-Las descargas ofrecen MP3 y MP4 con calidad elegida y preparan archivos temporales que se eliminan después de entregarlos o terminar un trabajo cancelado. Las pruebas de contrato no certifican la disponibilidad actual del proveedor en producción.
+Las descargas desde YouTube en la web quedan desactivadas por defecto (`MUSICBOX_WEB_DOWNLOADS=0`) y los botones correspondientes se muestran bloqueados con aviso para usar Android o Windows; la importación de archivos y carpetas locales sigue activa. Si un servidor propio cuenta con acceso libre a YouTube, `MUSICBOX_WEB_DOWNLOADS=1` habilita `/api/download` (MP3 y MP4 con calidad elegida y limpieza automática de temporales). Las pruebas de contrato no certifican la disponibilidad actual del proveedor en producción.
 
 El módulo `backend/playlist_import.py` se copió de la implementación Windows de este repositorio; al cambiar el emparejamiento nativo hay que mantener ambas copias alineadas.
 

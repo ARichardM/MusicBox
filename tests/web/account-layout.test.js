@@ -50,10 +50,49 @@ const server=http.createServer(async(req,res)=>{
       });
     }
     const [first,second]=pages;
+    await first.evaluate(() => {
+      state.user.photo = '/logo_complete.png';
+      checkAuthSession();
+    });
+    await first.waitForFunction(() => ['sidebar-account-avatar', 'modal-user-avatar'].every(id => {
+      const image = document.getElementById(id).querySelector('img');
+      return image?.naturalWidth > 0 && !image.hidden;
+    }));
+    assert.deepEqual(await first.evaluate(() => ['sidebar-account-avatar', 'modal-user-avatar'].map(id => {
+      const style = getComputedStyle(document.getElementById(id));
+      return [style.width, style.borderRadius, style.overflow];
+    })), [['32px','50%','hidden'], ['60px','50%','hidden']]);
+    await first.evaluate(() => {
+      state.user.photo = '/missing-account-photo.png';
+      checkAuthSession();
+    });
+    await first.waitForFunction(() => ['sidebar-account-avatar', 'modal-user-avatar'].every(id => {
+      const avatar = document.getElementById(id);
+      return !avatar.querySelector('img') && !avatar.querySelector('span').hidden;
+    }));
     await first.evaluate(async track=>{const playlist=(await storage.getAllPlaylists()).find(row=>row.name==='Mix');playlist.tracks.push(track);await storage.savePlaylist(playlist);accountPreference('crossfadeSeconds',7);recordAccountQuery('Banda de prueba');recordAccountPlay(track);clearTimeout(cloudSaveTimer);await pushStateToFirestore();},tracks[2]);
     await second.waitForFunction(async()=>{const playlist=(await storage.getAllPlaylists()).find(row=>row.name==='Mix');return playlist?.tracks.some(row=>row.id==='verify00002')&&state.crossfadeSeconds===7&&accountActivity().queries?.['Banda de prueba'];});
     assert(cloud.playlists.entryAddedAt.Mix['youtube:verify00002']>=200,'New memberships have a shared date');
     assert(cloud.activity.played.verify00002,'Played history belongs to the account');
+    for (const page of pages) {
+      const order = await page.evaluate(async () => {
+        await loadPlaylistView((await libraryData()).playlists.find(row=>row.name==='Mix'));
+        return currentLibraryTracks.map(row=>row.id);
+      });
+      assert.deepEqual(order, ['verify00002','verify00001','verify00000']);
+    }
+    await first.evaluate(() => {
+      accountPreference('librarySort','recent:0');
+      clearTimeout(cloudSaveTimer);
+      return pushStateToFirestore();
+    });
+    await second.waitForFunction(() => currentLibraryTracks[0]?.id === 'verify00000');
+    await first.evaluate(() => {
+      accountPreference('librarySort','recent:1');
+      clearTimeout(cloudSaveTimer);
+      return pushStateToFirestore();
+    });
+    await second.waitForFunction(() => currentLibraryTracks[0]?.id === 'verify00002');
     // An open collection and active sort survive a metadata-only account update.
     await first.evaluate(async tracks=>{await storage.savePlaylist({id:'long',name:'Larga',tracks});await loadPlaylistView((await storage.getAllPlaylists()).find(row=>row.id==='long'));clearTimeout(cloudSaveTimer);},tracks);
     await first.locator('#main-content').hover();await first.mouse.wheel(0,650);
@@ -108,7 +147,26 @@ const server=http.createServer(async(req,res)=>{
       await first.screenshot({path:path.join(artifacts,`settings-playback-${viewport.width}.png`)});
       await first.locator('#close-settings-btn').click();
     }
-    assert.deepEqual(errors,[]);console.log('OK: settings geometry, two account sessions, shared dates/preferences/activity, collection scroll, retry notices, MP4 + lyrics + zoom at three sizes');
+    // Web downloads are disabled by default: buttons are blocked with clear messaging while local import stays active.
+    await first.setViewportSize({width:1180,height:760});
+    await first.evaluate(async()=>{await loadPlaylistView((await libraryData()).playlists.find(row=>row.name==='Mix'));});
+    assert(await first.locator('.playlist-auto-download').isDisabled(),'Auto-download pill is disabled on web by default');
+    await first.locator('#library-content-list .row-item .more-btn').first().click();
+    await first.locator('#track-context-menu').waitFor({state:'visible'});
+    assert.equal(await first.locator('#ctx-download').getAttribute('aria-disabled'),'true','Context menu download item is marked disabled');
+    assert(await first.locator('#ctx-download-badge').isVisible(),'Context menu download item shows app-only badge');
+    await first.locator('#ctx-download').click();
+    assert(/Android o Windows/.test(await first.evaluate(()=>[...document.querySelectorAll('.toast')].map(t=>t.textContent).join(' '))),'Clicking blocked download explains to use Android or Windows');
+    await first.evaluate(()=>loadDownloadsView());
+    await first.locator('.dl-unavailable-notice').waitFor({state:'visible'});
+    assert(await first.locator('#dl-start').isDisabled(),'Main Download button is disabled on web');
+    assert(await first.locator('#dl-links').isDisabled(),'Links input is disabled on web');
+    assert(!(await first.locator('#dl-import-songs').isDisabled()),'Local song import stays enabled on web');
+    assert(!(await first.locator('#dl-import-folder').isDisabled()),'Local folder import stays enabled on web');
+    await first.screenshot({path:path.join(artifacts,'downloads-blocked-1180.png')});
+    await first.setViewportSize({width:390,height:844});
+    await first.screenshot({path:path.join(artifacts,'downloads-blocked-390.png')});
+    assert.deepEqual(errors,[]);console.log('OK: settings geometry, blocked web downloads, two account sessions, shared dates/preferences/activity, collection scroll, retry notices, MP4 + lyrics + zoom at three sizes');
   }catch(error){
     await pages[0].screenshot({path:path.join(artifacts,'account-layout-failure.png')});
     console.log(await pages[0].evaluate(()=>Object.fromEntries(['.player-left','.now-playing-cover-wrap','#lyrics-drawer','.player-center'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return [selector,{x:r.x,y:r.y,w:r.width,h:r.height}];}))));

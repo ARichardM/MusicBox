@@ -20,6 +20,11 @@ adiciones que todavía no conocían.
 
 ## Orden y compatibilidad
 
+Con sesión iniciada, **Canciones** muestra las canciones de YouTube guardadas en
+las playlists o en Favoritos de la cuenta. Las copias descargadas se usan para
+reproducir el mismo tema cuando están disponibles. Los archivos propios del
+dispositivo se encuentran en **Carpetas** o **Descargas**.
+
 «Más recientes» dentro de una playlist utiliza la fecha compartida de incorporación
 y un identificador estable para resolver empates. Reordenar manualmente una playlist
 no convierte las canciones antiguas en incorporaciones nuevas. Al renombrarla se
@@ -30,6 +35,9 @@ el orden disponible mediante posiciones estables; no inventa fechas históricas.
 Las incorporaciones nuevas sí registran una fecha común. En un conflicto simultáneo
 de orden, ambas plataformas eligen el mismo resultado, independientemente de cuál
 se considere la copia local.
+
+Al cambiar el criterio de orden o su sentido, la app guarda automáticamente
+ambos en la cuenta. Una cola nueva parte del orden visible de la playlist.
 
 Una entrada de un archivo que solo existe en otro dispositivo puede permanecer
 no reproducible allí. La Web conserva su posición al exportar los cambios, en lugar

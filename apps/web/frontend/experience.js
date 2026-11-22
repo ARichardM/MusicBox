@@ -61,8 +61,8 @@ async function switchWebPlaylist(collection){
   if(!collection)return;
   playbackSource=collection;
   await loadPlaylistView(collection);
-  if(collection.tracks?.length){
-    state.queue=[...collection.tracks];
+  if(activePlaylist === collection && currentLibraryTracks.length){
+    state.queue=[...currentLibraryTracks];
     state.queueIndex=state.isShuffle?Math.floor(Math.random()*state.queue.length):0;
     await playTrack(state.queue[state.queueIndex],true);
   }else{
@@ -163,8 +163,13 @@ const nativePlayTrack = playTrack;
 playTrack = async function(track, fromQueue=false) {
   cancelWebFade();
   if (!fromQueue) {
-    playbackSource = activePlaylist?.tracks?.some(row=>row.id===track.id) ? activePlaylist : null;
-    if (playbackSource) { state.queue=[...(currentLibraryTracks.some(row=>row.id===track.id)?currentLibraryTracks:playbackSource.tracks)]; state.queueIndex=state.queue.findIndex(row=>row.id===track.id); fromQueue=true; }
+    const index = state.activeView === 'library' ? currentLibraryTracks.findIndex(row=>row.id===track.id) : -1;
+    playbackSource = index >= 0 ? activePlaylist : null;
+    if (index >= 0) {
+      state.queue = [...currentLibraryTracks];
+      state.queueIndex = index;
+      fromQueue = true;
+    }
   } else if (activePlaylist?.tracks?.some(row=>row.id===track.id) && !playbackSource) playbackSource=activePlaylist;
   rememberPlaybackSource();
   const started=nativePlayTrack(track,fromQueue);paintPlaybackSource();return started;
@@ -255,12 +260,26 @@ async function locatePlayingTrack() {
 }
 async function libraryData() {
   const [playlists,favorites,offline]=await Promise.all([storage.getAllPlaylists(),storage.getAllFavorites(),storage.getAllOfflineTracks()]);
+  favorites.sort((a,b)=>(a.position??Number.MAX_SAFE_INTEGER)-(b.position??Number.MAX_SAFE_INTEGER));
   playlists.sort((a,b)=>(a.order??Number.MAX_SAFE_INTEGER)-(b.order??Number.MAX_SAFE_INTEGER)||String(a.id).localeCompare(String(b.id)));
-  const dates={};
-  for(const list of playlists)for(const [entry,at] of Object.entries(list.entryAddedAt||{}))if(at)dates[entry]=Math.min(dates[entry]||at,at);
-  for(const row of favorites)if(row.addedAt)dates['youtube:'+row.id]=Math.min(dates['youtube:'+row.id]||row.addedAt,row.addedAt);
-  const songs=[...new Map([...offline,...favorites,...playlists.flatMap(row=>row.tracks||[])].filter(Boolean).map(row=>[row.id,row])).values()].map(row=>({...row,addedAt:dates['youtube:'+row.id]||row.savedAt||0}));
-  return {playlists:[...(favorites.length?[{id:'favorites',name:'Favoritos',tracks:favorites,favorite:true,entryAddedAt:Object.fromEntries(favorites.map(row=>['youtube:'+row.id,row.addedAt||0]))}]:[]),...playlists],songs,
+  const collections = [...playlists];
+  if (favorites.length) collections.unshift({id:'favorites',name:'Favoritos',tracks:favorites,favorite:true,
+    entryAddedAt:Object.fromEntries(favorites.map(row=>[MusicBoxCore.entryKey(row.id),row.addedAt||0]))});
+  const account = !!state.user?.authenticated;
+  const byId = new Map(), dates = new Map();
+  const ordered = [...collections].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
+  for (const list of ordered) {
+    for (const [index, row] of (list.tracks || []).entries()) {
+      const key = MusicBoxCore.entryKey(row.id);
+      if (account && key.startsWith('local:')) continue;
+      if (!byId.has(row.id)) byId.set(row.id,row);
+      const at = list.entryAddedAt?.[key] || index + 1;
+      dates.set(row.id,Math.min(dates.get(row.id) || at,at));
+    }
+  }
+  if (!account) for (const row of offline) if (!byId.has(row.id)) byId.set(row.id,row);
+  const songs=[...byId.values()].map(row=>({...row,addedAt:dates.get(row.id)||row.savedAt||0}));
+  return {playlists:collections,songs,
     folders:[...new Set(offline.map(row=>row.folder).filter(Boolean))].map(name=>({id:'folder:'+name,name,kind:'folder',tracks:offline.filter(row=>row.folder===name)}))};
 }
 function collectionCard(collection) {
@@ -330,7 +349,7 @@ loadLibraryView = async function(filter='songs') {
     ['Actualizar biblioteca','refresh',()=>runRefresh(more,async()=>{if(state.user?.authenticated)await syncWithFirestore(state.user.uid,true);await loadLibraryView(libraryFilter);})]
   ]));actions.append(more);
   const sort=document.createElement('select');sort.id='library-sort';sort.className='collection-sort';sort.setAttribute('aria-label','Ordenar');
-  for(const [key,label] of [['recent','Más recientes'],['default','Orden original'],['title','Título A–Z'],['artist','Artista A–Z'],['plays','Más escuchadas']])sort.add(new Option(label,key));
+  for(const [key,label] of [['recent','Más recientes'],['default','Orden original'],['title','Título A–Z'],['artist','Artista A–Z'],['plays','Más escuchadas'],['duration','Más cortas']])sort.add(new Option(label,key));
   sort.value=(localStorage.getItem('musicbox_library_sort')||'default:1').split(':')[0];
   sort.addEventListener('change',()=>{localStorage.setItem('musicbox_library_sort',sort.value+':1');accountPreference('librarySort',sort.value+':1');});
   const total=document.createElement('small');total.className='collection-count library-total';
@@ -338,10 +357,17 @@ loadLibraryView = async function(filter='songs') {
   const render=()=>{
     const query=main.querySelector('input').value.toLocaleLowerCase();
     let items=[...data[libraryFilter]].filter(row=>`${row.name||row.title} ${row.artist||''}`.toLocaleLowerCase().includes(query));
-    if(sort.value==='title'||sort.value==='artist')items.sort((a,b)=>String(a[sort.value]||a.name||'').localeCompare(String(b[sort.value]||b.name||'')));
-    if(sort.value==='recent')items.sort((a,b)=>(b.addedAt||b.createdAt||b.savedAt||0)-(a.addedAt||a.createdAt||a.savedAt||0)||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0));
-    if(sort.value==='plays')items.sort((a,b)=>(b.plays||0)-(a.plays||0));
-    if((localStorage.getItem('musicbox_library_sort')||'default:1').endsWith(':0'))items.reverse();
+    const reverse = (localStorage.getItem('musicbox_library_sort')||'default:1').endsWith(':0');
+    if (libraryFilter === 'songs') {
+      const dates = new Map(data.songs.map(row=>[row.id,row.addedAt]));
+      const plays = sort.value === 'plays' ? new Map(webStatsRows().map(row=>[row.id,row.plays])) : undefined;
+      MusicBoxCore.sortTracks(items,sort.value,reverse,dates,plays);
+    } else {
+      if(sort.value==='title'||sort.value==='artist')items.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+      if(sort.value==='recent')items.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      if(sort.value==='plays')items.sort((a,b)=>(b.plays||0)-(a.plays||0));
+      if(reverse)items.reverse();
+    }
     const list=main.querySelector('#library-content-list');list.replaceChildren();list.classList.toggle('collection-grid',libraryFilter!=='songs');
     total.textContent=items.length+' '+(libraryFilter==='songs'?'canciones':libraryFilter==='playlists'?'playlists':'carpetas');
     if(libraryFilter==='songs'){currentLibraryTracks=items;renderTrackList(list,items);if(!items.length&&!query){const empty=document.createElement('div');empty.className='library-empty';empty.innerHTML='<strong>Tu biblioteca está vacía</strong><span>El navegador no puede leer tus carpetas por sí solo: importa canciones o una carpeta para empezar.</span>';const row=document.createElement('div');row.className='library-empty-actions';row.append(actionButton('Importar canciones','plus',importLocalFiles,'pill-btn'),actionButton('Importar carpeta','folder',()=>importLocalFiles(true),'pill-btn'));empty.append(row);list.replaceChildren(empty);}}
@@ -358,6 +384,10 @@ loadLibraryView = async function(filter='songs') {
 };
 function createAutoDownloadPill(collection) {
   const button = actionButton('Auto-descarga', 'download', async () => {
+    if (!state.webDownloadsEnabled) {
+      showToast(WEB_DOWNLOADS_DISABLED_MSG, { kind: 'info' });
+      return;
+    }
     button.disabled = true;
     try {
       const latest = (await storage.getAllPlaylists()).find(playlist => playlist.id === collection.id);
@@ -368,27 +398,36 @@ function createAutoDownloadPill(collection) {
       button.updateProgress();
       if (latest.autoDownload && !verificationMode) runAutoDownloads();
     } finally {
-      button.disabled = false;
+      button.disabled = !state.webDownloadsEnabled;
     }
   }, 'pill-btn playlist-auto-download');
   button.append(Object.assign(document.createElement('i'), { className: 'auto-download-switch' }));
   const label = button.querySelector('span');
   let phase = '';
   button.updateProgress = () => {
-    const batch = collection.autoDownload ? autoDownloadBatches.get(collection.id) : null;
+    const enabled = Boolean(state.webDownloadsEnabled);
+    const batch = enabled && collection.autoDownload ? autoDownloadBatches.get(collection.id) : null;
     const next = batch?.phase || '';
     const progress = batch && downloadJobs.get(batch.activeId)?.progress || 0;
     button.style.setProperty('--batch-progress', batch ? (batch.done + progress / 100) * 100 / batch.total + '%' : '0%');
     button.dataset.phase = next;
+    button.disabled = !enabled;
+    button.setAttribute('aria-disabled', String(!enabled));
     button.setAttribute('aria-pressed', String(!!collection.autoDownload));
     label.textContent = next === 'running' ? 'Auto-descarga ' + batch.done + '/' + batch.total : 'Auto-descarga';
-    button.title = next === 'failed' ? 'Algunas canciones quedaron pendientes' : label.textContent;
+    button.title = !enabled ? 'Auto-descarga disponible en Android y Windows'
+      : next === 'failed' ? 'Algunas canciones quedaron pendientes' : label.textContent;
     if (phase === 'running' && next === 'complete') {
       button.classList.add('download-success');
       setTimeout(() => button.classList.remove('download-success'), 950);
     }
     phase = next;
   };
+  const onAvailability = () => {
+    if (!button.isConnected) { document.removeEventListener('musicbox-downloads-availability', onAvailability); return; }
+    button.updateProgress();
+  };
+  document.addEventListener('musicbox-downloads-availability', onAvailability);
   button.updateProgress();
   return button;
 }
@@ -443,6 +482,7 @@ function createPlaylistSuggestions(collection, onAdded) {
             if (latest.autoDownload && !verificationMode) runAutoDownloads();
           }
           collection.tracks = latest.tracks;
+          collection.entryAddedAt = latest.entryAddedAt;
           rows = rows.filter(item => item.id !== track.id);
           onAdded();
           paint();
@@ -516,6 +556,7 @@ function createPlaylistSuggestions(collection, onAdded) {
 }
 
 loadPlaylistView = async function(collection) {
+  currentLibraryTracks = [];
   resumeCollection=collection;
   saveCollectionPosition();activePlaylist=collection;rememberedCollection=collection;libraryFilter=collection.kind==='folder'?'folders':'playlists';
   state.activeView='library';updateActiveNavButton('library');
@@ -537,7 +578,7 @@ loadPlaylistView = async function(collection) {
   }));actions.append(refresh);
   if(!collection.kind&&!collection.favorite)actions.append(actionButton('Opciones de playlist','more',event=>collectionMenu(event,collection)));
   const toolbar=main.querySelector('.library-toolbar');
-  actions.append(actionButton('Aleatorio','shuffle',()=>{if(!collection.tracks.length)return;playbackSource=collection;state.queue=[...collection.tracks];state.queueIndex=Math.floor(Math.random()*state.queue.length);playTrack(state.queue[state.queueIndex],true);}));
+  actions.append(actionButton('Aleatorio','shuffle',()=>{if(!currentLibraryTracks.length)return;playbackSource=collection;state.queue=[...currentLibraryTracks];state.queueIndex=Math.floor(Math.random()*state.queue.length);playTrack(state.queue[state.queueIndex],true);}));
   const artist=document.createElement('select');artist.className='artist-filter';artist.setAttribute('aria-label','Filtrar por artista');artist.add(new Option('Artistas',''));
   [...new Set(collection.tracks.map(row=>row.artist||row.channel).filter(Boolean))].sort().forEach(name=>artist.add(new Option(name,name)));toolbar.append(artist);
   const sort=document.createElement('select');sort.className='collection-sort';sort.setAttribute('aria-label','Ordenar');
@@ -555,11 +596,9 @@ loadPlaylistView = async function(collection) {
     const query=main.querySelector('input').value.toLocaleLowerCase();const list=main.querySelector('#library-content-list');list.replaceChildren();
     suggestions?.show(!query && !artist.value && collection.tracks.some(track => /^[A-Za-z0-9_-]{11}$/.test(track.id)));
     const tracks=collection.tracks.filter(track=>(!artist.value||(track.artist||track.channel)===artist.value)&&`${track.title} ${track.artist}`.toLocaleLowerCase().includes(query));
-    if(['title','artist'].includes(sort.value))tracks.sort((a,b)=>String(a[sort.value]||'').localeCompare(String(b[sort.value]||'')));
-    if(sort.value==='duration')tracks.sort((a,b)=>(a.duration||0)-(b.duration||0));
-    if(sort.value==='recent')tracks.sort((a,b)=>(collection.entryAddedAt?.['youtube:'+b.id]||collection.tracks.indexOf(b)+1)-(collection.entryAddedAt?.['youtube:'+a.id]||collection.tracks.indexOf(a)+1)||(a.id<b.id?-1:a.id>b.id?1:0));
-    if(sort.value==='plays'){const plays=new Map(webStatsRows().map(row=>[row.id,row.plays]));tracks.sort((a,b)=>(plays.get(b.id)||0)-(plays.get(a.id)||0));}
-    if((localStorage.getItem('musicbox_library_sort')||'default:1').endsWith(':0'))tracks.reverse();
+    const dates = new Map(collection.tracks.map((row,index)=>[row.id,collection.entryAddedAt?.[MusicBoxCore.entryKey(row.id)] || index + 1]));
+    const plays = sort.value === 'plays' ? new Map(webStatsRows().map(row=>[row.id,row.plays])) : undefined;
+    MusicBoxCore.sortTracks(tracks,sort.value,(localStorage.getItem('musicbox_library_sort')||'default:1').endsWith(':0'),dates,plays);
     currentLibraryTracks=tracks;
     renderTrackList(list,tracks,track=>{
       const isPlaylist = !collection.kind && !collection.favorite;

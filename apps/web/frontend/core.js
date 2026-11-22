@@ -35,11 +35,43 @@
   function track(entry, online = {}) {
     if (object(entry)) return { ...entry, artist: entry.artist || entry.channel || entry.subtitle || '' };
     if (typeof entry !== 'string') return null;
-    const id = entry.startsWith('youtube:') ? entry.slice(8) : (online[entry] ? entry : '');
+    const id = entry.startsWith('youtube:') ? entry.slice(8) : (online[entry] || online['youtube:' + entry] ? entry : '');
     if (!id) return null; // A Windows path cannot be played by a browser.
     const meta = online[id] || online['youtube:' + id] || {};
-    return { ...meta, id, title: meta.title || id, artist: meta.artist || meta.channel || meta.subtitle || '',
+    const artist = (meta.artist || meta.channel || meta.subtitle || 'YouTube').split(' · ', 1)[0].trim();
+    return { ...meta, id, title: meta.title || id, artist,
       thumbnail: meta.thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg` };
+  }
+  const entryKey = id => id.startsWith('local:') ? id : 'youtube:' + id;
+  const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+  function playlistView(entries, online = {}, dates = {}) {
+    const tracks = new Map(), unavailableEntries = [], entryAddedAt = {};
+    entries.forEach((entry, index) => {
+      const item = track(entry, online);
+      const key = item?.id ? entryKey(item.id) : entry;
+      const at = Number(dates?.[entry]) || index + 1;
+      entryAddedAt[key] = Math.min(entryAddedAt[key] || at, at);
+      if (item?.id) {
+        if (!tracks.has(item.id)) tracks.set(item.id, item);
+      } else unavailableEntries.push(entry);
+    });
+    return {tracks: [...tracks.values()], unavailableEntries, entryAddedAt};
+  }
+
+  function sortTracks(tracks, mode, descending, dates = new Map(), plays = new Map()) {
+    const text = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/\p{M}+/gu, '');
+    const number = (values, id) => values.get(id) || 0;
+    if (mode !== 'default') tracks.sort((a, b) => {
+      const byTitle = () => compare(text(a.title), text(b.title));
+      let result;
+      if (mode === 'recent') result = number(dates, b.id) - number(dates, a.id);
+      else if (mode === 'artist') result = compare(text(a.artist || a.channel), text(b.artist || b.channel)) || byTitle();
+      else if (mode === 'duration') result = (a.duration || 0) - (b.duration || 0) || byTitle();
+      else if (mode === 'plays') result = number(plays, b.id) - number(plays, a.id) || byTitle();
+      else result = byTitle();
+      return result || compare(entryKey(a.id), entryKey(b.id));
+    });
+    return descending ? tracks.reverse() : tracks;
   }
   function section(playlists, favorites, base = {}) {
     const result = clone(base);
@@ -140,7 +172,7 @@
       return {millis,qualified};
     }
   }
-  const api = { merge, track, section, escape, mergeStats, mergeActivity, ListeningClock };
+  const api = { merge, track, entryKey, playlistView, sortTracks, section, escape, mergeStats, mergeActivity, ListeningClock };
   root.MusicBoxCore = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window);

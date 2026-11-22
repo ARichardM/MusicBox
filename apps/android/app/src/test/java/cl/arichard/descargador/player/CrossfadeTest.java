@@ -1,12 +1,14 @@
 package cl.arichard.descargador.player;
 
 import android.app.Application;
-import android.media.MediaPlayer;
+import android.media.AudioDeviceInfo;
+import android.view.SurfaceHolder;
 import cl.arichard.descargador.model.Song;
 import java.io.File;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Map;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -17,13 +19,22 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk=28, application=Application.class)
 public class CrossfadeTest {
-    private static class Audio extends MediaPlayer {
+    private static class Audio implements PlaybackEngine {
         boolean released;
         float volume=1;
+        @Override public void prepare(String source, Map<String, String> headers, boolean videoMode, boolean allowOffload, SurfaceHolder display, Callback callback) {}
+        @Override public void play() {}
+        @Override public void pause() {}
+        @Override public void seekTo(int positionMs) {}
         @Override public boolean isPlaying() { return true; }
-        @Override public int getDuration() { return 60000; }
         @Override public int getCurrentPosition() { return 57000; }
-        @Override public void setVolume(float left,float right) { volume=left; }
+        @Override public int getDuration() { return 60000; }
+        @Override public int getVideoWidth() { return 0; }
+        @Override public int getVideoHeight() { return 0; }
+        @Override public void setVolume(float volume) { this.volume=volume; }
+        @Override public void setDisplay(SurfaceHolder holder) {}
+        @Override public AudioDeviceInfo getRoutedDevice() { return null; }
+        @Override public boolean isSleepingForOffload() { return false; }
         @Override public void release() { released=true; }
     }
     private static class Player extends PlayerManager {
@@ -45,7 +56,7 @@ public class CrossfadeTest {
         try {
             set(player,"queue",new ArrayList<>(Arrays.asList(first,next)));
             set(player,"currentSong",first);set(player,"currentIndex",0);
-            set(player,"repeatMode",PlayerManager.REPEAT_OFF);set(player,"mediaPlayer",old);set(player,"prepared",true);
+            set(player,"repeatMode",PlayerManager.REPEAT_OFF);set(player,"activePlayer",old);set(player,"prepared",true);
             var maybe=PlayerManager.class.getDeclaredMethod("maybeCrossfade");maybe.setAccessible(true);
             assertEquals(true,maybe.invoke(player));
             assertSame(next,player.getCurrentSong());assertEquals(1,player.starts);

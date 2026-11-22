@@ -6,6 +6,7 @@ import androidx.media3.common.Player;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.C;
 import android.net.Uri;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.LruCache;
@@ -16,11 +17,16 @@ import android.widget.FrameLayout;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -28,10 +34,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import cl.arichard.descargador.model.Song;
+import cl.arichard.descargador.data.PlaylistManager;
 import cl.arichard.descargador.util.Tr;
 
 @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
-final class AnimatedArtwork {
+public final class AnimatedArtwork {
+    public static final String DOWNLOAD_PREFERENCE = "download_animated_artwork";
+    private static final long MAX_DOWNLOAD_BYTES = 8L * 1024 * 1024;
+    private static final long MAX_CACHE_BYTES = 64L * 1024 * 1024;
     private static final ExecutorService LOOKUPS = Executors.newSingleThreadExecutor();
     private static final LruCache<String, String> CACHE = new LruCache<>(256);
     private static final Pattern BANDWIDTH = Pattern.compile("[:,]BANDWIDTH=(\\d+)");
@@ -65,12 +75,55 @@ final class AnimatedArtwork {
     }
 
     void show(Song song) {
-        android.util.Log.d("MusicBoxArtwork", "Artwork requested");
+        String request = artworkRequest(song);
+        if (request.isEmpty()) {
+            clear();
+            return;
+        }
+        if (request.equals(key)) return;
+        clear();
+        key = request;
+        Context context = view.getContext().getApplicationContext();
+        boolean store = !song.isOnline() && new File(song.getPath()).isFile() && downloadsEnabled(context);
+        pending = () -> lookup = LOOKUPS.submit(() -> {
+            try {
+                String source = findArtwork(context, song, request, store);
+                main.post(() -> {
+                    if (!request.equals(key) || source.isEmpty()) return;
+                    stream = source;
+                    view.setVisibility(View.VISIBLE);
+                    startIfReady();
+                });
+            } catch (Exception error) {
+                android.util.Log.d("MusicBoxArtwork", "Animation unavailable: " + error.getClass().getSimpleName());
+            }
+        });
+        main.postDelayed(pending, 120);
+    }
+
+    public static boolean downloadsEnabled(Context context) {
+        return context.getSharedPreferences("player", Context.MODE_PRIVATE).getBoolean(DOWNLOAD_PREFERENCE, false);
+    }
+
+    public static void downloadForSavedSong(Context context, Song song) {
+        if (!downloadsEnabled(context)) return;
+        String request = artworkRequest(song);
+        if (request.isEmpty()) return;
+        Context app = context.getApplicationContext();
+        LOOKUPS.execute(() -> {
+            if (!downloadsEnabled(app) || !new File(song.getPath()).isFile()) return;
+            try { findArtwork(app, song, request, true); }
+            catch (Exception error) {
+                android.util.Log.d("MusicBoxArtwork", "Artwork download unavailable: " + error.getClass().getSimpleName());
+            }
+        });
+    }
+
+    private static String artworkRequest(Song song) {
         if (song == null || song.getTitle() == null || song.getTitle().trim().isEmpty()
                 || song.getArtist() == null || song.getArtist().trim().isEmpty()
                 || song.getArtist().equals(Tr.t("Artista desconocido"))) {
-            clear();
-            return;
+            return "";
         }
         Uri.Builder uri = Uri.parse("https://artwork.boidu.dev/").buildUpon()
                 .appendQueryParameter("s", song.getTitle())
@@ -82,32 +135,71 @@ final class AnimatedArtwork {
         }
         long seconds = Math.round(song.getDuration() / 1000.0);
         if (seconds > 0) uri.appendQueryParameter("d", Long.toString(seconds));
-        String request = uri.build().toString();
-        if (request.equals(key)) return;
-        clear();
-        key = request;
-        pending = () -> lookup = LOOKUPS.submit(() -> {
-            String cacheKey = request + "|" + (android.os.SystemClock.elapsedRealtime() / 3600000L);
-            String result = CACHE.get(cacheKey);
-            if (result == null) {
-                try {
-                    result = resolve(request);
-                    CACHE.put(cacheKey, result);
-                } catch (Exception ignored) {
-                    android.util.Log.w("MusicBoxArtwork", "Lookup unavailable: " + ignored.getClass().getSimpleName());
-                    return;
+        return uri.build().toString();
+    }
+
+    private static String findArtwork(Context context, Song song, String request, boolean store) throws Exception {
+        String id = song.isOnline() ? song.getVideoId() : PlaylistManager.getInstance(context).videoIdFor(song.getPath());
+        String identity = id == null ? "file:" + song.getPath() : "youtube:" + id;
+        File folder = new File(context.getFilesDir(), "animated-artwork");
+        File saved = new File(folder, UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)) + ".mp4");
+        if (saved.isFile()) {
+            saved.setLastModified(System.currentTimeMillis());
+            return Uri.fromFile(saved).toString();
+        }
+        String key = request + "|" + (android.os.SystemClock.elapsedRealtime() / 3600000L);
+        String source = CACHE.get(key);
+        if (source == null) {
+            source = resolve(request);
+            CACHE.put(key, source);
+        }
+        if (store && !source.isEmpty() && downloadsEnabled(context) && (folder.isDirectory() || folder.mkdirs())) {
+            try {
+                if (saveVideo(context, source, saved)) return Uri.fromFile(saved).toString();
+            } catch (IOException error) {
+                android.util.Log.d("MusicBoxArtwork", "Could not save artwork: " + error.getClass().getSimpleName());
+            }
+        }
+        return source;
+    }
+
+    private static boolean saveVideo(Context context, String source, File saved) throws IOException {
+        File partial = new File(saved.getParentFile(), saved.getName() + ".part");
+        HttpURLConnection connection = open(new URL(source));
+        try {
+            long contentLength = connection.getContentLengthLong();
+            if (contentLength > MAX_DOWNLOAD_BYTES) return false;
+            long total = 0;
+            try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(partial)) {
+                byte[] buffer = new byte[16384];
+                for (int count; (count = input.read(buffer)) != -1; ) {
+                    total += count;
+                    if (total > MAX_DOWNLOAD_BYTES || Thread.currentThread().isInterrupted() || !downloadsEnabled(context))
+                        return false;
+                    output.write(buffer, 0, count);
                 }
             }
-            String url = result;
-            android.util.Log.d("MusicBoxArtwork", "Lookup animation present: " + !url.isEmpty());
-            main.post(() -> {
-                if (!request.equals(key) || url.isEmpty()) return;
-                stream = url;
-                view.setVisibility(View.VISIBLE);
-                startIfReady();
-            });
-        });
-        main.postDelayed(pending, 120);
+            if (total == 0 || (contentLength > 0 && total != contentLength) || !partial.renameTo(saved)) return false;
+            trim(saved.getParentFile(), saved);
+            return true;
+        } finally {
+            connection.disconnect();
+            partial.delete();
+        }
+    }
+
+    private static void trim(File folder, File recent) {
+        File[] files = folder.listFiles((dir, name) -> name.endsWith(".mp4") || name.endsWith(".part"));
+        if (files == null) return;
+        long total = 0;
+        for (File file : files) total += file.length();
+        if (total <= MAX_CACHE_BYTES) return;
+        Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+        for (File file : files) {
+            if (total <= MAX_CACHE_BYTES) break;
+            long size = file.length();
+            if (!file.equals(recent) && file.delete()) total -= size;
+        }
     }
 
     void clear() {
@@ -199,21 +291,27 @@ final class AnimatedArtwork {
     }
 
     private static String read(URL url) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setConnectTimeout(4000);
-        connection.setReadTimeout(4000);
+        HttpURLConnection connection = open(url);
         try (InputStream input = connection.getInputStream()) {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             byte[] buffer = new byte[4096];
             int count;
             while ((count = input.read(buffer)) != -1) {
                 output.write(buffer, 0, count);
-                if (output.size() > 65536) throw new IOException("Artwork response too large");
+                if (output.size() > 65536 || Thread.currentThread().isInterrupted())
+                    throw new IOException("Artwork lookup interrupted or too large");
             }
             return new String(output.toByteArray(), StandardCharsets.UTF_8);
         } finally {
             connection.disconnect();
         }
+    }
+
+    private static HttpURLConnection open(URL url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setConnectTimeout(4000);
+        connection.setReadTimeout(4000);
+        return connection;
     }
 
 }

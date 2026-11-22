@@ -197,6 +197,21 @@ public class PlayerManagerTest {
         assertEquals(a.getPath(), restored.getQueue().get(1).getPath());
         assertFalse(restored.isPlaying()); assertEquals(4200, restored.getCurrentPosition());
     }
+
+    @Test public void restoringDeduplicatesLocalAndOnlineCopiesAndKeepsTheCurrentTrack() {
+        cl.arichard.descargador.data.PlaylistManager.getInstance(context).linkLocalFile(b.getPath(), "japanese001");
+        Song alias = new Song(0, "好敵手", "Yuki", "YouTube", 0, "youtube:japanese001", "YouTube", 0);
+        Song other = new Song(0, "好敵手", "Yuki", "YouTube", 0, "youtube:japanese002", "YouTube", 0);
+        JSONArray queue = new JSONArray().put(a.toJson()).put(b.toJson()).put(alias.toJson())
+                .put(other.toJson()).put(b.toJson());
+        context.getSharedPreferences("player", 0).edit().putString("queue", queue.toString()).commit();
+        PlayerManager restored = new PlayerManager();
+        restored.init(context);
+        assertEquals(3, restored.getQueue().size());
+        assertEquals(other.getPath(), restored.getQueue().get(2).getPath());
+        assertEquals(b.getPath(), restored.getCurrentSong().getPath());
+        assertEquals(4200, restored.getCurrentPosition());
+    }
     @Test public void automaticAdvanceCountsTowardsCollectionCollages() {
         cl.arichard.descargador.data.ClickStats.getInstance(context).resetForAccount();
         // The fixture songs normally last 20 seconds. Give the automatically

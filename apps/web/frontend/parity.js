@@ -48,7 +48,11 @@ loadHistoryView = async function(mode='downloads') {
     const row=document.createElement('div');row.className='row-item';
     const status={done:'Completada',failed:'Error',cancelled:'Cancelada'}[entry.status] || entry.status;
     row.innerHTML=`<div class="row-details"><div class="row-title">${escapeHTML(entry.track.title)}</div><div class="row-subtitle">${escapeHTML(`${entry.format?.toUpperCase()} · ${entry.quality} · ${status}`)}</div><small>${escapeHTML(new Date(entry.at).toLocaleString())}</small></div>`;
-    if(entry.status!=='done')row.append(actionButton('Reintentar descarga','retry',()=>downloadTrackForOffline(entry.track)));
+    if(entry.status!=='done'){
+      const retry=actionButton('Reintentar descarga','retry',()=>downloadTrackForOffline(entry.track));
+      if(!state.webDownloadsEnabled){retry.disabled=true;retry.title=WEB_DOWNLOADS_DISABLED_MSG;}
+      row.append(retry);
+    }
     list.append(row);
   }
   if(!entries.length)list.textContent='Todavía no hay descargas en este navegador.';
@@ -171,10 +175,11 @@ renderQueue = function () {
 async function playlistSettings(playlist) {
   const form = document.createElement('form');
   form.className = 'modal-body playlist-form';
+  const downloadsEnabled = Boolean(state.webDownloadsEnabled);
   form.innerHTML = `<label>Nombre<input name="name" class="modal-input" required maxlength="80" value="${escapeHTML(playlist.name)}"></label>
     <label>Descripción<textarea name="description" class="modal-input" maxlength="500">${escapeHTML(playlist.description || '')}</textarea></label>
     <label class="check-row">Fijar en Inicio <input name="pinned" type="checkbox" role="switch" ${playlist.pinned ? 'checked' : ''}></label>
-    <label class="check-row">Descargar canciones nuevas <input name="autoDownload" type="checkbox" role="switch" ${playlist.autoDownload ? 'checked' : ''}></label>
+    <label class="check-row"><span>Descargar canciones nuevas${downloadsEnabled ? '' : ' <small style="color:var(--text-muted)">(Solo Android y Windows)</small>'}</span> <input name="autoDownload" type="checkbox" role="switch" ${playlist.autoDownload ? 'checked' : ''} ${downloadsEnabled ? '' : 'disabled'}></label>
     <p class="setting-desc">Las canciones locales de otro dispositivo se conservan y se reproducen desde ese dispositivo.</p>
     <div class="modal-actions"><button type="button" class="pill-btn-danger" id="delete-playlist">Eliminar playlist</button><button class="pill-btn-accent" type="submit">Guardar</button></div>`;
   const dialog = openDialog('Configurar playlist', form);
@@ -188,11 +193,11 @@ async function playlistSettings(playlist) {
     playlist.name = name;
     playlist.description = form.elements.description.value.trim();
     playlist.pinned = form.elements.pinned.checked;
-    playlist.autoDownload = form.elements.autoDownload.checked;
+    if (downloadsEnabled) playlist.autoDownload = form.elements.autoDownload.checked;
     await storage.savePlaylist(playlist);
     dialog.close();
     loadPlaylistView(playlist);
-    if (playlist.autoDownload) runAutoDownloads();
+    if (downloadsEnabled && playlist.autoDownload) runAutoDownloads();
   };
   form.querySelector('#delete-playlist').onclick = async () => {
     if (!await confirmAction('Eliminar playlist', `¿Eliminar «${playlist.name}»? Las canciones descargadas se conservan.`)) return;
@@ -713,7 +718,7 @@ let reconcileInFlight=null;
 // Si ya hay una pasada en curso se pide otra y se devuelve la misma promesa: quien espera obtiene el resultado completo,
 // no un retorno inmediato mientras la descarga todavía no empezó.
 function runAutoDownloads() {
-  if (!navigator.onLine) return Promise.resolve();
+  if (!navigator.onLine || !state.webDownloadsEnabled) return Promise.resolve();
   if (reconcilingDownloads) {
     reconcileDownloadsAgain=true;
     return reconcileInFlight;

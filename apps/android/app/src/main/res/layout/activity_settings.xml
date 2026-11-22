@@ -21,7 +21,8 @@
             android:padding="18dp" android:background="@drawable/bg_settings_card">
             <FrameLayout android:layout_width="54dp" android:layout_height="54dp">
             <ImageView android:id="@+id/imgSettingsAvatar" android:layout_width="54dp" android:layout_height="54dp"
-                android:scaleType="centerCrop" android:background="@drawable/bg_avatar" android:visibility="gone"/>
+                android:scaleType="centerCrop" android:background="@drawable/bg_avatar"
+                android:clipToOutline="true" android:visibility="gone"/>
             <TextView android:id="@+id/txtSettingsAvatar" android:layout_width="54dp" android:layout_height="54dp"
                 android:gravity="center" android:background="@drawable/bg_avatar" android:textColor="#FFFFFF"
                 android:textSize="22sp" android:textStyle="bold"/>

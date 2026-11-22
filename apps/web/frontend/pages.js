@@ -43,7 +43,15 @@
     'Reproduce una canción para ver su letra': 'Play a song to see its lyrics', 'Reproducir a continuación': 'Play next',
     'Selecciona una canción para escuchar': 'Select a song to listen to', 'TUS CANCIONES MÁS ESCUCHADAS': 'YOUR MOST PLAYED SONGS',
     'Ver mis estadísticas ›': 'View my statistics ›', 'Ver página de presentación (Landing)': 'View the landing page', 'Verificando en servidor...': 'Checking on the server...',
-    'playlists': 'playlists', 'carpetas': 'folders', 'Más escuchadas': 'Most played', 'Título A–Z': 'Title A–Z', 'Artista A–Z': 'Artist A–Z'
+    'playlists': 'playlists', 'carpetas': 'folders', 'Más escuchadas': 'Most played', 'Título A–Z': 'Title A–Z', 'Artista A–Z': 'Artist A–Z',
+    'Solo app': 'App only', 'NO DISPONIBLE': 'UNAVAILABLE', 'No disponible en web': 'Unavailable on web',
+    'Descargas desde YouTube no disponibles en la web': 'YouTube downloads are unavailable on the web',
+    'El navegador no puede descargar audio ni video desde YouTube. Usa MusicBox en Android o Windows para descargar canciones, o importa archivos locales aquí.': 'The browser cannot download audio or video from YouTube. Use MusicBox on Android or Windows to download songs, or import local files here.',
+    'Descargas bloqueadas en la web': 'Downloads disabled on web',
+    'Usa MusicBox en Android o Windows para descargar. Puedes importar archivos o carpetas locales arriba.': 'Use MusicBox on Android or Windows to download. You can import local files or folders above.',
+    'Auto-descarga disponible en Android y Windows': 'Auto-download available on Android and Windows',
+    'Las descargas no están disponibles en la web. Usa MusicBox en Android o Windows.': 'Downloads are not available on the web. Use MusicBox on Android or Windows.',
+    '(Solo Android y Windows)': '(Android & Windows only)'
   });
   const language = () => (state.language === 'auto' ? navigator.language.slice(0, 2) : state.language);
   const T = (text) => (language() === 'en' ? (MUSICBOX_EN[text] || text) : text);
@@ -183,6 +191,7 @@
   }
 
   async function startDownloads() {
+    if (!state.webDownloadsEnabled) { showToast(WEB_DOWNLOADS_DISABLED_MSG, { kind: 'info' }); return; }
     const links = parseLinks(downloadsState.links);
     if (!links.length) { showToast('Pega al menos un enlace de YouTube.'); return; }
     log(`Se prepararon ${links.length} enlace(s).`);
@@ -219,6 +228,7 @@
   function fillStatus(target) {
     const { running, done, failed } = jobSummary();
     const total = running.length;
+    const enabled = Boolean(state.webDownloadsEnabled);
     let badge = 'EN ESPERA', title = 'Listo para descargar', detail = 'Pega uno o más enlaces y pulsa Descargar.', percent = 0, tone = 'idle';
     if (total) {
       badge = 'DESCARGANDO'; tone = 'busy';
@@ -226,6 +236,9 @@
       percent = known.length ? Math.round(known.reduce((sum, job) => sum + job.progress, 0) / known.length) : 0;
       title = total === 1 ? running[0].track.title : `${total} descargas en curso`;
       detail = running.map((job) => job.track.title).slice(0, 2).join(' · ');
+    } else if (!enabled) {
+      badge = 'NO DISPONIBLE'; tone = 'disabled'; percent = 0; title = 'Descargas bloqueadas en la web';
+      detail = 'Usa MusicBox en Android o Windows para descargar. Puedes importar archivos o carpetas locales arriba.';
     } else if (done || failed) {
       badge = 'COMPLETADA'; tone = 'done'; percent = 100; title = '¡Descargas terminadas!';
       detail = 'Abre un archivo con un clic o consulta la lista de archivos guardados.';
@@ -244,6 +257,8 @@
     const main = document.getElementById('main-content');
     const tracks = await storage.getAllOfflineTracks();
     if (state.activeView !== "downloads") return;
+    const enabled = Boolean(state.webDownloadsEnabled);
+    const disabledAttr = enabled ? '' : 'disabled';
     const totalBytes = tracks.reduce((sum, track) => sum + (track.sizeBytes || 0), 0);
     main.innerHTML = `
       <div class="dl-header">
@@ -254,33 +269,40 @@
           <span class="dl-format-badge">MP3 / MP4</span>
         </div>
       </div>
+      ${enabled ? '' : `<section class="dl-unavailable-notice" role="status">
+        <div class="dl-unavailable-icon"><img src="icons/info.svg" alt=""></div>
+        <div class="dl-unavailable-copy">
+          <strong>Descargas desde YouTube no disponibles en la web</strong>
+          <p>El navegador no puede descargar audio ni video desde YouTube. Usa MusicBox en Android o Windows para descargar canciones, o importa archivos locales aquí.</p>
+        </div>
+      </section>`}
       <div class="dl-search"><img src="icons/search.svg" alt=""><input id="dl-search-input" type="search" placeholder="Buscar videos por título o artista"><button class="pill-btn-accent" id="dl-search-btn" type="button">Buscar con portadas</button></div>
       <div class="dl-grid">
         <div class="dl-left">
-          <section class="dl-card"><div class="dl-card-head"><span class="dl-step">01</span><span class="dl-step-title">TUS ENLACES</span>
-            <span class="dl-card-actions"><button class="link-btn" id="dl-clear" type="button">Limpiar</button><button class="link-btn accent" id="dl-paste" type="button"><img src="icons/paste.svg" alt=""><span>Pegar enlaces</span></button></span></div>
-            <textarea id="dl-links" rows="4" placeholder="Pega aquí tus enlaces de YouTube…" spellcheck="false">${escapeHTML(downloadsState.links)}</textarea>
+          <section class="dl-card${enabled ? '' : ' dl-blocked'}"><div class="dl-card-head"><span class="dl-step">01</span><span class="dl-step-title">TUS ENLACES</span>
+            <span class="dl-card-actions"><button class="link-btn" id="dl-clear" type="button" ${disabledAttr}>Limpiar</button><button class="link-btn accent" id="dl-paste" type="button" ${disabledAttr}><img src="icons/paste.svg" alt=""><span>Pegar enlaces</span></button></span></div>
+            <textarea id="dl-links" rows="4" placeholder="Pega aquí tus enlaces de YouTube…" spellcheck="false" ${disabledAttr}>${escapeHTML(downloadsState.links)}</textarea>
             <div class="dl-card-foot"><span id="dl-link-count"></span><span>Un enlace por línea</span></div></section>
           <section class="dl-card dl-status" id="dl-status"></section>
           <section class="dl-card dl-results"><div class="dl-tabs" role="tablist">
             ${[['files', `${T('Archivos')} (${tracks.length})`], ['history', 'Historial'], ['log', 'Registro'], ['report', 'Informe de canciones']].map(([key, label]) => `<button role="tab" class="dl-tab${downloadsState.tab === key ? ' active' : ''}" data-tab="${key}" type="button">${label}</button>`).join('')}
           </div><div class="dl-tab-body" id="dl-tab-body"></div></section>
         </div>
-        <aside class="dl-panel"><div class="dl-panel-title">CONFIGURA TU DESCARGA</div>
+        <aside class="dl-panel${enabled ? '' : ' dl-blocked'}"><div class="dl-panel-title">CONFIGURA TU DESCARGA</div>
           <h2>¿Qué quieres guardar?</h2>
           <div class="dl-formats">
-            <button class="dl-format${state.downloadFormat === 'mp3' ? ' active' : ''}" data-format="mp3" type="button"><img src="icons/music.svg" alt=""><strong>MP3</strong><small>Solo audio</small></button>
-            <button class="dl-format${state.downloadFormat === 'mp4' ? ' active' : ''}" data-format="mp4" type="button"><img src="icons/video.svg" alt=""><strong>MP4</strong><small>Video + audio</small></button>
+            <button class="dl-format${state.downloadFormat === 'mp3' ? ' active' : ''}" data-format="mp3" type="button" ${disabledAttr}><img src="icons/music.svg" alt=""><strong>MP3</strong><small>Solo audio</small></button>
+            <button class="dl-format${state.downloadFormat === 'mp4' ? ' active' : ''}" data-format="mp4" type="button" ${disabledAttr}><img src="icons/video.svg" alt=""><strong>MP4</strong><small>Video + audio</small></button>
           </div>
-          <label class="dl-label" for="dl-quality">Calidad</label><select id="dl-quality"></select><small class="dl-hint">Incluye portada y metadatos disponibles.</small>
+          <label class="dl-label" for="dl-quality">Calidad</label><select id="dl-quality" ${disabledAttr}></select><small class="dl-hint">Incluye portada y metadatos disponibles.</small>
           <div id="dl-artwork-preferences"></div>
           <div class="dl-label">Cantidad</div>
-          <label class="dl-radio${downloadsState.mode === 'single' ? ' active' : ''}"><input type="radio" name="dl-mode" value="single" ${downloadsState.mode === 'single' ? 'checked' : ''}><span>Un video por enlace</span></label>
-          <label class="dl-radio${downloadsState.mode === 'playlist' ? ' active' : ''}"><input type="radio" name="dl-mode" value="playlist" ${downloadsState.mode === 'playlist' ? 'checked' : ''}><span>Lista completa o un rango</span></label>
-          <input id="dl-range" class="dl-range" type="text" placeholder="Rango, p. ej. 1-5" value="${escapeHTML(downloadsState.range)}" ${downloadsState.mode === 'playlist' ? '' : 'hidden'}>
+          <label class="dl-radio${downloadsState.mode === 'single' ? ' active' : ''}${enabled ? '' : ' disabled'}"><input type="radio" name="dl-mode" value="single" ${downloadsState.mode === 'single' ? 'checked' : ''} ${disabledAttr}><span>Un video por enlace</span></label>
+          <label class="dl-radio${downloadsState.mode === 'playlist' ? ' active' : ''}${enabled ? '' : ' disabled'}"><input type="radio" name="dl-mode" value="playlist" ${downloadsState.mode === 'playlist' ? 'checked' : ''} ${disabledAttr}><span>Lista completa o un rango</span></label>
+          <input id="dl-range" class="dl-range" type="text" placeholder="Rango, p. ej. 1-5" value="${escapeHTML(downloadsState.range)}" ${downloadsState.mode === 'playlist' ? '' : 'hidden'} ${disabledAttr}>
           <div class="dl-destination"><span>Destino</span><strong>Este navegador (sin conexión)</strong></div>
           <small class="dl-hint">${tracks.length} ${T('canciones guardadas')} · ${(totalBytes / 1048576).toFixed(1)} MB</small>
-          <button class="dl-start" id="dl-start" type="button"><img src="icons/download.svg" alt=""><span>Descargar</span></button>
+          <button class="dl-start" id="dl-start" type="button" ${disabledAttr} title="${escapeHTML(enabled ? 'Descargar' : WEB_DOWNLOADS_DISABLED_MSG)}"><img src="icons/download.svg" alt=""><span>${enabled ? 'Descargar' : 'No disponible en web'}</span></button>
         </aside>
       </div>`;
     const q = (selector) => main.querySelector(selector);
@@ -296,10 +318,12 @@
     const remember = () => { localStorage.setItem('musicbox_download_format', state.downloadFormat); localStorage.setItem('musicbox_download_quality', state.downloadQuality); };
     quality.onchange = () => { state.downloadQuality = Number(quality.value); remember(); };
     main.querySelectorAll('.dl-format').forEach((button) => button.onclick = () => {
+      if (!state.webDownloadsEnabled) return;
       state.downloadFormat = button.dataset.format; remember();
       main.querySelectorAll('.dl-format').forEach((b) => b.classList.toggle('active', b === button)); fillQuality();
     });
     main.querySelectorAll('input[name=dl-mode]').forEach((radio) => radio.onchange = () => {
+      if (!state.webDownloadsEnabled) return;
       downloadsState.mode = radio.value;
       main.querySelectorAll('.dl-radio').forEach((label) => label.classList.toggle('active', label.contains(radio) && radio.checked));
       q('#dl-range').hidden = downloadsState.mode !== 'playlist';
@@ -308,8 +332,8 @@
     const links = q('#dl-links');
     const count = () => { downloadsState.links = links.value; const n = parseLinks(links.value).length; q('#dl-link-count').textContent = n ? `${n} ${T(n === 1 ? 'enlace' : 'enlaces')}` : T('Aún no hay enlaces'); };
     links.oninput = count; count();
-    q('#dl-clear').onclick = () => { links.value = ''; count(); };
-    q('#dl-paste').onclick = async () => { try { links.value = ((links.value ? links.value + '\n' : '') + await navigator.clipboard.readText()).trim(); count(); } catch { showToast('No se pudo leer el portapapeles.'); } };
+    q('#dl-clear').onclick = () => { if (!state.webDownloadsEnabled) return; links.value = ''; count(); };
+    q('#dl-paste').onclick = async () => { if (!state.webDownloadsEnabled) return; try { links.value = ((links.value ? links.value + '\n' : '') + await navigator.clipboard.readText()).trim(); count(); } catch { showToast('No se pudo leer el portapapeles.'); } };
     q('#dl-start').onclick = startDownloads;
     q('#dl-import-songs').onclick = () => importLocalFiles();
     q('#dl-import-folder').onclick = () => importLocalFiles(true);
@@ -348,6 +372,9 @@
     main.querySelectorAll('.dl-tab').forEach((tab) => tab.onclick = () => { downloadsState.tab = tab.dataset.tab; showTab(); });
     showTab();
   };
+  document.addEventListener('musicbox-downloads-availability', () => {
+    if (state.activeView === 'downloads') loadDownloadsView();
+  });
 })();
 
 // El texto inicial del reproductor está en una zona que el traductor no toca (guarda nombres de artistas): se traduce aparte.

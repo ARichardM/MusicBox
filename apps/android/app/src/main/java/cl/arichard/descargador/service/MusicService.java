@@ -39,11 +39,23 @@ public class MusicService extends Service {
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_ARTIST = "extra_artist";
     public static final String EXTRA_IS_PLAYING = "extra_is_playing";
+    private static final String EXTRA_KEEP_FOREGROUND = "extra_keep_foreground";
+    private static final String EXTRA_STARTED_FOREGROUND = "extra_started_foreground";
+
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static volatile MusicService active;
 
     private MediaSessionCompat mediaSession;
+    private boolean inForeground;
+
+    public static boolean isInForeground() {
+        MusicService current = active;
+        return current != null && current.inForeground;
+    }
 
     @Override public void onCreate() {
         super.onCreate();
+        active = this;
         createNotificationChannel();
         initMediaSession();
     }
@@ -72,9 +84,40 @@ public class MusicService extends Service {
         mediaSession.setActive(true);
     }
 
+    private void enterForeground(Notification notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+        inForeground = true;
+    }
+
+    private void detachForeground(Notification notification) {
+        if (inForeground) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_DETACH);
+            } else {
+                stopForeground(false);
+            }
+            inForeground = false;
+        }
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm != null && notification != null) nm.notify(NOTIFICATION_ID, notification);
+    }
+
+    private void applyPausedState(String title, String artist) {
+        if (title == null) return;
+        PlayerManager pm = PlayerManager.getInstance();
+        if (pm.shouldKeepServiceForeground()) return;
+        Notification notification = buildNotification(title, artist != null ? artist : "MusicBox", false);
+        detachForeground(notification);
+    }
+
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null) {
             String action = intent.getAction();
+            boolean startedForeground = intent.getBooleanExtra(EXTRA_STARTED_FOREGROUND, false);
             PlayerManager pm = PlayerManager.getInstance();
 
             // Handle headset / Bluetooth hardware media buttons
@@ -94,32 +137,50 @@ public class MusicService extends Service {
             } else if (ACTION_STOP.equals(action)) {
                 pm.pause();
                 if (mediaSession != null) mediaSession.setActive(false);
+                if (startedForeground && !inForeground) {
+                    enterForeground(buildNotification("MusicBox", "", false));
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     stopForeground(STOP_FOREGROUND_REMOVE);
                 } else {
                     stopForeground(true);
                 }
+                inForeground = false;
                 stopSelf();
                 return START_NOT_STICKY;
             }
 
             String title = intent.getStringExtra(EXTRA_TITLE);
             String artist = intent.getStringExtra(EXTRA_ARTIST);
-            boolean isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, true);
+            boolean isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, pm.isPlaying());
+            boolean keepForeground = intent.getBooleanExtra(EXTRA_KEEP_FOREGROUND, pm.shouldKeepServiceForeground());
 
             if (title == null && pm.getCurrentSong() != null) {
                 title = pm.getCurrentSong().getTitle();
                 artist = pm.getCurrentSong().getArtist();
                 isPlaying = pm.isPlaying();
+                keepForeground = pm.shouldKeepServiceForeground();
+            } else if (ACTION_UPDATE.equals(action) && pm.getCurrentSong() != null && !pm.shouldKeepServiceForeground()) {
+                isPlaying = pm.isPlaying();
+                keepForeground = false;
             }
 
             if (title != null) {
                 Notification notification = buildNotification(title, artist != null ? artist : "MusicBox", isPlaying);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+                if (keepForeground) {
+                    enterForeground(notification);
                 } else {
-                    startForeground(NOTIFICATION_ID, notification);
+                    // Android O+ exige llamar a startForeground tras startForegroundService;
+                    // luego soltamos de inmediato para no retener el servicio en primer plano en pausa.
+                    if (startedForeground && !inForeground) enterForeground(notification);
+                    detachForeground(notification);
                 }
+            } else if (startedForeground && !inForeground) {
+                enterForeground(buildNotification("MusicBox", "", false));
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
+                else stopForeground(true);
+                inForeground = false;
+                stopSelf();
             }
         }
         return START_NOT_STICKY;
@@ -147,8 +208,13 @@ public class MusicService extends Service {
     }
 
     private PendingIntent controlIntent(int code, String action) {
-        return PendingIntent.getService(this, code, new Intent(this, MusicService.class).setAction(action),
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Intent intent = new Intent(this, MusicService.class).setAction(action);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent.putExtra(EXTRA_STARTED_FOREGROUND, true);
+            return PendingIntent.getForegroundService(this, code, intent, flags);
+        }
+        return PendingIntent.getService(this, code, intent, flags);
     }
 
     private void createNotificationChannel() {
@@ -229,21 +295,12 @@ public class MusicService extends Service {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        PendingIntent pPrev = PendingIntent.getService(
-            this, 1,
-            new Intent(this, MusicService.class).setAction(ACTION_PREV),
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-
-        PendingIntent pToggle = PendingIntent.getService(
-            this, 2,
-            new Intent(this, MusicService.class).setAction(ACTION_TOGGLE),
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-
-        PendingIntent pNext = PendingIntent.getService(
-            this, 3,
-            new Intent(this, MusicService.class).setAction(ACTION_NEXT),
+        PendingIntent pPrev = controlIntent(1, ACTION_PREV);
+        PendingIntent pToggle = controlIntent(2, ACTION_TOGGLE);
+        PendingIntent pNext = controlIntent(3, ACTION_NEXT);
+        PendingIntent pStop = PendingIntent.getService(
+            this, 6,
+            new Intent(this, MusicService.class).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
@@ -255,6 +312,7 @@ public class MusicService extends Service {
             .setContentText(artist)
             .setSubText("MusicBox")
             .setContentIntent(openApp)
+            .setDeleteIntent(pStop)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(shuffleIcon, shuffleLabel, controlIntent(4, ACTION_SHUFFLE))
             .addAction(R.drawable.ic_skip_previous, cl.arichard.descargador.util.Tr.t("Anterior"), pPrev)
@@ -276,15 +334,31 @@ public class MusicService extends Service {
     }
 
     public static void updateNotification(Context context, Song song, boolean isPlaying) {
+        updateNotification(context, song, isPlaying, isPlaying);
+    }
+
+    public static void updateNotification(Context context, Song song, boolean isPlaying, boolean keepForeground) {
         if (song == null || context == null) return;
         try {
+            if (!keepForeground) {
+                MusicService current = active;
+                if (current == null) return;
+                String title = song.getTitle();
+                String artist = song.getArtist();
+                MAIN.post(() -> {
+                    if (active == current) current.applyPausedState(title, artist);
+                });
+                return;
+            }
             Intent serviceIntent = new Intent(context, MusicService.class);
             serviceIntent.setAction(ACTION_UPDATE);
             serviceIntent.putExtra(EXTRA_TITLE, song.getTitle());
             serviceIntent.putExtra(EXTRA_ARTIST, song.getArtist());
             serviceIntent.putExtra(EXTRA_IS_PLAYING, isPlaying);
+            serviceIntent.putExtra(EXTRA_KEEP_FOREGROUND, true);
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                serviceIntent.putExtra(EXTRA_STARTED_FOREGROUND, true);
                 context.startForegroundService(serviceIntent);
             } else {
                 context.startService(serviceIntent);
@@ -299,11 +373,14 @@ public class MusicService extends Service {
         PlayerManager.getInstance().stopAndRelease();
         if (mediaSession != null) mediaSession.setActive(false);
         stopForeground(true);
+        inForeground = false;
         stopSelf();
         super.onTaskRemoved(rootIntent);
     }
 
     @Override public void onDestroy() {
+        if (active == this) active = null;
+        inForeground = false;
         if (mediaSession != null) {
             mediaSession.setActive(false);
             mediaSession.release();

@@ -51,6 +51,7 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
     private BottomSheetBehavior<?> behavior;
     private TextView heading, subheading, empty, autoplayStatus, hint;
     private View autoplayView;
+    private com.google.android.material.switchmaterial.SwitchMaterial autoplayToggle;
     private ImageView nextCover;
     private TextView nextMeta;
     private RecyclerView recycler;
@@ -64,7 +65,6 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         QueueSheet sheet = new QueueSheet(activity, true);
         sheet.behavior = behavior;
         container.addView(sheet.build(null), new ViewGroup.LayoutParams(-1, -1));
-        sheet.attach();
         // La pista de reordenar solo aparece con la hoja abierta: en la vista compacta estorba.
         int state = behavior.getState();
         sheet.revealNow(state == BottomSheetBehavior.STATE_EXPANDED || state == BottomSheetBehavior.STATE_HALF_EXPANDED);
@@ -155,15 +155,17 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
         detail.setTextColor(AccentColors.getColor(activity, R.color.text_secondary));
         labels.addView(title); labels.addView(detail);
         row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
-        com.google.android.material.switchmaterial.SwitchMaterial toggle = new com.google.android.material.switchmaterial.SwitchMaterial(activity);
-        toggle.setChecked(player.isAutoplay());
-        toggle.setContentDescription(Tr.t("Reproducción automática"));
-        toggle.setOnCheckedChangeListener((button, checked) -> { if (button.isPressed()) player.setAutoplay(checked); });
-        row.addView(toggle);
+        autoplayToggle = new com.google.android.material.switchmaterial.SwitchMaterial(activity);
+        autoplayToggle.setChecked(player.isAutoplay());
+        autoplayToggle.setContentDescription(Tr.t("Reproducción automática"));
+        autoplayToggle.setOnClickListener(view -> player.setAutoplay(autoplayToggle.isChecked()));
+        row.setMinimumHeight(dp(48));
+        row.setOnClickListener(view -> autoplayToggle.performClick());
+        row.addView(autoplayToggle);
         return row;
     }
 
-    private void attach() { player.addListener(this); refresh(); }
+    public void attach() { player.addListener(this); refresh(); }
 
     /** The queue UI: header, list and footer actions. [close] adds a "Cerrar" button when it is not null. */
     private LinearLayout build(Runnable close) {
@@ -274,8 +276,10 @@ public final class QueueSheet implements PlayerManager.PlaybackListener {
             adapter.notifyDataSetChanged();
             List<Song> queue = player.getQueue();
             int count = queue.size();
-            boolean searching = player.isAutoplay() && player.isAutoplayLoading();
-            String error = player.isAutoplay() ? player.getAutoplayError() : "";
+            boolean autoplay = player.isAutoplay();
+            autoplayToggle.setChecked(autoplay);
+            boolean searching = autoplay && player.isAutoplayLoading();
+            String error = autoplay ? player.getAutoplayError() : "";
             autoplayStatus.setVisibility(searching || !error.isEmpty() ? View.VISIBLE : View.GONE);
             autoplayStatus.setText(searching ? Tr.t("Buscando canciones similares…") : error);
             autoplayStatus.setEnabled(!searching);

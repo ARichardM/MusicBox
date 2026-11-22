@@ -19,6 +19,7 @@ import org.robolectric.Shadows;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import java.io.File;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 
@@ -279,7 +280,8 @@ public class LibraryNavigationTest {
             android.view.View target = null;
             // El cálculo corre en un hilo de segundo plano: se espera a que publique las tarjetas.
             for (int attempt = 0; attempt < 100 && target == null; attempt++) {
-                Shadows.shadowOf(Looper.getMainLooper()).idle();
+                // Las tarjetas entran escalonadas y usan el reloj virtual de Robolectric.
+                Shadows.shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(20));
                 for (int index = 0; index < cards.getChildCount(); index++) {
                     android.view.View card = cards.getChildAt(index);
                     if (name.equals(((TextView) card.findViewById(R.id.txtFolderName)).getText().toString())) target = card;

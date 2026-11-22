@@ -69,6 +69,7 @@ const server=http.createServer(async(req,res)=>{
         }
         if(url.pathname.startsWith('/api/artwork'))data={url:''};
         if(url.pathname.startsWith('/api/artist/'))data={name:'Artista de prueba',subscribers:'1 M',photo:'',top_songs:[],albums:[{title:'Álbum uno',year:'2024',browse_id:'MPREalbum0001',thumbnail:'logo_complete.png'},{title:'Álbum dos',year:'2023',browse_id:'MPREalbum0002',thumbnail:'logo_complete.png'}],singles:[{title:'Sencillo uno',year:'',browse_id:'MPREsingle001',thumbnail:'logo_complete.png'}]};
+        if(url.pathname==='/api/health')data={status:'ok',downloads_enabled:true,stream_blocked:false};
         if(url.pathname.startsWith('/api/cookies'))data={active:false};
         return route.fulfill({json:data});
       });

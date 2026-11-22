@@ -30,6 +30,10 @@ def entry_for(video_id):
     return PREFIX + video_id if video_id else ""
 
 
+def portable_id(entry, online_tracks):
+    return bare_id(entry) or (entry if entry_for(entry) in online_tracks else "")
+
+
 def normalize_online_tracks(raw):
     """Datos de la nube (clave sin prefijo, como en Android) → {"youtube:<id>": meta completa}."""
     result = {}
@@ -73,15 +77,15 @@ def match_local_ids(local_rows, online_tracks, known=None):
     for key, meta in (online_tracks or {}).items():
         for title in (normalize_title(meta.get("title", "")), loose_title(meta.get("title", ""))):
             if title:
-                by_title.setdefault(title, meta.get("id") or bare_id(key))
+                by_title.setdefault(title, set()).add(meta.get("id") or bare_id(key))
     result = dict(known or {})
     for row in local_rows:
         path = row.get("path", "")
         if not path or path in result:
             continue
-        video_id = by_title.get(normalize_title(row.get("title", ""))) or by_title.get(loose_title(row.get("title", "")))
-        if video_id:
-            result[path] = video_id
+        matches = by_title.get(loose_title(row.get("title", ""))) or by_title.get(normalize_title(row.get("title", "")))
+        if matches and len(matches) == 1:
+            result[path] = next(iter(matches))
     return result
 
 
@@ -92,7 +96,7 @@ def canonicalize(playlists, path_ids, online_tracks):
     for name, entries in playlists.items():
         seen, cleaned = set(), []
         for entry in entries:
-            video_id = bare_id(entry) or path_ids.get(entry, "")
+            video_id = portable_id(entry, online_tracks) or path_ids.get(entry, "")
             key = entry_for(video_id) if video_id and entry_for(video_id) in online_tracks else entry
             if key in seen:
                 changed = True

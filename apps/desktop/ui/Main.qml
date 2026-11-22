@@ -251,6 +251,31 @@ ApplicationWindow {
   Rectangle{id:artMask;anchors.fill:parent;radius:artFrame.radius;layer.enabled:true;visible:false}
   layer.effect:MultiEffect{maskEnabled:true;maskSource:artMask;maskThresholdMin:.5;maskSpreadAtMin:1}
  }
+ component AccountAvatar:RoundedArtwork {
+  property color initialColor: "white"
+  property int initialSize: 14
+  readonly property bool photoReady: profilePicture.status === Image.Ready
+  radius: width / 2
+  color: w.accent
+  Image {
+   id: profilePicture
+   anchors.fill: parent
+   source: musicbox.user.photo || ""
+   sourceSize.width: 128
+   sourceSize.height: 128
+   fillMode: Image.PreserveAspectCrop
+   asynchronous: true
+   visible: parent.photoReady
+  }
+  Text {
+   anchors.centerIn: parent
+   visible: !parent.photoReady
+   text: (musicbox.user.name || musicbox.user.email || "U").charAt(0).toUpperCase()
+   color: parent.initialColor
+   font.bold: true
+   font.pixelSize: parent.initialSize
+  }
+ }
  component RowItem:Rectangle{id:rowRoot;property var itemData:({});property bool web:false;property bool libraryRow:false;property var onlineList:[];property int onlineIndex:-1;property int queuePosition:-1;property bool active:(!!itemData.path&&itemData.path===(musicbox.currentTrack.path||""))||(!!itemData.id&&itemData.id===(musicbox.currentTrack.id||""))||(!!itemData.url&&itemData.url===(musicbox.currentTrack.url||""));property bool isDownloading:musicbox.downloadingIds.indexOf(itemData.id)!==-1||(itemData.downloading||false);width:ListView.view?ListView.view.width-20:500;height:64;radius:12;color:active?(musicbox.darkMode?Mb.Theme.adaptiveColor("#172B43"):Mb.Theme.adaptiveColor("#DDEEFF")):(mouse.containsMouse?(musicbox.darkMode?Mb.Theme.adaptiveColor("#25282E"):Mb.Theme.adaptiveColor("#E7EDF5")):w.card);scale:mouse.pressed?.995:1;Behavior on color{ColorAnimation{duration:120}}Behavior on scale{NumberAnimation{duration:90}}
   RowLayout{anchors.fill:parent;anchors.margins:7;anchors.rightMargin:84;spacing:9;RoundedArtwork{Layout.preferredWidth:52;Layout.preferredHeight:52;radius:10;color:Mb.Theme.adaptiveColor("#283140");clip:true;Image{id:rowCover;anchors.fill:parent;source:itemData.thumbnail||"";fillMode:Image.PreserveAspectCrop;asynchronous:true}Shimmer{anchors.fill:parent;cornerRadius:12;visible:rowCover.status===Image.Loading}Icon{anchors.centerIn:parent;visible:!itemData.thumbnail;source:"icons/music.svg";size:22}Rectangle{anchors.centerIn:parent;width:34;height:34;radius:10;color:Mb.Theme.adaptiveColor("#D9101822");visible:rowRoot.active&&musicbox.playerLoading&&!rowRoot.isDownloading;Mb.Spinner{anchors.centerIn:parent;size:24;running:parent.visible}}}ColumnLayout{Layout.fillWidth:true;Label{Layout.fillWidth:true;text:itemData.title||"";color:active?w.accent:w.fg;font.bold:true;elide:Text.ElideRight}RowLayout{Layout.fillWidth:true;spacing:6;Rectangle{objectName:"rowDownloadRing";visible:rowRoot.isDownloading&&musicbox.activeDownloadId===itemData.id;Layout.preferredWidth:24;Layout.preferredHeight:24;radius:7;color:Mb.Theme.adaptiveColor("#99101822");Mb.Spinner{anchors.centerIn:parent;size:17;thickness:2.5;running:parent.visible;accentColor:w.accent;headColor:w.fg;progress:(itemData.id in musicbox.downloadItemProgress)?musicbox.downloadItemProgress[itemData.id]:-1}}Mb.DownloadBadge{id:rowDlBadge;objectName:"rowDownloadBadge";visible:(itemData.downloaded||false)&&!rowRoot.isDownloading;fromFolder:itemData.fromFolder||false;Layout.preferredWidth:24;Layout.preferredHeight:24}Label{objectName:"rowSubtitle";Layout.fillWidth:true;text:(itemData.subtitle||"")+(itemData.clicks>0?"  ·  🎧 "+itemData.clicks:"");color:w.muted;font.pixelSize:12;elide:Text.ElideRight}}}}
   MouseArea{id:mouse;anchors.fill:parent;anchors.rightMargin:84;hoverEnabled:true;cursorShape:Qt.PointingHandCursor;onClicked:queuePosition>=0?musicbox.playQueueIndex(queuePosition):(onlineIndex>=0?musicbox.playOnlineList(onlineList,onlineIndex):(libraryRow?musicbox.playLibraryTrack(itemData):(web||itemData.web?musicbox.playOnline(itemData):musicbox.playTrack(itemData))))}
@@ -309,7 +334,50 @@ ApplicationWindow {
  RowLayout{Layout.fillWidth:true;Layout.fillHeight:true;spacing:0
   Rectangle{id:sidebar;z:10;Layout.preferredWidth:musicbox.sidebarExpanded?230:76;Layout.fillHeight:true;color:w.panel;Behavior on Layout.preferredWidth{NumberAnimation{duration:240;easing.type:Easing.OutCubic}}ColumnLayout{anchors.fill:parent;anchors.margins:musicbox.sidebarExpanded?18:14;spacing:8
    RowLayout{Layout.fillWidth:true;Layout.bottomMargin:22;Item{visible:!musicbox.sidebarExpanded;Layout.fillWidth:true}AbstractButton{objectName:"homeLogoButton";implicitWidth:44;implicitHeight:44;hoverEnabled:true;Accessible.name:qsTr("Inicio");ToolTip.visible:hovered;ToolTip.text:qsTr("Inicio");contentItem:BrandMark{}background:Item{}onClicked:w.page=0}ColumnLayout{visible:musicbox.sidebarExpanded;opacity:visible?1:0;Behavior on opacity{NumberAnimation{duration:140}}Label{text:"MusicBox";color:w.fg;font.pixelSize:20;font.bold:true}Label{text:qsTr("Escritorio");color:w.muted;font.pixelSize:11}}Item{visible:!musicbox.sidebarExpanded;Layout.fillWidth:true}}
-   Nav{label:qsTr("Inicio");iconSource:"icons/search.svg";target:0}Nav{label:qsTr("Mi música");iconSource:"icons/music.svg";target:1}Nav{label:qsTr("Descargas");iconSource:"icons/download.svg";target:2}Nav{label:qsTr("Historial");iconSource:"icons/history.svg";target:3}Item{Layout.fillHeight:true}Button{id:accountButton;visible:musicbox.authenticated;implicitWidth:44;implicitHeight:44;Layout.preferredWidth:musicbox.sidebarExpanded?-1:44;Layout.preferredHeight:44;Layout.fillWidth:musicbox.sidebarExpanded;Layout.alignment:Qt.AlignHCenter;hoverEnabled:true;flat:true;ToolTip.visible:hovered&&!musicbox.sidebarExpanded;ToolTip.text:qsTr("Configuración");onClicked:settingsDialog.open();contentItem:Item{Rectangle{anchors.verticalCenter:parent.verticalCenter;x:musicbox.sidebarExpanded?10:Math.round((parent.width-width)/2);width:24;height:24;radius:12;color:w.accent;Text{anchors.centerIn:parent;text:(musicbox.user.name||musicbox.user.email||"U").charAt(0).toUpperCase();color:"white";font.bold:true;font.pixelSize:12}Behavior on x{NumberAnimation{duration:210;easing.type:Easing.OutCubic}}}Text{visible:musicbox.sidebarExpanded;anchors.left:parent.left;anchors.leftMargin:44;anchors.verticalCenter:parent.verticalCenter;text:qsTr("Configuración");color:accountButton.hovered?w.fg:w.muted;font.pixelSize:13;Behavior on color{ColorAnimation{duration:120}}}}background:Rectangle{radius:12;color:accountButton.hovered?(musicbox.darkMode?Mb.Theme.adaptiveColor("#24262C"):Mb.Theme.adaptiveColor("#E9EEF5")):"transparent";Behavior on color{ColorAnimation{duration:110}}}}
+   Nav{label:qsTr("Inicio");iconSource:"icons/search.svg";target:0}Nav{label:qsTr("Mi música");iconSource:"icons/music.svg";target:1}Nav{label:qsTr("Descargas");iconSource:"icons/download.svg";target:2}Nav{label:qsTr("Historial");iconSource:"icons/history.svg";target:3}Item{Layout.fillHeight:true}
+   Button {
+    id: accountButton
+    visible: musicbox.authenticated
+    implicitWidth: 44
+    implicitHeight: 44
+    Layout.preferredWidth: musicbox.sidebarExpanded ? -1 : 44
+    Layout.preferredHeight: 44
+    Layout.fillWidth: musicbox.sidebarExpanded
+    Layout.alignment: Qt.AlignHCenter
+    leftPadding: 0
+    rightPadding: 0
+    hoverEnabled: true
+    flat: true
+    Accessible.name: qsTr("Configuración")
+    ToolTip.visible: hovered && !musicbox.sidebarExpanded
+    ToolTip.text: Accessible.name
+    onClicked: settingsDialog.open()
+    contentItem: Item {
+     AccountAvatar {
+      objectName: "sidebarAccountAvatar"
+      anchors.verticalCenter: parent.verticalCenter
+      x: musicbox.sidebarExpanded ? 10 : Math.round((parent.width - width) / 2)
+      width: 32
+      height: width
+      Behavior on x { NumberAnimation { duration: 210; easing.type: Easing.OutCubic } }
+     }
+     Text {
+      visible: musicbox.sidebarExpanded
+      anchors.left: parent.left
+      anchors.leftMargin: 52
+      anchors.verticalCenter: parent.verticalCenter
+      text: qsTr("Configuración")
+      color: accountButton.hovered ? w.fg : w.muted
+      font.pixelSize: 13
+      Behavior on color { ColorAnimation { duration: 120 } }
+     }
+    }
+    background: Rectangle {
+     radius: 12
+     color: accountButton.hovered ? Mb.Theme.adaptiveColor(musicbox.darkMode ? "#24262C" : "#E9EEF5") : "transparent"
+     Behavior on color { ColorAnimation { duration: 110 } }
+    }
+   }
   }IconButton{z:20;anchors.right:parent.right;anchors.rightMargin:-17;anchors.top:parent.top;anchors.topMargin:74;iconSource:musicbox.sidebarExpanded?"icons/sidebar_collapse.svg":"icons/sidebar_expand.svg";iconSize:16;ToolTip.visible:hovered;ToolTip.text:musicbox.sidebarExpanded?qsTr("Contraer panel"):qsTr("Expandir panel");background:Rectangle{radius:10;color:parent.hovered?(musicbox.darkMode?Mb.Theme.adaptiveColor("#2A2B31"):Mb.Theme.adaptiveColor("#E4E9F0")):w.panel;border.width:1;border.color:musicbox.darkMode?Mb.Theme.adaptiveColor("#303137"):Mb.Theme.adaptiveColor("#D8DDE5");Behavior on color{ColorAnimation{duration:110}}}onClicked:musicbox.toggleSidebar()}}
   Rectangle{Layout.fillWidth:true;Layout.fillHeight:true;color:w.panel;Rectangle{x:contentStack.x;y:contentStack.y;width:contentStack.width;height:contentStack.height;color:w.color;radius:24;topRightRadius:0;bottomRightRadius:0}ColumnLayout{anchors.fill:parent;spacing:0
    StackLayout{id:contentStack;Layout.fillWidth:true;Layout.fillHeight:true;currentIndex:w.page
@@ -898,8 +966,17 @@ ApplicationWindow {
     ColumnLayout{id:settingsColumn;objectName:"settingsColumn";x:24;width:settingsScroll.availableWidth-48;height:implicitHeight;spacing:12
      Rectangle{objectName:"accountSettingsCard";Layout.fillWidth:true;Layout.preferredHeight:92;radius:22;color:w.card
       RowLayout{anchors.fill:parent;anchors.margins:18;spacing:16
-       Rectangle{Layout.preferredWidth:54;Layout.preferredHeight:54;radius:27;gradient:Gradient{GradientStop{position:0;color:Mb.Theme.cyan}GradientStop{position:1;color:w.accent}}
-        Text{anchors.centerIn:parent;text:(musicbox.user.name||musicbox.user.email||"U").charAt(0).toUpperCase();color:Mb.Theme.orange?"#2A1300":"#062038";font.bold:true;font.pixelSize:22}}
+       AccountAvatar {
+        objectName: "settingsAccountAvatar"
+        Layout.preferredWidth: 60
+        Layout.preferredHeight: 60
+        initialSize: 22
+        initialColor: Mb.Theme.orange ? "#2A1300" : "#062038"
+        gradient: Gradient {
+         GradientStop { position: 0; color: Mb.Theme.cyan }
+         GradientStop { position: 1; color: w.accent }
+        }
+       }
        ColumnLayout{Layout.fillWidth:true;spacing:2
         Label{Layout.fillWidth:true;text:musicbox.user.name||qsTr("Cuenta de Google");color:w.fg;font.bold:true;font.pixelSize:16;elide:Text.ElideRight}
         Label{Layout.fillWidth:true;text:musicbox.user.email||"";color:w.muted;font.pixelSize:12;elide:Text.ElideRight}

@@ -254,13 +254,25 @@ public class ClickStats {
         return total;
     }
 
+    private boolean listeningDirty;
+
     /** Real listening time, per device: merging takes maxima, never sums the same device twice. */
     public synchronized void recordListening(Song song, String playlist, long millis, boolean start) {
         if (song == null || millis < 0) return;
         addListening(primaryKey(song), song.getTitle(), song.getArtist(), song.getCoverPath(), millis, start);
         if (playlist != null && !playlist.isEmpty())
             addListening("playlist:" + playlist, playlist, "", song.getCoverPath(), millis, start);
-        if (start || android.os.SystemClock.elapsedRealtime() - lastListeningSave >= 5000) flushListening();
+        listeningDirty = true;
+        if (start) {
+            flushListening();
+        } else {
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - lastListeningSave >= 30_000) {
+                lastListeningSave = now;
+                prefs.edit().putString(KEY_DATA, exportJson().toString()).apply();
+            }
+            for (Runnable observer : observers) observer.run();
+        }
     }
 
     /** Adds a play after the player confirms the minimum real listening time. */
@@ -268,6 +280,7 @@ public class ClickStats {
         if (song == null) return;
         incrementListeningPlay(primaryKey(song));
         if (playlist != null && !playlist.isEmpty()) incrementListeningPlay("playlist:" + playlist);
+        listeningDirty = true;
         flushListening();
     }
 
@@ -296,6 +309,8 @@ public class ClickStats {
     }
 
     public synchronized void flushListening() {
+        if (!listeningDirty) return;
+        listeningDirty = false;
         lastListeningSave = android.os.SystemClock.elapsedRealtime();
         persistAndNotify();
     }

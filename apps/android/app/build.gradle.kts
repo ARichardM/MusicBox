@@ -15,8 +15,8 @@ android {
         applicationId = "cl.arichard.descargador"
         minSdk = 24
         targetSdk = 36
-        versionCode = 27
-        versionName = "2.4.9"
+        versionCode = 28
+        versionName = "2.4.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -95,6 +95,7 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.media3:media3-exoplayer:1.8.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
     implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
     implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")

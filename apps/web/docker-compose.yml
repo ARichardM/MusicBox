@@ -1,6 +1,6 @@
 services:
   musicbox_web:
-    image: musicbox-web:2.4.9
+    image: musicbox-web:2.4.10
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -19,3 +19,4 @@ services:
       - ./frontend:/app/frontend:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - MUSICBOX_WEB_DOWNLOADS=0

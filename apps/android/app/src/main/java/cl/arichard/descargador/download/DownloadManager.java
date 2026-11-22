@@ -349,6 +349,9 @@ public final class DownloadManager {
         File file = new File(finished.path);
         String title = FileNames.title(finished.path);
         String artist = "";
+        String album = "";
+        long duration = 0;
+        boolean saveArtwork = cl.arichard.descargador.AnimatedArtwork.downloadsEnabled(context);
         if (file.isFile()) {
             try {
                 MediaMetadataRetriever retriever = new MediaMetadataRetriever();
@@ -358,6 +361,11 @@ public final class DownloadManager {
                     String tagArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST);
                     if (tagTitle != null && !tagTitle.trim().isEmpty()) title = tagTitle.trim();
                     if (tagArtist != null) artist = tagArtist.trim();
+                    if (saveArtwork) {
+                        album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM);
+                        String length = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                        if (length != null) duration = Long.parseLong(length);
+                    }
                 } finally { retriever.release(); }
             } catch (Exception ignored) {}
             StorageUtil.scanFile(context, file);
@@ -372,6 +380,10 @@ public final class DownloadManager {
         if (id != null) {
             context.getSharedPreferences("downloaded_videos", Context.MODE_PRIVATE).edit().putBoolean(id, true).apply();
             cl.arichard.descargador.data.PlaylistManager.getInstance(context).linkLocalFile(finished.path, id);
+        }
+        if (saveArtwork && !artist.isEmpty() && file.isFile()) {
+            cl.arichard.descargador.AnimatedArtwork.downloadForSavedSong(context,
+                    new cl.arichard.descargador.model.Song(0, title, artist, album, duration, file.getPath(), "", 0));
         }
         synchronized (this) {
             if (finished.existing) job.filesExisting++; else job.filesDone++;

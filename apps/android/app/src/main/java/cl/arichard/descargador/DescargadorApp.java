@@ -21,10 +21,34 @@ public class DescargadorApp extends Application {
     private final CountDownLatch readyLatch = new CountDownLatch(1);
     private static final long UPDATE_INTERVAL_MS = 24L * 60L * 60L * 1000L;
 
+    private final android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private int startedActivities;
+    private final Runnable enterBackground = () -> {
+        if (startedActivities == 0) cl.arichard.descargador.data.CloudSyncManager.setAppForeground(false);
+    };
+
     @Override public void onCreate() {
         super.onCreate();
         cl.arichard.descargador.util.ScreenRotation.install(this);
         cl.arichard.descargador.util.EdgeBackLayout.install(this);
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override public void onActivityCreated(android.app.Activity activity, android.os.Bundle savedInstanceState) {}
+            @Override public void onActivityStarted(android.app.Activity activity) {
+                mainHandler.removeCallbacks(enterBackground);
+                if (startedActivities++ == 0) cl.arichard.descargador.data.CloudSyncManager.setAppForeground(true);
+            }
+            @Override public void onActivityResumed(android.app.Activity activity) {}
+            @Override public void onActivityPaused(android.app.Activity activity) {}
+            @Override public void onActivityStopped(android.app.Activity activity) {
+                startedActivities = Math.max(0, startedActivities - 1);
+                if (startedActivities == 0 && !activity.isChangingConfigurations()) {
+                    mainHandler.removeCallbacks(enterBackground);
+                    mainHandler.postDelayed(enterBackground, 2000);
+                }
+            }
+            @Override public void onActivitySaveInstanceState(android.app.Activity activity, android.os.Bundle outState) {}
+            @Override public void onActivityDestroyed(android.app.Activity activity) {}
+        });
         // Immediately enforce saved theme before any activity or layout inflater runs
         SharedPreferences prefs = getSharedPreferences("musicbox_prefs", MODE_PRIVATE);
         boolean isDark = prefs.getBoolean("dark_mode", true);

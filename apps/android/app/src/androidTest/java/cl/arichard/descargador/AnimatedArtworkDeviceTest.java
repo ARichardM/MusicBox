@@ -13,7 +13,9 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -32,7 +34,12 @@ public class AnimatedArtworkDeviceTest {
         Context context = instrumentation.getTargetContext();
         assertEquals("cl.arichard.descargador.verification", context.getPackageName());
         PlayerManager player = PlayerManager.getInstance();
-        File audio = new File(context.getCacheDir(), "artwork-test.wav");
+        File audio = File.createTempFile("artwork-test", ".wav", context.getCacheDir());
+        var preferences = context.getSharedPreferences("player", Context.MODE_PRIVATE);
+        boolean oldDownload = AnimatedArtwork.downloadsEnabled(context);
+        preferences.edit().putBoolean(AnimatedArtwork.DOWNLOAD_PREFERENCE, true).commit();
+        UUID key = UUID.nameUUIDFromBytes(("file:" + audio.getPath()).getBytes(StandardCharsets.UTF_8));
+        File saved = new File(context.getFilesDir(), "animated-artwork/" + key + ".mp4");
         int bytes = 16000 * 2 * 60;
         ByteBuffer wav = ByteBuffer.allocate(44 + bytes).order(ByteOrder.LITTLE_ENDIAN);
         wav.put(new byte[]{'R','I','F','F'}).putInt(36 + bytes).put(new byte[]{'W','A','V','E','f','m','t',' '});
@@ -56,6 +63,7 @@ public class AnimatedArtworkDeviceTest {
                 animation.set(findAnimation(disc));
                 return animation.get().getAlpha() == 1;
             });
+            assertTrue("Animated artwork was saved for offline playback", saved.isFile() && saved.length() > 0);
             instrumentation.runOnMainSync(() -> player.playOnline("b1kbLwvqugk", "Anti-Hero",
                     "Taylor Swift", "", "https://www.youtube.com/watch?v=b1kbLwvqugk"));
             await("Online track is selected", () -> player.getCurrentSong().isOnline());
@@ -75,6 +83,8 @@ public class AnimatedArtworkDeviceTest {
                 currentPlayer(now).finish();
                 player.stopAndRelease();
             });
+            preferences.edit().putBoolean(AnimatedArtwork.DOWNLOAD_PREFERENCE, oldDownload).commit();
+            saved.delete();
             audio.delete();
         }
     }

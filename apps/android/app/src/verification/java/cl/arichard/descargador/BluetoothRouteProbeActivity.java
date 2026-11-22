@@ -2,7 +2,6 @@ package cl.arichard.descargador;
 
 import android.app.Activity;
 import android.media.AudioDeviceInfo;
-import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -16,7 +15,6 @@ import cl.arichard.descargador.model.Song;
 import cl.arichard.descargador.player.PlayerManager;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Collections;
@@ -127,16 +125,7 @@ public final class BluetoothRouteProbeActivity extends Activity {
     }
 
     private AudioDeviceInfo routedOutput() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || player == null) return null;
-        try {
-            Field field = PlayerManager.class.getDeclaredField("mediaPlayer");
-            field.setAccessible(true);
-            MediaPlayer mediaPlayer = (MediaPlayer) field.get(player);
-            return mediaPlayer == null ? null : mediaPlayer.getRoutedDevice();
-        } catch (ReflectiveOperationException error) {
-            Log.e(TAG, "Could not inspect current audio route", error);
-            return null;
-        }
+        return player == null ? null : player.getRoutedAudioDevice();
     }
 
     private boolean isBluetooth(AudioDeviceInfo route) {

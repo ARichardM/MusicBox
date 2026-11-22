@@ -21,6 +21,7 @@ import waveform
 import hashlib
 import random
 import re
+import unicodedata
 import platform
 import time
 import uuid
@@ -1372,27 +1373,33 @@ class MusicBoxBridge(QObject):
         if mode == "default":
             ordered = list(rows)
         else:
-            def title(row): return row.get("title", "").casefold()
-            if mode == "artist": key = lambda row: (self._track_artist(row).casefold(), title(row))
-            elif mode == "duration": key = lambda row: (row.get("duration") or 0, title(row))
-            elif mode == "plays": key = lambda row: (-self._clicks(self._row_keys(row)), title(row))
+            def sort_text(value):
+                return "".join(char for char in unicodedata.normalize("NFD", value.strip().lower())
+                               if not unicodedata.category(char).startswith("M"))
+            def title(row): return sort_text(row.get("title") or "")
+            shared_view = bool(self._library_playlist or getattr(self, "_user", {}).get("uid") and not self._library_folder)
+            def tie(row): return self._canonical_key(row) if shared_view else ""
+            def plays(row):
+                vid = self._id_of(row)
+                return self._clicks(["yt:" + vid] if vid else self._row_keys(row))
+            if mode == "artist": key = lambda row: (sort_text(self._track_artist(row)), title(row), tie(row))
+            elif mode == "duration": key = lambda row: (row.get("duration") or 0, title(row), tie(row))
+            elif mode == "plays": key = lambda row: (-plays(row), title(row), tie(row))
             elif mode == "recent":
-                # El escaneo ya entrega lo más reciente primero; en una playlist lo último agregado va al final.
                 position = {id(row): index for index, row in enumerate(rows)}
-                dates = getattr(self, "_entry_added_at", {}).get(self._library_playlist, {})
                 if self._library_playlist:
-                    key = lambda row: (-dates.get(row.get("playlistKey", row.get("path", "")), position[id(row)] + 1), row.get("playlistKey", row.get("path", "")))
+                    dates = self._membership_dates(self._library_playlist)
+                    key = lambda row: (-dates.get(self._canonical_key(row), position[id(row)] + 1), self._canonical_key(row))
                 else:
                     shared = {}
-                    for values in getattr(self, "_entry_added_at", {}).values():
-                        for entry, stamp in values.items():
-                            if stamp: shared[entry] = min(shared.get(entry, stamp), stamp)
+                    for name in self._playlists:
+                        for entry, stamp in self._membership_dates(name, include_file_links=False).items():
+                            shared[entry] = min(shared.get(entry, stamp), stamp)
                     def key(row):
-                        vid = self._id_of(row)
-                        entry = "youtube:" + vid if vid else row.get("path", "")
+                        entry = self._canonical_key(row)
                         stamp = shared.get(entry, row.get("dateAdded", 0))
                         return (-stamp, entry) if stamp else (0, position[id(row)])
-            else: key = title
+            else: key = lambda row: (title(row), tie(row))
             ordered = sorted(rows, key=key)
         return ordered if self._library_sort_ascending else ordered[::-1]
 
@@ -1496,8 +1503,8 @@ class MusicBoxBridge(QObject):
         """Cuenta las mismas entradas que la vista puede resolver, sin borrar referencias guardadas."""
         visible, seen = [], set()
         for key in keys:
-            vid = identity.bare_id(key) or self._path_ids.get(key, "")
-            canonical = vid or key
+            vid = self._playlist_video_id(key)
+            canonical = identity.entry_for(vid) or key
             if canonical in seen:
                 continue
             if (key in by_path or vid in id_rows or vid
@@ -1505,6 +1512,19 @@ class MusicBoxBridge(QObject):
                 seen.add(canonical)
                 visible.append(key)
         return visible
+
+    def _playlist_video_id(self, key):
+        return identity.portable_id(key, self._online_tracks) or self._path_ids.get(key, "")
+
+    def _membership_dates(self, name, include_file_links=True):
+        dates = getattr(self, "_entry_added_at", {}).get(name, {})
+        result = {}
+        for index, entry in enumerate(self._playlists.get(name, []), 1):
+            vid = self._playlist_video_id(entry) if include_file_links else identity.portable_id(entry, self._online_tracks)
+            key = identity.entry_for(vid) or entry
+            stamp = dates.get(entry) or index
+            result[key] = min(result.get(key, stamp), stamp)
+        return result
 
     @Property("QVariantList", notify=historyChanged)
     def history(self):
@@ -2087,6 +2107,10 @@ class MusicBoxBridge(QObject):
         self._path_ids = identity.match_local_ids(rows, self._online_tracks, known=self._linked_ids)
         unified, changed = identity.canonicalize(self._playlists, self._path_ids, self._online_tracks)
         if changed:
+            self._entry_added_at = {
+                name: {**getattr(self, "_entry_added_at", {}).get(name, {}), **self._membership_dates(name)}
+                for name in unified
+            }
             self._playlists = unified
             self._favorites = set(unified.get("Favoritos", []))
             self._save_playlists()
@@ -3590,21 +3614,27 @@ class MusicBoxBridge(QObject):
         self.historyChanged.emit()
 
     def _resolved_playlist(self, name):
-        keys = self._playlists.get(name, [])
+        return self._resolve_playlist_keys(self._playlists.get(name, []))
+
+    def _resolve_playlist_keys(self, keys):
         resolved = []
         by_path = {row.get("path"): row for row in self._library_all}
         id_rows = {vid: by_path[path] for path, vid in self._path_ids.items() if path in by_path}
         for k in self._visible_playlist_keys(keys, by_path, id_rows):
-            vid = identity.bare_id(k) or self._path_ids.get(k, "")
+            vid = self._playlist_video_id(k)
             row = by_path.get(k) or id_rows.get(vid)
+            meta = self._online_tracks.get(identity.entry_for(vid))
             if row is not None:
                 item = dict(row)
+                if vid and (meta or identity.portable_id(k, self._online_tracks)):
+                    item.update(title=(meta or {}).get("title") or vid, artist=self._track_artist(meta or {}) or "YouTube",
+                                duration=(meta or {}).get("duration") or 0)
                 item["playlistKey"] = k
                 resolved.append(item)
                 continue
-            meta = self._online_tracks.get(identity.entry_for(vid)) or self._online_tracks.get(k)
             if meta:
                 meta = dict(meta)
+                meta["title"] = meta.get("title") or vid
                 self._mark_local(meta, vid, meta.get("title", ""))
                 meta["favorite"] = self._is_fav(meta)
                 meta["web"] = True
@@ -3613,7 +3643,8 @@ class MusicBoxBridge(QObject):
             elif vid:
                 resolved.append({
                     "id": vid,
-                    "title": i18n.tr("Canción online"),
+                    "title": vid,
+                    "artist": "YouTube",
                     "subtitle": "YouTube",
                     "url": f"https://www.youtube.com/watch?v={vid}",
                     "thumbnail": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg",
@@ -3631,12 +3662,17 @@ class MusicBoxBridge(QObject):
             roots = self._library_roots()
             rows = [row for row in rows if self._folder_of(row["path"], roots) == self._library_folder]
         else:
-            # Saved account tracks appear even when their files live on another device.
-            seen = {self._id_of(row) or row.get("path", "") for row in rows}
-            for name in self._playlists:
-                for row in self._resolved_playlist(name):
-                    key = self._id_of(row) or row.get("path", "")
-                    if key and key not in seen: rows.append(row); seen.add(key)
+            signed_in = bool(getattr(self, "_user", {}).get("uid"))
+            entries = [key for name in sorted(self._playlists) for key in self._playlists[name]
+                       if not signed_in or identity.portable_id(key, self._online_tracks)]
+            saved = self._resolve_playlist_keys(entries)
+            if signed_in:
+                rows = saved
+            else:
+                merged = {}
+                for row in [*rows, *saved]:
+                    merged.setdefault(self._canonical_key(row), row)
+                rows = list(merged.values())
         artists = {}
         for row in rows if self._library_playlist else []:
             artist = self._track_artist(row)

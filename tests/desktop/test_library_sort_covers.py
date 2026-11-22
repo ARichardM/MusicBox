@@ -83,6 +83,26 @@ class LibrarySortTests(unittest.TestCase):
         b._settings.value.return_value = "basura"
         self.assertEqual(b._read_library_sort(), ("default", True))
 
+    def test_account_library_uses_the_shared_memberships_and_dates_on_every_device(self):
+        b = self.bridge
+        b._user = {"uid": "synthetic"}
+        b._favorites = set()
+        b._playlists = {"Chill": ["youtube:japanese001", "/unavailable.mp3", "youtube:japanese003", "japanese002"]}
+        b._entry_added_at = {"Chill": {"youtube:japanese003": 1000, "japanese002": 1000}}
+        b._online_tracks = {
+            "youtube:japanese002": {"id": "japanese002", "title": "好敵手"},
+            "youtube:japanese003": {"id": "japanese003", "title": "好敵手"},
+        }
+        b._path_ids = {"/m/c.mp3": "japanese001"}
+        b._library_sort = "recent"
+        b._apply_library_view()
+        expected = ["youtube:japanese002", "youtube:japanese003", "youtube:japanese001"]
+        self.assertEqual([b._canonical_key(row) for row in b._library], expected)
+        self.assertEqual(b._library[-1]["path"], "/m/c.mp3")
+        b._library_all = []
+        b._apply_library_view()
+        self.assertEqual([b._canonical_key(row) for row in b._library], expected)
+
 
 class PlaylistCoverTests(unittest.TestCase):
     def setUp(self):

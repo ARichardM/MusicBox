@@ -575,6 +575,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         super.onResume();
         screenResumed = true;
         PlayerManager.getInstance().addListener(this);
+        if (queuePanel != null) queuePanel.attach();
 
 
         Song current = PlayerManager.getInstance().getCurrentSong();
@@ -610,6 +611,7 @@ public class NowPlayingActivity extends AppearanceActivity implements PlayerMana
         PlayerManager.getInstance().savePosition();
         super.onPause();
         PlayerManager.getInstance().removeListener(this);
+        if (queuePanel != null) queuePanel.detach();
         PlayerManager.getInstance().detachOnlineWebView();
     }
 

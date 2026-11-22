@@ -109,6 +109,7 @@
     assert(document.documentElement.dataset.theme==='light' && document.documentElement.dataset.accent==='orange','Tema claro y color naranjo');
     setDarkMode(true,false); applyPrimaryColor('blue',false);
     state.language='en'; applyLanguage(); assert(document.documentElement.lang === 'en' && document.getElementById('nav-home').textContent.trim()==='Home','Idioma inglés traduce la navegación'); state.language='es'; applyLanguage();
+    setWebDownloadsEnabled(true);
     await loadDownloadsView(); downloadFailure=true; await downloadTrackForOffline(songs[2]);
     assert(!await storage.getOfflineTrack(songs[2].id) && !downloadJobs.size,'Descarga fallida no guarda audio inválido');
     downloadFailure=false; await downloadTrackForOffline(songs[2]);

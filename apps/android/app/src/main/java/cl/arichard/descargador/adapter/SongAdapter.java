@@ -67,6 +67,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
     private Sort sort = Sort.DEFAULT;
     private boolean playlistOrder;
     private String playlistName = "";
+    private static final java.util.regex.Pattern SORT_MARKS = java.util.regex.Pattern.compile("\\p{M}+");
     public void setPlaylistName(String name) { playlistName = name == null ? "" : name; }
     /** Sentido natural de cada orden: A→Z, de menor a mayor duración, lo más reciente o lo más escuchado primero. */
     private boolean ascending = true;
@@ -114,43 +115,52 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.SongViewHolder
 
     private void sortDisplayed() {
         if (sort == Sort.DEFAULT) { if (!ascending) java.util.Collections.reverse(displayedList); return; }
-        java.text.Collator collator = java.text.Collator.getInstance();
-        collator.setStrength(java.text.Collator.PRIMARY);
-        java.util.Comparator<Song> byTitle = (a, b) -> collator.compare(a.getTitle(), b.getTitle());
+        cl.arichard.descargador.data.PlaylistManager manager = cl.arichard.descargador.data.PlaylistManager.getInstance(context);
+        java.util.Comparator<Song> byTitle = java.util.Comparator.comparing(song -> sortText(song.getTitle()));
         java.util.Comparator<Song> order;
         switch (sort) {
-            case ARTIST: order = ((java.util.Comparator<Song>) (a, b) -> collator.compare(a.getArtist(), b.getArtist())).thenComparing(byTitle); break;
+            case ARTIST: order = java.util.Comparator.comparing((Song song) -> sortText(artistName(song))).thenComparing(byTitle); break;
             case DURATION: order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(a.getDuration(), b.getDuration())).thenComparing(byTitle); break;
             case RECENT: {
+                java.util.Map<String, Long> dates = playlistOrder ? manager.membershipDates(playlistName) : manager.libraryDates();
+                java.util.Map<String, Long> stamps = new java.util.HashMap<>();
                 if (playlistOrder) {
-                    java.util.Map<String, Integer> positions = new java.util.HashMap<>();
-                    for (int i = 0; i < originalList.size(); i++) positions.put(originalList.get(i).getPath(), i);
-                    cl.arichard.descargador.data.PlaylistManager manager = cl.arichard.descargador.data.PlaylistManager.getInstance(context);
-                    order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(
-                            manager.addedAt(playlistName, b) > 0 ? manager.addedAt(playlistName, b) : positions.get(b.getPath()) + 1,
-                            manager.addedAt(playlistName, a) > 0 ? manager.addedAt(playlistName, a) : positions.get(a.getPath()) + 1))
-                            .thenComparing(a -> a.getVideoId() != null ? a.getVideoId() : a.getPath());
+                    for (int i = 0; i < originalList.size(); i++) {
+                        Song song = originalList.get(i);
+                        stamps.put(song.getPath(), dates.getOrDefault(manager.songIdentity(song), i + 1L));
+                    }
                 } else {
-                    cl.arichard.descargador.data.PlaylistManager manager = cl.arichard.descargador.data.PlaylistManager.getInstance(context);
-                    java.util.Map<String, Long> dates = manager.libraryDates();
-                    java.util.Map<String, Long> stamps = new java.util.HashMap<>();
-                    for (Song song : displayedList) stamps.put(song.getPath(), dates.getOrDefault(manager.canonicalKey(song), song.getDateAdded()));
-                    order = ((java.util.Comparator<Song>) (a, b) -> Long.compare(stamps.get(b.getPath()), stamps.get(a.getPath())))
-                            .thenComparing(a -> a.getVideoId() != null ? a.getVideoId() : a.getPath());
+                    for (Song song : displayedList) {
+                        stamps.put(song.getPath(), dates.getOrDefault(manager.songIdentity(song), song.getDateAdded()));
+                    }
                 }
+                order = (a, b) -> Long.compare(stamps.get(b.getPath()), stamps.get(a.getPath()));
                 break;
             }
             case PLAYS: {
                 // Se cuentan una sola vez: contar dentro del comparador tomaría el candado de los clics muchas veces.
                 java.util.Map<String, Integer> plays = new java.util.HashMap<>();
                 cl.arichard.descargador.data.ClickStats stats = cl.arichard.descargador.data.ClickStats.getInstance(context);
-                for (Song song : displayedList) plays.put(song.getPath(), stats.count(song));
+                for (Song song : displayedList) {
+                    String key = manager.songIdentity(song);
+                    int count = key.startsWith("youtube:") ? stats.count("yt:" + key.substring(8)) : stats.count(song);
+                    plays.put(song.getPath(), count);
+                }
                 order = ((java.util.Comparator<Song>) (a, b) -> Integer.compare(plays.get(b.getPath()), plays.get(a.getPath()))).thenComparing(byTitle);
                 break;
             }
             default: order = byTitle;
         }
+        if (playlistOrder || displayedList.stream().anyMatch(song -> manager.songIdentity(song).startsWith("youtube:"))) {
+            order = order.thenComparing(manager::songIdentity);
+        }
         java.util.Collections.sort(displayedList, ascending ? order : order.reversed());
+    }
+
+    private static String sortText(String text) {
+        String normalized = java.text.Normalizer.normalize(text.trim().toLowerCase(java.util.Locale.ROOT),
+                java.text.Normalizer.Form.NFD);
+        return SORT_MARKS.matcher(normalized).replaceAll("");
     }
 
     public void filter(String query) {

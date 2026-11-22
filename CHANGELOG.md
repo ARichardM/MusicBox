@@ -1,5 +1,25 @@
 # Historial de versiones
 
+## 2.4.10 — 22 de noviembre de 2026
+
+### Android
+
+- **Optimización integral de batería en reproducción:** el reproductor migra a **Media3 ExoPlayer 1.8.0** con Audio Offload por hardware, programación dinámica y búfer en ráfaga (`30 s – 120 s` en audio), reemplazando al antiguo `MediaPlayer` con `PARTIAL_WAKE_LOCK` permanente y su hilo HTTP manual.
+- **Cero sondeo con pantalla apagada y servicio ligero en pausa:** sin pantalla visible se elimina el bucle periódico (solo se programan los avisos puntuales de conteo a los 30 s y crossfade si está activo) y `MusicService` libera el modo primer plano con `STOP_FOREGROUND_DETACH` al pausar, manteniendo los controles de notificación operativos.
+- **Sin tormenta de sincronización en segundo plano:** `ClickStats` deja de disparar transacciones de Firestore cada 5 s durante la reproducción (persiste local cada 30 s y sincroniza al pausar, cambiar de pista o completar los 30 s), `CloudSyncManager` pausa los listeners en tiempo real de Firestore al salir de la app y `WaveformStore` evita decodificar ondas nuevas con la pantalla apagada.
+- **Portadas animadas y ajustes:** nuevo interruptor para elegir si se descargan portadas animadas para verlas sin conexión (sincronizado con la cuenta), `autoplay` compartido en tiempo real entre Configuración y la cola, y avatar de cuenta que conserva la inicial si la foto tarda o falla al cargar.
+- Versión de aplicación `2.4.10` (`versionCode 28`).
+
+### Android, Windows y Web
+
+- **Biblioteca compartida por cuenta:** con sesión iniciada, **Canciones** muestra el catálogo unificado de YouTube guardado en playlists y Favoritos (reproduciendo copias descargadas cuando existen en el equipo), mientras los archivos propios del dispositivo permanecen en **Carpetas** o **Descargas**.
+- **Orden y fechas coherentes:** ordenación sin tildes ni mayúsculas con desempate estable, fechas `entryAddedAt` unificadas, guardado automático de criterio y dirección de orden y colas que parten del orden visible.
+- **Avatar de cuenta resiliente:** en Android, Windows y Web se muestra la inicial hasta que la foto de perfil carga correctamente.
+
+### Web
+
+- **Descargas desde YouTube desactivadas por defecto en la web (`MUSICBOX_WEB_DOWNLOADS=0`):** `/api/health` informa `downloads_enabled`, `/api/download` responde 503 cuando están deshabilitadas y los botones de descarga indican usar Android o Windows; la importación de archivos y carpetas locales sigue activa.
+
 ## 2.4.9 — 19 de noviembre de 2026
 
 ### Web
